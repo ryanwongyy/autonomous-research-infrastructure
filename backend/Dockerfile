@@ -8,6 +8,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
+COPY app/ app/
 RUN pip install --no-cache-dir . && \
     pip install --no-cache-dir asyncpg slowapi
 
