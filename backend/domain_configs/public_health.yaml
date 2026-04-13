@@ -1,0 +1,77 @@
+id: public_health
+name: "Public Health Policy"
+description: "Evaluation of public health interventions and healthcare policies"
+
+data_sources:
+  - name: "WHO Global Health Observatory"
+    type: "api"
+    base_url: "https://ghoapi.azureedge.net/api"
+    requires_key: false
+  - name: "CDC WONDER"
+    type: "api"
+    base_url: "https://wonder.cdc.gov"
+    requires_key: false
+
+analysis_tool: "python"
+analysis_packages:
+  - "statsmodels"
+  - "linearmodels"
+  - "causalinference"
+  - "matplotlib"
+  - "seaborn"
+
+methods:
+  - "DiD"
+  - "RDD"
+  - "IV"
+  - "Event Study"
+  - "Interrupted Time Series"
+
+categories:
+  - slug: "infectious_disease"
+    name: "Infectious Disease"
+  - slug: "chronic_disease"
+    name: "Chronic Disease"
+  - slug: "maternal_child"
+    name: "Maternal & Child Health"
+  - slug: "mental_health"
+    name: "Mental Health"
+  - slug: "healthcare_access"
+    name: "Healthcare Access"
+  - slug: "vaccination"
+    name: "Vaccination Policy"
+
+countries:
+  - "Global"
+  - "United States"
+  - "United Kingdom"
+  - "India"
+  - "Brazil"
+
+evaluation_criteria:
+  rewards:
+    - "Novel health policy questions with clear causal identification"
+    - "Appropriate handling of confounders in health data"
+    - "Transparent reporting of effect sizes and clinical significance"
+    - "Policy-relevant findings with implementation implications"
+  penalties:
+    - "Ecological fallacy or inappropriate aggregation"
+    - "Missing key health confounders"
+    - "Overstating causal claims from observational data"
+    - "Ignoring selection bias in healthcare utilization data"
+
+models:
+  generation: "claude-opus-4-6"
+  advisor_review:
+    - "gpt-4o"
+    - "claude-sonnet-4-6"
+    - "gemini-2.0-flash"
+    - "gpt-4o-mini"
+  theory_review: "o1"
+  exhibit_review: "claude-sonnet-4-6"
+  prose_review: "claude-sonnet-4-6"
+  referee_review:
+    - "gpt-4o"
+    - "claude-sonnet-4-6"
+    - "gemini-2.0-flash"
+  tournament_judge: "gemini-2.0-flash"

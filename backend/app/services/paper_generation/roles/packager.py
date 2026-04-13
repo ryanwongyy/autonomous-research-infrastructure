@@ -1,0 +1,320 @@
+"""Packager role: assembles final paper package with all artifacts.
+
+Boundary: Computes final hashes and creates an immutable package record.
+           Cannot modify content -- only aggregates and hashes.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.acknowledgment_record import AcknowledgmentRecord
+from app.models.lock_artifact import LockArtifact
+from app.models.paper import Paper
+from app.models.paper_package import PaperPackage
+from app.services.provenance.hasher import (
+    compute_merkle_root,
+    hash_content,
+)
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+async def build_package(
+    session: AsyncSession,
+    paper_id: str,
+    manuscript_latex: str | None = None,
+    code_content: str | None = None,
+    result_manifest: dict[str, Any] | None = None,
+    source_manifest: dict[str, Any] | None = None,
+    verification_report: dict[str, Any] | None = None,
+) -> PaperPackage:
+    """Build the complete paper package.
+
+    1. Collect all artifacts: lock, manuscript, code, data, results, reviews
+    2. Compute individual hashes for each component
+    3. Compute Merkle root of all component hashes
+    4. Generate authorship declaration template (human-only)
+    5. Generate AI contribution log (what Claude did at each stage)
+    6. Generate standardized disclosure text
+    7. Create PaperPackage record
+    8. Update Paper.funnel_stage to 'candidate'
+    """
+    paper = await _load_paper(session, paper_id)
+
+    # Load lock artifact
+    lock = await _load_active_lock(session, paper_id)
+
+    # -----------------------------------------------------------------------
+    # 1-2. Collect artifacts and compute individual hashes
+    # -----------------------------------------------------------------------
+    component_hashes: dict[str, str] = {}
+
+    # Lock artifact hash
+    lock_hash: str | None = None
+    if lock:
+        lock_hash = lock.lock_hash
+        component_hashes["lock_artifact"] = lock_hash
+
+    # Source manifest hash
+    source_hash: str | None = None
+    if source_manifest:
+        source_bytes = json.dumps(source_manifest, sort_keys=True).encode("utf-8")
+        source_hash = hash_content(source_bytes)
+        component_hashes["source_manifest"] = source_hash
+
+    # Analysis code hash
+    code_hash: str | None = None
+    if code_content:
+        code_hash = hash_content(code_content.encode("utf-8"))
+        component_hashes["analysis_code"] = code_hash
+
+    # Result hash
+    result_hash: str | None = None
+    if result_manifest:
+        result_bytes = json.dumps(result_manifest, sort_keys=True).encode("utf-8")
+        result_hash = hash_content(result_bytes)
+        component_hashes["results"] = result_hash
+
+    # Manuscript hash
+    manuscript_hash: str | None = None
+    if manuscript_latex:
+        manuscript_hash = hash_content(manuscript_latex.encode("utf-8"))
+        component_hashes["manuscript"] = manuscript_hash
+
+    # Verification report hash
+    if verification_report:
+        verify_bytes = json.dumps(verification_report, sort_keys=True).encode("utf-8")
+        component_hashes["verification"] = hash_content(verify_bytes)
+
+    # -----------------------------------------------------------------------
+    # 3. Compute Merkle root
+    # -----------------------------------------------------------------------
+    hash_values = sorted(component_hashes.values())  # Sort for determinism
+    merkle_root = compute_merkle_root(hash_values) if hash_values else hash_content(b"")
+
+    # -----------------------------------------------------------------------
+    # 4. Authorship declaration template
+    # -----------------------------------------------------------------------
+    authorship_declaration = json.dumps({
+        "declaration_type": "human_authorship_required",
+        "template": {
+            "human_authors": [
+                {
+                    "name": "[REQUIRED: Full name]",
+                    "affiliation": "[REQUIRED: Institution]",
+                    "contribution": "[REQUIRED: Specific contributions]",
+                    "corresponding": False,
+                }
+            ],
+            "certification": (
+                "I/We certify that all human authors listed above made "
+                "substantive intellectual contributions to this work beyond "
+                "supervising AI-generated output."
+            ),
+            "signed_date": None,
+        },
+        "note": "This paper was generated with AI assistance. Human authorship "
+                "must be established before submission to any venue.",
+    }, indent=2)
+
+    # -----------------------------------------------------------------------
+    # 5. AI contribution log
+    # -----------------------------------------------------------------------
+    ai_contribution_log = json.dumps({
+        "pipeline_version": "phase_3_bounded_roles",
+        "model": "claude-opus-4-6",
+        "stages": {
+            "scout": {
+                "role": "Idea generation and screening",
+                "ai_contribution": "Generated research idea cards from governance landscape gaps; "
+                                   "screened ideas on 6 dimensions",
+                "human_oversight": "Human approves or rejects ideas before proceeding",
+            },
+            "designer": {
+                "role": "Research design creation",
+                "ai_contribution": "Generated research design YAML with all required fields; "
+                                   "produced narrative memo explaining design choices",
+                "human_oversight": "Human reviews and locks the design",
+            },
+            "data_steward": {
+                "role": "Source manifest and data fetching",
+                "ai_contribution": "Matched research needs to available source cards; "
+                                   "built source manifest with fetch parameters",
+                "human_oversight": "Human verifies source selections and data quality",
+            },
+            "analyst": {
+                "role": "Analysis code generation and execution",
+                "ai_contribution": "Generated analysis code implementing locked design; "
+                                   "executed code to produce result objects",
+                "human_oversight": "Human reviews code and validates results",
+            },
+            "drafter": {
+                "role": "Manuscript composition",
+                "ai_contribution": "Composed full LaTeX manuscript with evidence-linked claims; "
+                                   "generated bibliography entries",
+                "human_oversight": "Human reviews manuscript for accuracy and quality",
+            },
+            "verifier": {
+                "role": "Claim verification",
+                "ai_contribution": "Cross-checked all claims against evidence base; "
+                                   "flagged causal language violations and tier compliance issues",
+                "human_oversight": "Human reviews verification report",
+            },
+            "packager": {
+                "role": "Package assembly",
+                "ai_contribution": "Computed artifact hashes and Merkle root; "
+                                   "generated disclosure and contribution log",
+                "human_oversight": "Human signs authorship declaration before submission",
+            },
+        },
+        "component_hashes": component_hashes,
+        "merkle_root": merkle_root,
+        "packaged_at": datetime.now(timezone.utc).isoformat(),
+    }, indent=2)
+
+    # -----------------------------------------------------------------------
+    # 6. Standardized disclosure text
+    # -----------------------------------------------------------------------
+    disclosure_text = (
+        "DISCLOSURE OF AI ASSISTANCE\n"
+        "\n"
+        "This paper was produced with the assistance of an AI-powered research "
+        "pipeline (ProjectAPE, using Anthropic Claude). The AI system contributed "
+        "to the following stages:\n"
+        "\n"
+        "- Research idea generation and screening\n"
+        "- Research design specification\n"
+        "- Data source identification and manifest construction\n"
+        "- Analysis code generation\n"
+        "- Manuscript drafting with evidence-linked claims\n"
+        "- Automated claim verification against source evidence\n"
+        "\n"
+        "All AI-generated content was subject to human review. The research design "
+        "was frozen via a cryptographic lock artifact before downstream processing. "
+        "Every empirical claim in the manuscript maps to a verified source span or "
+        "analysis result object.\n"
+        "\n"
+        f"Package integrity hash (Merkle root): {merkle_root}\n"
+        f"Lock artifact hash: {lock_hash or 'N/A'}\n"
+        "\n"
+        "Human authors are solely responsible for the intellectual content and any "
+        "errors in this work. The AI contribution log and verification report are "
+        "available as supplementary materials."
+    )
+
+    # Collegial review acknowledgments
+    ack_result = await session.execute(
+        select(AcknowledgmentRecord).where(AcknowledgmentRecord.paper_id == paper_id)
+    )
+    ack_records = ack_result.scalars().all()
+    if ack_records:
+        ack_lines = [a.acknowledgment_text for a in ack_records if a.acknowledgment_text]
+        if ack_lines:
+            disclosure_text += (
+                "\n\nACKNOWLEDGMENTS\n\n"
+                + " ".join(ack_lines)
+            )
+
+    # -----------------------------------------------------------------------
+    # 7. Create PaperPackage record
+    # -----------------------------------------------------------------------
+    package_path = os.path.join(
+        settings.papers_dir, paper_id, "package_v1"
+    )
+
+    # Check for existing package and increment version if needed
+    existing_stmt = (
+        select(PaperPackage)
+        .where(PaperPackage.paper_id == paper_id)
+    )
+    existing_result = await session.execute(existing_stmt)
+    existing_package = existing_result.scalar_one_or_none()
+
+    version_major = 1
+    version_minor = 0
+    if existing_package:
+        version_major = existing_package.version_major
+        version_minor = existing_package.version_minor + 1
+        package_path = os.path.join(
+            settings.papers_dir,
+            paper_id,
+            f"package_v{version_major}.{version_minor}",
+        )
+        # Remove old package record (unique constraint on paper_id)
+        await session.delete(existing_package)
+        await session.flush()
+
+    package = PaperPackage(
+        paper_id=paper_id,
+        manifest_hash=merkle_root,
+        package_path=package_path,
+        lock_artifact_hash=lock_hash,
+        source_manifest_hash=source_hash,
+        code_hash=code_hash,
+        result_hash=result_hash,
+        manuscript_hash=manuscript_hash,
+        version_major=version_major,
+        version_minor=version_minor,
+        authorship_declaration=authorship_declaration,
+        ai_contribution_log=ai_contribution_log,
+        disclosure_text=disclosure_text,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(package)
+
+    # -----------------------------------------------------------------------
+    # 8. Update paper funnel stage
+    # -----------------------------------------------------------------------
+    paper.funnel_stage = "candidate"
+    session.add(paper)
+    await session.flush()
+
+    logger.info(
+        "Packager built package for paper %s (merkle=%s, v%d.%d)",
+        paper_id,
+        merkle_root[:16],
+        version_major,
+        version_minor,
+    )
+    return package
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
+    stmt = select(Paper).where(Paper.id == paper_id)
+    result = await session.execute(stmt)
+    paper = result.scalar_one_or_none()
+    if paper is None:
+        raise ValueError(f"Paper '{paper_id}' not found.")
+    return paper
+
+
+async def _load_active_lock(
+    session: AsyncSession, paper_id: str
+) -> LockArtifact | None:
+    stmt = (
+        select(LockArtifact)
+        .where(
+            LockArtifact.paper_id == paper_id,
+            LockArtifact.is_active.is_(True),
+        )
+        .limit(1)
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()

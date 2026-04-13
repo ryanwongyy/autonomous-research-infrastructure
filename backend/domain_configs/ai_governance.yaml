@@ -1,0 +1,84 @@
+id: ai_governance
+name: "Autonomous research infrastructure for AI governance"
+description: "Submission-ready AI-governance papers that make real scholarly contributions about how institutions govern AI development, deployment, procurement, auditing, liability, disclosure, and international coordination"
+
+scope:
+  includes:
+    - "Regulation and administrative governance"
+    - "Legal doctrine and enforcement"
+    - "Standards and auditing (public materials)"
+    - "Public procurement and state capacity"
+    - "Corporate governance and disclosure"
+    - "International governance and coordination"
+    - "Incident response and institutional learning"
+    - "Evaluation of governance instruments"
+    - "Comparative and historical institutional development"
+    - "Public opinion and political economy (public data only)"
+  excludes:
+    - "Pure capability papers"
+    - "Alignment experiments requiring privileged model access"
+    - "Internal frontier-lab governance with private telemetry"
+    - "Ethnography, interviews, new surveys, paid panels"
+    - "Philosophical essays with no institutional lever"
+    - "AI policy commentary masquerading as scholarship"
+    - "Compliance checklists dressed up as articles"
+    - "Claims depending on inaccessible vendor data"
+    - "Confidential audit effectiveness"
+    - "Classified procurement"
+    - "Closed-door treaty bargaining"
+    - "Papers relying on paywalled standards as core evidence"
+
+analysis_tool: "python"
+
+screening:
+  dimensions:
+    - importance
+    - novelty
+    - data_adequacy
+    - inferential_credibility
+    - venue_fit
+    - execution_burden
+  minimum_weighted_score: 4.0
+  minimum_novelty: 4
+  minimum_data_adequacy: 4
+
+throughput_targets:
+  annual:
+    ideas_generated: 5000
+    locked_plans: 300
+    killed_before_analysis: 180
+    active_execution: 60
+    draft_papers: 75
+    submission_ready: 28
+    flagship_attempts: 6
+    elite_field_attempts: 22
+  benchmark_targets:
+    beat_median: 0.70
+    beat_upper_quartile: 0.25
+    flagship_top_decile: true
+  replication_targets:
+    first_cycle_pass: 0.95
+    pre_submission_pass: 0.99
+  reviewer_disagreement:
+    one_grade_max: 0.20
+    two_grade_max: 0.05
+
+models:
+  generation: "claude-opus-4-6"
+  scout: "claude-sonnet-4-6"
+  design: "claude-opus-4-6"
+  data_steward: "claude-sonnet-4-6"
+  analysis: "claude-opus-4-6"
+  drafting: "claude-opus-4-6"
+  verification: "claude-sonnet-4-6"
+  packaging: "claude-sonnet-4-6"
+  l1_structural: "claude-sonnet-4-6"
+  l2_provenance: "claude-sonnet-4-6"
+  l3_method: "gpt-4o"  # Must be non-Claude
+  l4_adversarial:
+    - "gpt-4o"
+    - "claude-opus-4-6"
+  l5_human_escalation: "system"  # No model; generates report
+  tournament_judge: "gpt-4o"
+
+active: true

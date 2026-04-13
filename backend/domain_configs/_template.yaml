@@ -1,0 +1,49 @@
+# Domain Configuration Template
+# Copy this file and fill in your domain-specific details
+
+id: my_domain
+name: "My Research Domain"
+description: "Description of the research domain"
+
+data_sources:
+  - name: "Data Source Name"
+    type: "api"
+    base_url: "https://api.example.com"
+    requires_key: false
+
+analysis_tool: "python"  # "python" or "R"
+analysis_packages: []
+
+methods:
+  - "DiD"
+  - "RDD"
+
+categories:
+  - slug: "general"
+    name: "General"
+
+countries: []
+
+evaluation_criteria:
+  rewards:
+    - "Novel research questions"
+    - "Rigorous identification strategy"
+  penalties:
+    - "Weak methodology"
+    - "Missing robustness checks"
+
+models:
+  generation: "claude-opus-4-6"
+  advisor_review:
+    - "gpt-4o"
+    - "claude-sonnet-4-6"
+    - "gemini-2.0-flash"
+    - "gpt-4o-mini"
+  theory_review: "o1"
+  exhibit_review: "claude-sonnet-4-6"
+  prose_review: "claude-sonnet-4-6"
+  referee_review:
+    - "gpt-4o"
+    - "claude-sonnet-4-6"
+    - "gemini-2.0-flash"
+  tournament_judge: "gemini-2.0-flash"

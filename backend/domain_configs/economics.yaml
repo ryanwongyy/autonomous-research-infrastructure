@@ -1,0 +1,84 @@
+id: economics
+name: "Policy Economics"
+description: "Autonomous evaluation of economic policies using causal inference methods"
+
+data_sources:
+  - name: "Census ACS"
+    type: "api"
+    base_url: "https://api.census.gov/data"
+    requires_key: true
+  - name: "FRED"
+    type: "api"
+    base_url: "https://api.stlouisfed.org/fred"
+    requires_key: true
+  - name: "BLS"
+    type: "api"
+    base_url: "https://api.bls.gov/publicAPI/v2"
+    requires_key: false
+
+analysis_tool: "R"
+analysis_packages:
+  - "fixest"
+  - "did"
+  - "rdrobust"
+  - "modelsummary"
+  - "ggplot2"
+
+methods:
+  - "DiD"
+  - "RDD"
+  - "IV"
+  - "Event Study"
+  - "Synthetic Control"
+
+categories:
+  - slug: "labor"
+    name: "Labor & Employment"
+  - slug: "healthcare"
+    name: "Healthcare Policy"
+  - slug: "education"
+    name: "Education"
+  - slug: "trade"
+    name: "Trade & Industry"
+  - slug: "environment"
+    name: "Environment & Energy"
+  - slug: "housing"
+    name: "Housing & Urban"
+  - slug: "fiscal"
+    name: "Fiscal & Tax Policy"
+
+countries:
+  - "United States"
+  - "India"
+  - "France"
+  - "Switzerland"
+  - "United Kingdom"
+  - "Nigeria"
+
+evaluation_criteria:
+  rewards:
+    - "Novel questions challenging conventional wisdom"
+    - "Rigorous identification (even with null results)"
+    - "Honest engagement with limitations"
+    - "Appropriate scope and policy relevance"
+  penalties:
+    - "Weak identification strategy"
+    - "Failed placebos or violated assumptions"
+    - "Shallow analysis missing robustness checks"
+    - "Execution quality issues"
+
+models:
+  generation: "claude-opus-4-6"
+  advisor_review:
+    - "gpt-4o"
+    - "claude-sonnet-4-6"
+    - "gemini-2.0-flash"
+    - "gpt-4o-mini"
+  theory_review: "o1"
+  exhibit_review: "claude-sonnet-4-6"
+  prose_review: "claude-sonnet-4-6"
+  referee_review:
+    - "gpt-4o"
+    - "claude-sonnet-4-6"
+    - "gemini-2.0-flash"
+  tournament_judge: "gemini-2.0-flash"

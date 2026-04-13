@@ -1,0 +1,26 @@
+"""Failure Type Proposal model -- captures proposed new failure types discovered
+through clustering of failure records, with confidence scoring and approval flow."""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import Integer, String, Text, Float, DateTime, ForeignKey, func
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.database import Base
+
+
+class FailureTypeProposal(Base):
+    __tablename__ = "failure_type_proposals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    proposed_type_name: Mapped[str] = mapped_column(String(32))
+    proposed_description: Mapped[str | None] = mapped_column(Text)
+    source_records_json: Mapped[str | None] = mapped_column(Text)
+    cluster_size: Mapped[int] = mapped_column(Integer, default=0)
+    confidence: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(16))
+    experiment_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rsi_experiments.id"), index=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now())
