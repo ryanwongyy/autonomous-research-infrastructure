@@ -1,4 +1,3 @@
-from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from pathlib import Path
 
@@ -59,14 +58,11 @@ class Settings(BaseSettings):
     # Sentry DSN for error tracking (leave blank to disable)
     sentry_dsn: str = ""
 
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001"]
+    cors_origins: str = "http://localhost:3000,http://localhost:3001"
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v):
-        if isinstance(v, str):
-            return [s.strip() for s in v.split(",") if s.strip()]
-        return v
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [s.strip() for s in self.cors_origins.split(",") if s.strip()]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
