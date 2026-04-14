@@ -163,6 +163,7 @@ from app.api import autonomy, failures  # noqa: E402
 from app.api import novelty, cohorts  # noqa: E402
 from app.api import rsi  # noqa: E402
 from app.api import collegial  # noqa: E402
+from app.api import batch  # noqa: E402
 
 app.include_router(leaderboard.router, prefix="/api/v1", tags=["leaderboard"])
 app.include_router(stats.router, prefix="/api/v1", tags=["stats"])
@@ -198,3 +199,9 @@ app.include_router(
     dependencies=[Depends(admin_key_required)],
 )
 app.include_router(collegial.router, prefix="/api/v1", tags=["collegial"])
+app.include_router(
+    batch.router,
+    prefix="/api/v1",
+    tags=["batch"],
+    dependencies=[Depends(admin_key_required)],
+)

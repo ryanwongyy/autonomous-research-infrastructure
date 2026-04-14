@@ -1,0 +1,106 @@
+name: Autonomous Pipeline Loop
+
+on:
+  schedule:
+    # Morning: generate + review + promote
+    - cron: '0 8 * * *'
+    # Afternoon: tournament + promote
+    - cron: '0 14 * * *'
+    # Evening: generate + review + promote
+    - cron: '0 20 * * *'
+  workflow_dispatch:
+    inputs:
+      count:
+        description: 'Papers to generate per run'
+        required: false
+        default: '2'
+      skip_generate:
+        description: 'Skip paper generation (tournament/promote only)'
+        required: false
+        default: 'false'
+
+env:
+  API_BASE: https://ari-backend-w2ne.onrender.com
+  API_KEY: ${{ secrets.ARI_ADMIN_KEY }}
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Wake up Render
+        run: |
+          echo "Pinging health endpoint to wake Render from cold start..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_BASE/health" || echo "000")
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
+              echo "Server is awake"
+              break
+            fi
+            sleep 10
+          done
+          # Final check
+          curl -sf "$API_BASE/health" || { echo "Server failed to wake up"; exit 1; }
+
+      - name: Determine schedule context
+        id: context
+        run: |
+          HOUR=$(date -u +%H)
+          echo "Current UTC hour: $HOUR"
+          # Afternoon run (14:00) is tournament-focused
+          if [ "$HOUR" = "14" ]; then
+            echo "run_tournament=true" >> "$GITHUB_OUTPUT"
+            echo "run_generate=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_tournament=false" >> "$GITHUB_OUTPUT"
+            echo "run_generate=true" >> "$GITHUB_OUTPUT"
+          fi
+          # Manual dispatch overrides
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.skip_generate }}" = "true" ]; then
+              echo "run_generate=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "run_generate=true" >> "$GITHUB_OUTPUT"
+            fi
+            echo "run_tournament=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate papers
+        if: steps.context.outputs.run_generate == 'true'
+        run: |
+          COUNT="${{ inputs.count || '2' }}"
+          echo "Generating $COUNT papers..."
+          RESPONSE=$(curl -sf -X POST "$API_BASE/api/v1/batch/generate" \
+            -H "X-API-Key: $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"count\": $COUNT}" \
+            --max-time 3600) || { echo "Generate call failed"; exit 1; }
+          echo "$RESPONSE" | python3 -m json.tool
+          echo "---"
+          echo "summary=$(echo "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("summary",""))')" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Review pending papers
+        run: |
+          echo "Reviewing pending papers..."
+          RESPONSE=$(curl -sf -X POST "$API_BASE/api/v1/batch/review-pending" \
+            -H "X-API-Key: $API_KEY" \
+            --max-time 1800) || { echo "Review call failed"; exit 1; }
+          echo "$RESPONSE" | python3 -m json.tool
+
+      - name: Run tournaments
+        if: steps.context.outputs.run_tournament == 'true'
+        run: |
+          echo "Running family tournaments..."
+          RESPONSE=$(curl -sf -X POST "$API_BASE/api/v1/batch/tournament" \
+            -H "X-API-Key: $API_KEY" \
+            --max-time 1800) || { echo "Tournament call failed"; exit 1; }
+          echo "$RESPONSE" | python3 -m json.tool
+
+      - name: Promote eligible papers
+        run: |
+          echo "Promoting eligible papers to candidate..."
+          RESPONSE=$(curl -sf -X POST "$API_BASE/api/v1/batch/promote" \
+            -H "X-API-Key: $API_KEY" \
+            --max-time 300) || { echo "Promote call failed"; exit 1; }
+          echo "$RESPONSE" | python3 -m json.tool
