@@ -272,3 +272,40 @@ async def batch_promote(request: Request):
         results=results,
         summary=f"Promoted {promoted}, blocked {blocked} (of {len(eligible)} eligible)",
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /batch/seed-families
+# ---------------------------------------------------------------------------
+
+@router.post("/batch/seed-families", response_model=BatchResult)
+async def batch_seed_families(request: Request):
+    """Seed the 11 paper families if not already present."""
+    from seeds.families import FAMILIES
+
+    results: list[dict[str, Any]] = []
+
+    async with async_session() as session:
+        existing = (
+            await session.execute(select(PaperFamily.id))
+        ).scalars().all()
+        existing_ids = set(existing)
+
+        inserted = 0
+        for fam in FAMILIES:
+            if fam["id"] in existing_ids:
+                results.append({"family_id": fam["id"], "status": "already_exists"})
+                continue
+
+            family = PaperFamily(**fam)
+            session.add(family)
+            results.append({"family_id": fam["id"], "status": "created"})
+            inserted += 1
+
+        await session.commit()
+
+    return BatchResult(
+        action="seed-families",
+        results=results,
+        summary=f"Seeded {inserted} families ({len(existing_ids)} already existed)",
+    )
