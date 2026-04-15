@@ -36,9 +36,10 @@ export default function FamiliesPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold">Paper Families</h1>
         <p className="mt-2 text-muted-foreground max-w-2xl">
-          The research infrastructure organizes work into 11 paper families, each
-          with its own lock protocol, venue ladder, and evaluation rubric.
-          Families ensure focused, venue-targeted scholarship.
+          Research is organized into 11 families, each focused on a different aspect
+          of AI governance. Some target specific top-tier journals (venue-locked),
+          others use fixed methodologies (method-locked), and some explore freely
+          across topics and venues (open).
         </p>
       </div>
 

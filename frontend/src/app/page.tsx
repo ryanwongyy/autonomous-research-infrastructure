@@ -55,26 +55,32 @@ export default function HomePage() {
       {/* Hero Section */}
       <section className="mb-12">
         <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-          Autonomous research infrastructure for AI governance
+          AI governance research, generated and reviewed autonomously
         </h1>
         <p className="mt-4 max-w-3xl text-lg text-muted-foreground leading-relaxed">
-          A platform for automating rigorous AI governance research across 11 paper
-          families. Each paper moves through a 7-role bounded pipeline, 5-layer
-          independent review, and family-local tournament benchmarking before
-          selective public release.
+          This platform generates rigorous research on how institutions govern AI
+          &mdash; from procurement rules to international coordination. Every paper
+          is independently reviewed, ranked against peer-reviewed benchmarks, and
+          published transparently.
         </p>
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+          <span>11 research families</span>
+          <span>7-role generation pipeline</span>
+          <span>5-layer independent review</span>
+          <span>TrueSkill tournament ranking</span>
+        </div>
         <div className="mt-6 flex gap-3">
           <Link
-            href="/families"
+            href="/publications"
             className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
           >
-            Explore Families
+            Browse Research
           </Link>
           <Link
-            href="/throughput"
+            href="/methodology"
             className="inline-flex items-center rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
           >
-            View Pipeline
+            How It Works
           </Link>
         </div>
       </section>
@@ -90,7 +96,7 @@ export default function HomePage() {
       {/* Stat Cards */}
       <section className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
         <Link href="/throughput" className="group">
-          <Card className="transition-colors group-hover:border-primary/40">
+          <Card className="transition-colors group-hover:border-primary/40 group-focus-within:border-primary/40 group-focus-within:ring-2 group-focus-within:ring-primary/20">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Total Active Papers
@@ -107,8 +113,8 @@ export default function HomePage() {
           </Card>
         </Link>
 
-        <Link href="/throughput" className="group">
-          <Card className="transition-colors group-hover:border-primary/40">
+        <Link href="/publications" className="group">
+          <Card className="transition-colors group-hover:border-primary/40 group-focus-within:border-primary/40 group-focus-within:ring-2 group-focus-within:ring-primary/20">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Submission Ready
@@ -126,7 +132,7 @@ export default function HomePage() {
         </Link>
 
         <Link href="/families" className="group">
-          <Card className="transition-colors group-hover:border-primary/40">
+          <Card className="transition-colors group-hover:border-primary/40 group-focus-within:border-primary/40 group-focus-within:ring-2 group-focus-within:ring-primary/20">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Families Active
@@ -144,7 +150,7 @@ export default function HomePage() {
         </Link>
 
         <Link href="/sources" className="group">
-          <Card className="transition-colors group-hover:border-primary/40">
+          <Card className="transition-colors group-hover:border-primary/40 group-focus-within:border-primary/40 group-focus-within:ring-2 group-focus-within:ring-primary/20">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Source Cards
@@ -181,8 +187,15 @@ export default function HomePage() {
           </div>
         ) : families.length === 0 ? (
           <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              No paper families available yet. The backend API may not be running.
+            <CardContent className="py-12 text-center">
+              <p className="text-lg font-medium mb-2">Paper families loading soon</p>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                Research families organize papers by methodology and target venue.
+                Once the pipeline begins generating, families will appear here.
+              </p>
+              <Link href="/methodology" className="mt-3 inline-block text-sm text-primary hover:underline">
+                Learn how the pipeline works
+              </Link>
             </CardContent>
           </Card>
         ) : (

@@ -71,10 +71,29 @@ export default function PublicationsPage() {
       {!loading && papers.length === 0 && !error && (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">
-              No published papers yet. The autonomous pipeline will populate
-              this page as papers pass review.
+            <p className="text-lg font-medium mb-2">No published papers yet</p>
+            <p className="text-sm text-muted-foreground max-w-lg mx-auto">
+              Papers progress through the pipeline: generation, 5-layer review, tournament
+              ranking, then release. Once papers reach candidate or public status, they
+              appear here.
             </p>
+            <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <span className="rounded bg-gray-100 dark:bg-gray-800 px-2 py-0.5">Internal</span>
+              <span>&rarr;</span>
+              <span className="rounded bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-amber-800 dark:text-amber-300">Candidate</span>
+              <span>&rarr;</span>
+              <span className="rounded bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 text-blue-800 dark:text-blue-300">Submitted</span>
+              <span>&rarr;</span>
+              <span className="rounded bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-green-800 dark:text-green-300">Public</span>
+            </div>
+            <div className="mt-4 flex justify-center gap-3">
+              <Link href="/leaderboard" className="text-sm text-primary hover:underline">
+                View leaderboard
+              </Link>
+              <Link href="/methodology" className="text-sm text-primary hover:underline">
+                How it works
+              </Link>
+            </div>
           </CardContent>
         </Card>
       )}

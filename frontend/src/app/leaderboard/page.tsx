@@ -152,27 +152,24 @@ export default function LeaderboardPage() {
       {/* No family selected */}
       {!selectedFamily && families.length > 0 && (
         <Card>
-          <CardContent className="py-16 text-center text-muted-foreground">
-            <p className="text-lg font-medium mb-2">Select a Paper Family</p>
-            <p className="text-sm">
-              Leaderboards are family-scoped. Choose a family above to see its paper rankings.
+          <CardContent className="py-12 text-center">
+            <p className="text-lg font-medium mb-2">Choose a research family</p>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+              Each family has its own leaderboard where papers compete via TrueSkill
+              tournament ranking. Pick a family to see how papers compare.
             </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {families.slice(0, 6).map((f) => (
+            <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 gap-2 max-w-lg mx-auto">
+              {families.map((f) => (
                 <button
                   key={f.id}
                   type="button"
-                  className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted transition-colors"
+                  className="rounded-lg border border-border bg-background px-3 py-2 text-sm hover:bg-muted hover:border-primary/40 transition-colors text-left"
                   onClick={() => setSelectedFamily(f.id)}
                 >
-                  {f.short_name}
+                  <span className="font-medium text-foreground block truncate">{f.short_name}</span>
+                  <span className="text-xs text-muted-foreground">{f.paper_count} papers</span>
                 </button>
               ))}
-              {families.length > 6 && (
-                <span className="text-xs self-center text-muted-foreground">
-                  +{families.length - 6} more
-                </span>
-              )}
             </div>
           </CardContent>
         </Card>

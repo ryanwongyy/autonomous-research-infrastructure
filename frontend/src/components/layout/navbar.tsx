@@ -2,16 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const navItems = [
   { href: "/", label: "Home" },
+  { href: "/publications", label: "Publications" },
   { href: "/families", label: "Families" },
-  { href: "/sources", label: "Sources" },
   { href: "/leaderboard", label: "Leaderboard" },
-  { href: "/throughput", label: "Throughput" },
-  { href: "/reliability", label: "Reliability" },
-  { href: "/failures", label: "Failures" },
-  { href: "/rsi", label: "RSI" },
+  { href: "/throughput", label: "Pipeline" },
   { href: "/methodology", label: "Methodology" },
   { href: "/about", label: "About" },
 ];
@@ -19,6 +17,7 @@ const navItems = [
 export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const mobileNavRef = useRef<HTMLElement>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
     if (mobileOpen && mobileNavRef.current) {
@@ -48,15 +47,23 @@ export function Navbar() {
 
         {/* Desktop nav */}
         <nav aria-label="Primary navigation" className="hidden md:flex items-center gap-6 text-sm">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {item.label}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={isActive ? "page" : undefined}
+                className={`transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm ${
+                  isActive
+                    ? "text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* Mobile toggle */}
@@ -77,6 +84,7 @@ export function Navbar() {
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
           >
             {mobileOpen ? (
               <>
@@ -97,16 +105,24 @@ export function Navbar() {
       {/* Mobile nav */}
       {mobileOpen && (
         <nav ref={mobileNavRef} aria-label="Mobile navigation" className="md:hidden border-t bg-background px-4 py-3 space-y-2">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="block text-sm text-muted-foreground hover:text-foreground py-1"
-              onClick={() => setMobileOpen(false)}
-            >
-              {item.label}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={isActive ? "page" : undefined}
+                className={`block text-sm py-1 ${
+                  isActive
+                    ? "text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setMobileOpen(false)}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
       )}
     </header>

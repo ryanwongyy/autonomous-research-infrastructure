@@ -26,12 +26,17 @@ function lockLabel(protocol: string): string {
 export const FamilyCard = memo(function FamilyCard({ family }: FamilyCardProps) {
   return (
     <Link href={`/families/${family.id}`} className="block group" aria-label={`View family: ${family.name} (${family.paper_count} papers)`}>
-      <Card className="h-full transition-shadow hover:shadow-md group-hover:ring-2 group-hover:ring-primary/20">
+      <Card className="h-full transition-shadow hover:shadow-md group-hover:ring-2 group-hover:ring-primary/20 group-focus-within:ring-2 group-focus-within:ring-primary/20">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
-            <CardTitle className="text-base leading-snug">
-              {family.short_name}
-            </CardTitle>
+            <div className="min-w-0">
+              <CardTitle className="text-base leading-snug line-clamp-2">
+                {family.name}
+              </CardTitle>
+              <span className="text-xs font-mono text-muted-foreground">
+                {family.short_name}
+              </span>
+            </div>
             <span
               className={cn(
                 "inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold shrink-0",
@@ -41,7 +46,7 @@ export const FamilyCard = memo(function FamilyCard({ family }: FamilyCardProps) 
               {lockLabel(family.lock_protocol_type)}
             </span>
           </div>
-          <CardDescription className="line-clamp-2 text-xs">
+          <CardDescription className="line-clamp-2 text-xs mt-1">
             {family.description}
           </CardDescription>
         </CardHeader>
@@ -52,11 +57,6 @@ export const FamilyCard = memo(function FamilyCard({ family }: FamilyCardProps) 
             </span>
             <span>papers</span>
           </div>
-          {family.elite_ceiling && (
-            <p className="mt-1.5 text-[11px] text-muted-foreground truncate">
-              Ceiling: {family.elite_ceiling}
-            </p>
-          )}
           {family.venue_ladder && (
             <div className="mt-2 flex flex-wrap gap-1">
               {family.venue_ladder.flagship.slice(0, 2).map((v) => (
