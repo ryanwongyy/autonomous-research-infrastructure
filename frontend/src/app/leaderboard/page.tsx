@@ -107,6 +107,7 @@ export default function LeaderboardPage() {
           <select
             id="family-select"
             aria-label="Select paper family"
+            aria-describedby={error ? "family-select-error" : undefined}
             value={selectedFamily}
             onChange={(e) => setSelectedFamily(e.target.value)}
             className="rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 w-full max-w-sm"
@@ -140,14 +141,25 @@ export default function LeaderboardPage() {
         </div>
       )}
 
-      {/* Error state */}
+      {/* Error state — linked to select via aria-describedby */}
       {error && (
-        <Card className="mb-4 border-red-200 dark:border-red-900">
+        <Card id="family-select-error" role="alert" className="mb-4 border-red-200 dark:border-red-900">
           <CardContent className="py-4 text-center text-sm text-red-600 dark:text-red-400">
             {error}
           </CardContent>
         </Card>
       )}
+
+      {/* Screen-reader live region: announces loading state transitions */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {loading
+          ? "Loading leaderboard data…"
+          : selectedFamily && entries.length > 0
+          ? `Leaderboard loaded. ${entries.length} papers ranked.`
+          : selectedFamily && entries.length === 0 && !error
+          ? "Leaderboard loaded. No papers ranked yet."
+          : null}
+      </div>
 
       {/* No family selected */}
       {!selectedFamily && families.length > 0 && (

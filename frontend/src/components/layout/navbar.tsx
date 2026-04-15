@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -17,8 +17,10 @@ const navItems = [
 export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const mobileNavRef = useRef<HTMLElement>(null);
+  const toggleBtnRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
 
+  // Focus first link when menu opens
   useEffect(() => {
     if (mobileOpen && mobileNavRef.current) {
       const firstLink = mobileNavRef.current.querySelector("a");
@@ -26,14 +28,41 @@ export function Navbar() {
     }
   }, [mobileOpen]);
 
+  // Close on Escape and restore focus to toggle button
+  const closeMobile = useCallback(() => {
+    setMobileOpen(false);
+    // Restore focus to the toggle button after closing
+    requestAnimationFrame(() => toggleBtnRef.current?.focus());
+  }, []);
+
   useEffect(() => {
     if (!mobileOpen) return;
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setMobileOpen(false);
+      if (e.key === "Escape") {
+        closeMobile();
+        return;
+      }
+
+      // Focus trapping: cycle Tab through mobile nav links only
+      if (e.key === "Tab" && mobileNavRef.current) {
+        const focusable = mobileNavRef.current.querySelectorAll<HTMLElement>("a, button");
+        if (focusable.length === 0) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [mobileOpen]);
+  }, [mobileOpen, closeMobile]);
 
   return (
     <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -66,13 +95,15 @@ export function Navbar() {
           })}
         </nav>
 
-        {/* Mobile toggle */}
+        {/* Mobile toggle — 44px min touch target (WCAG 2.5.8) */}
         <button
+          ref={toggleBtnRef}
           type="button"
-          className="ml-auto md:hidden text-muted-foreground hover:text-foreground"
+          className="ml-auto md:hidden flex items-center justify-center min-w-[44px] min-h-[44px] -mr-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-colors"
           onClick={() => setMobileOpen(!mobileOpen)}
           aria-expanded={mobileOpen}
-          aria-label="Toggle navigation"
+          aria-controls="mobile-nav"
+          aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -102,9 +133,14 @@ export function Navbar() {
         </button>
       </div>
 
-      {/* Mobile nav */}
+      {/* Mobile nav — focus-trapped panel */}
       {mobileOpen && (
-        <nav ref={mobileNavRef} aria-label="Mobile navigation" className="md:hidden border-t bg-background px-4 py-3 space-y-2">
+        <nav
+          ref={mobileNavRef}
+          id="mobile-nav"
+          aria-label="Mobile navigation"
+          className="md:hidden border-t bg-background px-4 py-3 space-y-2"
+        >
           {navItems.map((item) => {
             const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
@@ -112,12 +148,12 @@ export function Navbar() {
                 key={item.href}
                 href={item.href}
                 aria-current={isActive ? "page" : undefined}
-                className={`block text-sm py-1 ${
+                className={`block text-sm py-2 min-h-[44px] flex items-center ${
                   isActive
                     ? "text-foreground font-medium"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
-                onClick={() => setMobileOpen(false)}
+                onClick={closeMobile}
               >
                 {item.label}
               </Link>
