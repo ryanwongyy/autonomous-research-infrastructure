@@ -95,19 +95,13 @@ async def audit_layer_effectiveness(
 
         # ---- marginal_catch_rate: failures detected ONLY at this layer ----
         # Get paper_ids of failures detected at this layer
-        papers_caught_here_q = (
-            select(FailureRecord.paper_id)
-            .where(FailureRecord.detection_stage == layer)
+        papers_caught_here_q = select(FailureRecord.paper_id).where(
+            FailureRecord.detection_stage == layer
         )
         if family_id is not None:
-            papers_caught_here_q = papers_caught_here_q.where(
-                FailureRecord.family_id == family_id
-            )
+            papers_caught_here_q = papers_caught_here_q.where(FailureRecord.family_id == family_id)
         papers_caught_here_q = papers_caught_here_q.distinct()
-        papers_caught_here = {
-            row[0]
-            for row in (await session.execute(papers_caught_here_q)).all()
-        }
+        papers_caught_here = {row[0] for row in (await session.execute(papers_caught_here_q)).all()}
 
         # For each such paper, check if it was ALSO caught at another layer
         other_layers = [lyr for lyr in REVIEW_LAYERS if lyr != layer]
@@ -120,45 +114,33 @@ async def audit_layer_effectiveness(
                 )
                 .distinct()
             )
-            also_caught = {
-                row[0]
-                for row in (await session.execute(also_caught_q)).all()
-            }
+            also_caught = {row[0] for row in (await session.execute(also_caught_q)).all()}
         else:
             also_caught = set()
 
         unique_catches = len(papers_caught_here - also_caught)
-        marginal_catch_rate = (
-            unique_catches / total_reviews if total_reviews else 0.0
-        )
+        marginal_catch_rate = unique_catches / total_reviews if total_reviews else 0.0
 
         # ---- false_negative_count: papers that PASSED this layer but later ----
         # got rejected at a venue or had corrections
-        passed_paper_ids_q = (
-            select(Review.paper_id)
-            .where(Review.stage == layer, Review.verdict == "pass")
+        passed_paper_ids_q = select(Review.paper_id).where(
+            Review.stage == layer, Review.verdict == "pass"
         )
         if family_id is not None:
-            passed_paper_ids_q = passed_paper_ids_q.where(
-                Review.family_id == family_id
-            )
+            passed_paper_ids_q = passed_paper_ids_q.where(Review.family_id == family_id)
         passed_paper_ids_q = passed_paper_ids_q.distinct()
 
         passed_ids_sub = passed_paper_ids_q.subquery()
 
         # Papers rejected at venue
-        venue_rejected_q = select(
-            func.count(func.distinct(SubmissionOutcome.paper_id))
-        ).where(
+        venue_rejected_q = select(func.count(func.distinct(SubmissionOutcome.paper_id))).where(
             SubmissionOutcome.paper_id.in_(select(passed_ids_sub.c.paper_id)),
             SubmissionOutcome.decision.in_(["rejected", "desk_reject"]),
         )
         venue_rejected_count = (await session.execute(venue_rejected_q)).scalar() or 0
 
         # Papers with corrections
-        corrections_q = select(
-            func.count(func.distinct(CorrectionRecord.paper_id))
-        ).where(
+        corrections_q = select(func.count(func.distinct(CorrectionRecord.paper_id))).where(
             CorrectionRecord.paper_id.in_(select(passed_ids_sub.c.paper_id)),
         )
         corrections_count = (await session.execute(corrections_q)).scalar() or 0
@@ -166,40 +148,37 @@ async def audit_layer_effectiveness(
         false_negative_count = venue_rejected_count + corrections_count
 
         # ---- false_positive_count: papers that FAILED this layer but later succeeded ----
-        failed_paper_ids_q = (
-            select(Review.paper_id)
-            .where(Review.stage == layer, Review.verdict == "fail")
+        failed_paper_ids_q = select(Review.paper_id).where(
+            Review.stage == layer, Review.verdict == "fail"
         )
         if family_id is not None:
-            failed_paper_ids_q = failed_paper_ids_q.where(
-                Review.family_id == family_id
-            )
+            failed_paper_ids_q = failed_paper_ids_q.where(Review.family_id == family_id)
         failed_paper_ids_q = failed_paper_ids_q.distinct()
 
         failed_ids_sub = failed_paper_ids_q.subquery()
 
-        venue_accepted_q = select(
-            func.count(func.distinct(SubmissionOutcome.paper_id))
-        ).where(
+        venue_accepted_q = select(func.count(func.distinct(SubmissionOutcome.paper_id))).where(
             SubmissionOutcome.paper_id.in_(select(failed_ids_sub.c.paper_id)),
             SubmissionOutcome.decision.in_(["accepted", "r_and_r"]),
         )
         false_positive_count = (await session.execute(venue_accepted_q)).scalar() or 0
 
-        results.append({
-            "layer": layer,
-            "total_reviews": total_reviews,
-            "pass_count": pass_count,
-            "fail_count": fail_count,
-            "pass_rate": round(pass_rate, 4),
-            "fail_rate": round(fail_rate, 4),
-            "catch_rate": round(catch_rate, 4),
-            "caught_count": caught_count,
-            "unique_catches": unique_catches,
-            "marginal_catch_rate": round(marginal_catch_rate, 4),
-            "false_negative_count": false_negative_count,
-            "false_positive_count": false_positive_count,
-        })
+        results.append(
+            {
+                "layer": layer,
+                "total_reviews": total_reviews,
+                "pass_count": pass_count,
+                "fail_count": fail_count,
+                "pass_rate": round(pass_rate, 4),
+                "fail_rate": round(fail_rate, 4),
+                "catch_rate": round(catch_rate, 4),
+                "caught_count": caught_count,
+                "unique_catches": unique_catches,
+                "marginal_catch_rate": round(marginal_catch_rate, 4),
+                "false_negative_count": false_negative_count,
+                "false_positive_count": false_positive_count,
+            }
+        )
 
     return results
 
@@ -249,7 +228,10 @@ async def propose_layer_bypass(
         f"false negatives: {layer_stats['false_negative_count']}."
     )
 
-    bypass_condition = condition or {"reason": "low_marginal_catch_rate", "threshold": MARGINAL_CATCH_RATE_THRESHOLD}
+    bypass_condition = condition or {
+        "reason": "low_marginal_catch_rate",
+        "threshold": MARGINAL_CATCH_RATE_THRESHOLD,
+    }
 
     # Create experiment
     experiment = await create_experiment(
@@ -279,7 +261,10 @@ async def propose_layer_bypass(
 
     logger.info(
         "Proposed bypass for layer %s (family=%s, experiment=%s, config=%s)",
-        layer_name, family_id, experiment.id, config.id,
+        layer_name,
+        family_id,
+        experiment.id,
+        config.id,
     )
 
     return {
@@ -315,7 +300,9 @@ async def enable_shadow_layer(
 
     logger.info(
         "Enabled shadow layer %s (family=%s, config=%s)",
-        layer_name, family_id, config.id,
+        layer_name,
+        family_id,
+        config.id,
     )
 
     return {
@@ -400,9 +387,7 @@ async def evaluate_shadow_results(
 
     # False alarm rate: shadow fails that did NOT have problems / total shadow fails
     false_alarms = len(shadow_fail_ids) - would_have_prevented
-    false_alarm_rate = (
-        false_alarms / len(shadow_fail_ids) if shadow_fail_ids else 0.0
-    )
+    false_alarm_rate = false_alarms / len(shadow_fail_ids) if shadow_fail_ids else 0.0
 
     # Recommendation
     if catch_rate >= 0.05 and false_alarm_rate < 0.50:
@@ -428,7 +413,9 @@ async def evaluate_shadow_results(
 
     logger.info(
         "Evaluated shadow config %s: catch_rate=%.4f, recommendation=%s",
-        layer_config_id, catch_rate, recommendation,
+        layer_config_id,
+        catch_rate,
+        recommendation,
     )
 
     return {
@@ -463,29 +450,33 @@ async def get_layer_config(
     for layer in REVIEW_LAYERS:
         cfg = config_by_layer.get(layer)
         if cfg is not None:
-            output.append({
-                "id": cfg.id,
-                "layer_name": cfg.layer_name,
-                "family_id": cfg.family_id,
-                "status": cfg.status,
-                "bypass_condition": safe_json_loads(cfg.bypass_condition_json, None),
-                "shadow_results": safe_json_loads(cfg.shadow_results_json, None),
-                "effectiveness_score": cfg.effectiveness_score,
-                "experiment_id": cfg.experiment_id,
-                "updated_at": cfg.updated_at.isoformat() if cfg.updated_at else None,
-            })
+            output.append(
+                {
+                    "id": cfg.id,
+                    "layer_name": cfg.layer_name,
+                    "family_id": cfg.family_id,
+                    "status": cfg.status,
+                    "bypass_condition": safe_json_loads(cfg.bypass_condition_json, None),
+                    "shadow_results": safe_json_loads(cfg.shadow_results_json, None),
+                    "effectiveness_score": cfg.effectiveness_score,
+                    "experiment_id": cfg.experiment_id,
+                    "updated_at": cfg.updated_at.isoformat() if cfg.updated_at else None,
+                }
+            )
         else:
             # Default: layer is active with no overrides
-            output.append({
-                "id": None,
-                "layer_name": layer,
-                "family_id": family_id,
-                "status": "active",
-                "bypass_condition": None,
-                "shadow_results": None,
-                "effectiveness_score": None,
-                "experiment_id": None,
-                "updated_at": None,
-            })
+            output.append(
+                {
+                    "id": None,
+                    "layer_name": layer,
+                    "family_id": family_id,
+                    "status": "active",
+                    "bypass_condition": None,
+                    "shadow_results": None,
+                    "effectiveness_score": None,
+                    "experiment_id": None,
+                    "updated_at": None,
+                }
+            )
 
     return output

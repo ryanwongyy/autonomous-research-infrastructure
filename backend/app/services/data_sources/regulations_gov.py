@@ -80,18 +80,20 @@ class RegulationsGovSource(BaseDataSource):
             for doc in records:
                 attrs = doc.get("attributes", {})
                 excerpt = attrs.get("highlightedContent") or attrs.get("title") or ""
-                writer.writerow({
-                    "document_id": doc.get("id", ""),
-                    "document_type": attrs.get("documentType", ""),
-                    "title": attrs.get("title", ""),
-                    "posted_date": attrs.get("postedDate", ""),
-                    "agency_id": attrs.get("agencyId", ""),
-                    "docket_id": attrs.get("docketId", ""),
-                    "comment_start_date": attrs.get("commentStartDate", ""),
-                    "comment_end_date": attrs.get("commentEndDate", ""),
-                    "url": f"https://www.regulations.gov/document/{doc.get('id', '')}",
-                    "excerpt": excerpt[:500] if excerpt else "",
-                })
+                writer.writerow(
+                    {
+                        "document_id": doc.get("id", ""),
+                        "document_type": attrs.get("documentType", ""),
+                        "title": attrs.get("title", ""),
+                        "posted_date": attrs.get("postedDate", ""),
+                        "agency_id": attrs.get("agencyId", ""),
+                        "docket_id": attrs.get("docketId", ""),
+                        "comment_start_date": attrs.get("commentStartDate", ""),
+                        "comment_end_date": attrs.get("commentEndDate", ""),
+                        "url": f"https://www.regulations.gov/document/{doc.get('id', '')}",
+                        "excerpt": excerpt[:500] if excerpt else "",
+                    }
+                )
 
         return FetchResult(
             success=True,
@@ -101,9 +103,7 @@ class RegulationsGovSource(BaseDataSource):
             description=f"Fetched {len(records)} Regulations.gov documents for: {query[:80]}",
         )
 
-    async def _paginated_fetch(
-        self, api_params: dict, max_records: int
-    ) -> list[dict]:
+    async def _paginated_fetch(self, api_params: dict, max_records: int) -> list[dict]:
         records: list[dict] = []
         page = 1
 

@@ -12,9 +12,18 @@ from app.models.paper import Paper
 logger = logging.getLogger(__name__)
 
 FUNNEL_STAGES_ORDERED = [
-    "idea", "screened", "locked", "ingesting", "analyzing",
-    "drafting", "reviewing", "revision", "benchmark",
-    "candidate", "submitted", "public",
+    "idea",
+    "screened",
+    "locked",
+    "ingesting",
+    "analyzing",
+    "drafting",
+    "reviewing",
+    "revision",
+    "benchmark",
+    "candidate",
+    "submitted",
+    "public",
 ]
 
 TERMINAL_STAGES = ["public", "killed"]
@@ -42,10 +51,7 @@ async def get_funnel_snapshot(
         "total_completed": count,
     }
     """
-    query = (
-        select(Paper.funnel_stage, func.count())
-        .group_by(Paper.funnel_stage)
-    )
+    query = select(Paper.funnel_stage, func.count()).group_by(Paper.funnel_stage)
     if family_id:
         query = query.where(Paper.family_id == family_id)
 
@@ -121,13 +127,15 @@ async def get_conversion_rates(
 
         rate = count_at_to / count_at_from if count_at_from > 0 else 0.0
 
-        conversions.append({
-            "from": from_stage,
-            "to": to_stage,
-            "rate": round(rate, 4),
-            "count": count_at_from,
-            "converted": count_at_to,
-        })
+        conversions.append(
+            {
+                "from": from_stage,
+                "to": to_stage,
+                "rate": round(rate, 4),
+                "count": count_at_from,
+                "converted": count_at_to,
+            }
+        )
 
     # Overall: idea -> public
     total_ideas = cumulative.get("idea", 0)
@@ -194,7 +202,14 @@ async def detect_bottlenecks(
 
         stuck_count = len(stuck_papers)
         total_days = sum(
-            (now - (p.updated_at.replace(tzinfo=UTC) if p.updated_at.tzinfo is None else p.updated_at)).days
+            (
+                now
+                - (
+                    p.updated_at.replace(tzinfo=UTC)
+                    if p.updated_at.tzinfo is None
+                    else p.updated_at
+                )
+            ).days
             for p in stuck_papers
         )
         avg_days = total_days / stuck_count if stuck_count > 0 else 0.0
@@ -209,13 +224,15 @@ async def detect_bottlenecks(
         else:
             severity = "low"
 
-        bottlenecks.append({
-            "stage": stage,
-            "stuck_count": stuck_count,
-            "avg_days_in_stage": round(avg_days, 1),
-            "threshold_days": threshold_days,
-            "severity": severity,
-        })
+        bottlenecks.append(
+            {
+                "stage": stage,
+                "stuck_count": stuck_count,
+                "avg_days_in_stage": round(avg_days, 1),
+                "threshold_days": threshold_days,
+                "severity": severity,
+            }
+        )
 
     # Sort by severity then count
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -250,9 +267,7 @@ async def project_annual_output(
 
     # Count papers created (ideas generated) in the window
     ideas_result = await session.execute(
-        select(func.count())
-        .select_from(Paper)
-        .where(Paper.created_at >= cutoff)
+        select(func.count()).select_from(Paper).where(Paper.created_at >= cutoff)
     )
     recent_ideas = ideas_result.scalar() or 0
 
@@ -308,7 +323,9 @@ async def project_annual_output(
         if target > 0 and actual < target:
             deficit = target - actual
             pct = round((actual / target) * 100, 1) if target > 0 else 0
-            gaps.append(f"{key}: projected {actual} vs target {target} ({pct}% of target, deficit {deficit})")
+            gaps.append(
+                f"{key}: projected {actual} vs target {target} ({pct}% of target, deficit {deficit})"
+            )
 
     if gaps:
         gap_analysis = "Behind target on: " + "; ".join(gaps)

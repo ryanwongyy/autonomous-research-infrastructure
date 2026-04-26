@@ -52,6 +52,7 @@ async def domain_data(db_session: AsyncSession):
 
 # -- GET /config/domains -------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_list_domains_empty(client):
     resp = await client.get("/api/v1/config/domains")
@@ -87,6 +88,7 @@ async def test_list_domains_response_shape(client, domain_data):
 
 # -- GET /config/domains/{domain_id} -------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_get_domain_detail(client, domain_data):
     resp = await client.get("/api/v1/config/domains/ai_governance")
@@ -103,6 +105,7 @@ async def test_get_domain_not_found(client):
 
 
 # -- PUT /config/domains/{domain_id} -------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_update_domain(client, domain_data):
@@ -126,6 +129,7 @@ async def test_update_domain_not_found(client):
 
 
 # -- GET /config/models --------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_list_models(client):

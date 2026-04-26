@@ -30,21 +30,23 @@ async def list_sources(
 
     output = []
     for src in sources:
-        output.append({
-            "id": src.id,
-            "name": src.name,
-            "url": src.url,
-            "tier": src.tier,
-            "source_type": src.source_type,
-            "update_frequency": src.update_frequency,
-            "access_method": src.access_method,
-            "requires_key": src.requires_key,
-            "canonical_unit": src.canonical_unit,
-            "claim_permissions": safe_json_loads(src.claim_permissions, []),
-            "claim_prohibitions": safe_json_loads(src.claim_prohibitions, []),
-            "fragility_score": src.fragility_score,
-            "active": src.active,
-        })
+        output.append(
+            {
+                "id": src.id,
+                "name": src.name,
+                "url": src.url,
+                "tier": src.tier,
+                "source_type": src.source_type,
+                "update_frequency": src.update_frequency,
+                "access_method": src.access_method,
+                "requires_key": src.requires_key,
+                "canonical_unit": src.canonical_unit,
+                "claim_permissions": safe_json_loads(src.claim_permissions, []),
+                "claim_prohibitions": safe_json_loads(src.claim_prohibitions, []),
+                "fragility_score": src.fragility_score,
+                "active": src.active,
+            }
+        )
 
     return {"sources": output, "total": len(output)}
 
@@ -108,16 +110,18 @@ async def list_snapshots(
 
     output = []
     for snap in snapshots:
-        output.append({
-            "id": snap.id,
-            "source_card_id": snap.source_card_id,
-            "snapshot_hash": snap.snapshot_hash,
-            "snapshot_path": snap.snapshot_path,
-            "file_size_bytes": snap.file_size_bytes,
-            "record_count": snap.record_count,
-            "fetch_parameters": safe_json_loads(snap.fetch_parameters),
-            "fetched_at": snap.fetched_at.isoformat() if snap.fetched_at else None,
-            "verified_at": snap.verified_at.isoformat() if snap.verified_at else None,
-        })
+        output.append(
+            {
+                "id": snap.id,
+                "source_card_id": snap.source_card_id,
+                "snapshot_hash": snap.snapshot_hash,
+                "snapshot_path": snap.snapshot_path,
+                "file_size_bytes": snap.file_size_bytes,
+                "record_count": snap.record_count,
+                "fetch_parameters": safe_json_loads(snap.fetch_parameters),
+                "fetched_at": snap.fetched_at.isoformat() if snap.fetched_at else None,
+                "verified_at": snap.verified_at.isoformat() if snap.verified_at else None,
+            }
+        )
 
     return {"source_id": source_id, "snapshots": output, "total": len(output)}

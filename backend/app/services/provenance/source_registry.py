@@ -23,9 +23,7 @@ CENTRAL_CLAIM_TYPES = {"empirical", "doctrinal"}
 SNAPSHOT_FRESHNESS_DAYS = 30
 
 
-async def get_source_card(
-    session: AsyncSession, source_id: str
-) -> SourceCard | None:
+async def get_source_card(session: AsyncSession, source_id: str) -> SourceCard | None:
     """Fetch a single source card by its ID, eagerly loading snapshots."""
     stmt = (
         select(SourceCard)
@@ -120,17 +118,14 @@ async def validate_claim_against_source(
     return {
         "valid": True,
         "reason": (
-            f"Claim type '{claim_type}' is permitted by source "
-            f"'{source_card.name}' (Tier {tier})."
+            f"Claim type '{claim_type}' is permitted by source '{source_card.name}' (Tier {tier})."
         ),
         "tier": tier,
         "requires_corroboration": requires_corroboration,
     }
 
 
-async def check_source_freshness(
-    session: AsyncSession, source_id: str
-) -> dict:
+async def check_source_freshness(session: AsyncSession, source_id: str) -> dict:
     """Check whether a source has a recent snapshot.
 
     Returns:

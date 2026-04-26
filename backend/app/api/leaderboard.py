@@ -35,9 +35,7 @@ async def get_leaderboard(
     """
     # Validate family exists
     family = (
-        await db.execute(
-            select(PaperFamily).where(PaperFamily.id == family_id)
-        )
+        await db.execute(select(PaperFamily).where(PaperFamily.id == family_id))
     ).scalar_one_or_none()
 
     if not family:

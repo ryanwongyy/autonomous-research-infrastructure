@@ -51,9 +51,7 @@ class CourtListenerSource(BaseDataSource):
         }
 
         try:
-            records = await self._paginated_fetch(
-                api_params, headers, params.max_records
-            )
+            records = await self._paginated_fetch(api_params, headers, params.max_records)
         except Exception as e:
             logger.error("CourtListener fetch failed: %s", e)
             return FetchResult(success=False, error=str(e))
@@ -84,19 +82,19 @@ class CourtListenerSource(BaseDataSource):
             for opinion in records:
                 cluster = opinion.get("cluster", {}) or {}
                 snippet = opinion.get("snippet") or opinion.get("plain_text", "") or ""
-                writer.writerow({
-                    "opinion_id": opinion.get("id", ""),
-                    "case_name": cluster.get("case_name", opinion.get("case_name", "")),
-                    "court": opinion.get("court", ""),
-                    "date_filed": cluster.get(
-                        "date_filed", opinion.get("date_filed", "")
-                    ),
-                    "citation": cluster.get("citation_string", ""),
-                    "type": opinion.get("type", ""),
-                    "status": cluster.get("precedential_status", ""),
-                    "url": f"https://www.courtlistener.com{opinion.get('absolute_url', '')}",
-                    "snippet": snippet[:500] if snippet else "",
-                })
+                writer.writerow(
+                    {
+                        "opinion_id": opinion.get("id", ""),
+                        "case_name": cluster.get("case_name", opinion.get("case_name", "")),
+                        "court": opinion.get("court", ""),
+                        "date_filed": cluster.get("date_filed", opinion.get("date_filed", "")),
+                        "citation": cluster.get("citation_string", ""),
+                        "type": opinion.get("type", ""),
+                        "status": cluster.get("precedential_status", ""),
+                        "url": f"https://www.courtlistener.com{opinion.get('absolute_url', '')}",
+                        "snippet": snippet[:500] if snippet else "",
+                    }
+                )
 
         return FetchResult(
             success=True,

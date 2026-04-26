@@ -57,9 +57,9 @@ async def compute_family_health(session: AsyncSession, family_id: str) -> dict:
         select(
             SubmissionOutcome.venue_name,
             func.count().label("submitted"),
-            func.sum(
-                case((SubmissionOutcome.decision == "accepted", 1), else_=0)
-            ).label("accepted"),
+            func.sum(case((SubmissionOutcome.decision == "accepted", 1), else_=0)).label(
+                "accepted"
+            ),
         )
         .join(Paper, Paper.id == SubmissionOutcome.paper_id)
         .where(Paper.family_id == family_id)
@@ -76,12 +76,14 @@ async def compute_family_health(session: AsyncSession, family_id: str) -> dict:
         total_submitted += submitted
         total_accepted += accepted
         rate = accepted / submitted if submitted > 0 else 0.0
-        venue_performance.append({
-            "venue": venue_name,
-            "submitted": submitted,
-            "accepted": accepted,
-            "rate": round(rate, 4),
-        })
+        venue_performance.append(
+            {
+                "venue": venue_name,
+                "submitted": submitted,
+                "accepted": accepted,
+                "rate": round(rate, 4),
+            }
+        )
 
     acceptance_rate = total_accepted / total_submitted if total_submitted > 0 else 0.0
 
@@ -94,13 +96,15 @@ async def compute_family_health(session: AsyncSession, family_id: str) -> dict:
     )
     rating_row = rating_stats_result.one_or_none()
     avg_rank = float(rating_row.avg_rank) if rating_row and rating_row.avg_rank is not None else 0.0
-    avg_conservative = float(rating_row.avg_conservative) if rating_row and rating_row.avg_conservative is not None else 0.0
+    avg_conservative = (
+        float(rating_row.avg_conservative)
+        if rating_row and rating_row.avg_conservative is not None
+        else 0.0
+    )
 
     # -- failure stats --------------------------------------------------------
     failure_count_result = await session.execute(
-        select(func.count()).select_from(FailureRecord).where(
-            FailureRecord.family_id == family_id
-        )
+        select(func.count()).select_from(FailureRecord).where(FailureRecord.family_id == family_id)
     )
     failure_count: int = failure_count_result.scalar() or 0
     failure_rate = failure_count / paper_count if paper_count > 0 else 0.0
@@ -116,8 +120,7 @@ async def compute_family_health(session: AsyncSession, family_id: str) -> dict:
         .limit(5)
     )
     top_failure_types = [
-        {"type": row.failure_type, "count": row.cnt}
-        for row in top_failures_result.all()
+        {"type": row.failure_type, "count": row.cnt} for row in top_failures_result.all()
     ]
 
     # -- reliability scores ---------------------------------------------------
@@ -130,8 +133,7 @@ async def compute_family_health(session: AsyncSession, family_id: str) -> dict:
         .group_by(ReliabilityMetric.metric_type)
     )
     reliability_scores: dict[str, float] = {
-        row.metric_type: round(float(row.avg_val), 4)
-        for row in reliability_result.all()
+        row.metric_type: round(float(row.avg_val), 4) for row in reliability_result.all()
     }
 
     # -- method performance ---------------------------------------------------
@@ -169,9 +171,7 @@ async def compute_family_health(session: AsyncSession, family_id: str) -> dict:
     failure_penalty = max(0.0, 1.0 - failure_rate)
 
     health_score = (
-        _W_ACCEPTANCE * acceptance_rate
-        + _W_RATING * norm_rating
-        + _W_RELIABILITY * avg_reliability
+        _W_ACCEPTANCE * acceptance_rate + _W_RATING * norm_rating + _W_RELIABILITY * avg_reliability
     ) * failure_penalty
 
     health_score = round(max(0.0, min(1.0, health_score)), 4)
@@ -205,9 +205,7 @@ async def propose_config_changes(
     rationale_parts: list[str] = []
 
     # -- Load current family config -------------------------------------------
-    fam_result = await session.execute(
-        select(PaperFamily).where(PaperFamily.id == family_id)
-    )
+    fam_result = await session.execute(select(PaperFamily).where(PaperFamily.id == family_id))
     family = fam_result.scalar_one_or_none()
     if family is None:
         raise ValueError(f"PaperFamily '{family_id}' not found")
@@ -223,32 +221,26 @@ async def propose_config_changes(
     flagship_venues = venue_ladder.get("flagship", [])
     elite_venues = venue_ladder.get("elite_field", [])
 
-    flagship_accepted = sum(
-        venue_perf.get(v, {}).get("accepted", 0) for v in flagship_venues
-    )
-    flagship_submitted = sum(
-        venue_perf.get(v, {}).get("submitted", 0) for v in flagship_venues
-    )
-    elite_accepted = sum(
-        venue_perf.get(v, {}).get("accepted", 0) for v in elite_venues
-    )
-    elite_submitted = sum(
-        venue_perf.get(v, {}).get("submitted", 0) for v in elite_venues
-    )
+    flagship_accepted = sum(venue_perf.get(v, {}).get("accepted", 0) for v in flagship_venues)
+    flagship_submitted = sum(venue_perf.get(v, {}).get("submitted", 0) for v in flagship_venues)
+    elite_accepted = sum(venue_perf.get(v, {}).get("accepted", 0) for v in elite_venues)
+    elite_submitted = sum(venue_perf.get(v, {}).get("submitted", 0) for v in elite_venues)
 
     flagship_rate = flagship_accepted / flagship_submitted if flagship_submitted > 0 else 0.0
     elite_rate = elite_accepted / elite_submitted if elite_submitted > 0 else 0.0
 
     if flagship_submitted > 0 and flagship_rate == 0.0 and elite_rate > 0.0:
-        changes.append({
-            "field": "venue_ladder",
-            "action": "reorder",
-            "detail": (
-                f"Flagship venues ({', '.join(flagship_venues)}) have 0% acceptance "
-                f"while elite_field venues have {elite_rate:.0%}. "
-                "Consider promoting elite_field venues to primary targets."
-            ),
-        })
+        changes.append(
+            {
+                "field": "venue_ladder",
+                "action": "reorder",
+                "detail": (
+                    f"Flagship venues ({', '.join(flagship_venues)}) have 0% acceptance "
+                    f"while elite_field venues have {elite_rate:.0%}. "
+                    "Consider promoting elite_field venues to primary targets."
+                ),
+            }
+        )
         rationale_parts.append("venue ladder misaligned with acceptance outcomes")
 
     # -- Method performance analysis ------------------------------------------
@@ -257,18 +249,18 @@ async def propose_config_changes(
         top_method = method_perf[0]
         # Check if the top-performing method is not already first in accepted_methods
         if accepted_methods and top_method["method"] not in accepted_methods[:1]:
-            changes.append({
-                "field": "accepted_methods",
-                "action": "promote",
-                "detail": (
-                    f"Method '{top_method['method']}' has highest avg rating "
-                    f"({top_method['avg_rating']}) across {top_method['count']} papers. "
-                    "Consider promoting it in accepted_methods ordering."
-                ),
-            })
-            rationale_parts.append(
-                f"method '{top_method['method']}' outperforms others"
+            changes.append(
+                {
+                    "field": "accepted_methods",
+                    "action": "promote",
+                    "detail": (
+                        f"Method '{top_method['method']}' has highest avg rating "
+                        f"({top_method['avg_rating']}) across {top_method['count']} papers. "
+                        "Consider promoting it in accepted_methods ordering."
+                    ),
+                }
             )
+            rationale_parts.append(f"method '{top_method['method']}' outperforms others")
 
     # -- Failure pattern analysis ---------------------------------------------
     top_failures = health_report.get("top_failure_types", [])
@@ -280,15 +272,17 @@ async def propose_config_changes(
         if dominant_share > 0.4:
             # Check if this failure type is already in mandatory_checks
             if dominant["type"] not in mandatory_checks:
-                changes.append({
-                    "field": "mandatory_checks",
-                    "action": "add",
-                    "detail": (
-                        f"Failure type '{dominant['type']}' accounts for "
-                        f"{dominant_share:.0%} of all failures ({dominant['count']}/{total_failures}). "
-                        "Consider adding a mandatory check for it."
-                    ),
-                })
+                changes.append(
+                    {
+                        "field": "mandatory_checks",
+                        "action": "add",
+                        "detail": (
+                            f"Failure type '{dominant['type']}' accounts for "
+                            f"{dominant_share:.0%} of all failures ({dominant['count']}/{total_failures}). "
+                            "Consider adding a mandatory check for it."
+                        ),
+                    }
+                )
                 rationale_parts.append(
                     f"dominant failure type '{dominant['type']}' not in mandatory_checks"
                 )
@@ -297,15 +291,17 @@ async def propose_config_changes(
     reliability = health_report.get("reliability_scores", {})
     for metric_type, avg_val in reliability.items():
         if avg_val < 0.5:
-            changes.append({
-                "field": "fatal_failures",
-                "action": "tighten",
-                "detail": (
-                    f"Reliability metric '{metric_type}' averages {avg_val:.2f}, "
-                    "well below 0.5. Consider tightening fatal_failures criteria "
-                    "to catch these earlier."
-                ),
-            })
+            changes.append(
+                {
+                    "field": "fatal_failures",
+                    "action": "tighten",
+                    "detail": (
+                        f"Reliability metric '{metric_type}' averages {avg_val:.2f}, "
+                        "well below 0.5. Consider tightening fatal_failures criteria "
+                        "to catch these earlier."
+                    ),
+                }
+            )
             rationale_parts.append(f"low reliability on '{metric_type}'")
 
     # -- Create experiment ----------------------------------------------------
@@ -336,7 +332,9 @@ async def propose_config_changes(
 
     logger.info(
         "Proposed %d config changes for family %s (experiment %s)",
-        len(changes), family_id, experiment.id,
+        len(changes),
+        family_id,
+        experiment.id,
     )
 
     return {

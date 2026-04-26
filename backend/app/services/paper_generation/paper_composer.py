@@ -88,7 +88,9 @@ async def compose_paper(
                 timeout=60,
             )
             if result.returncode != 0 and pass_num == 1:
-                compilation_error = result.stderr[:500] if result.stderr else "pdflatex returned non-zero"
+                compilation_error = (
+                    result.stderr[:500] if result.stderr else "pdflatex returned non-zero"
+                )
                 logger.warning("pdflatex failed (pass %d): %s", pass_num + 1, compilation_error)
 
         candidate = os.path.join(paper_dir, "paper.pdf")

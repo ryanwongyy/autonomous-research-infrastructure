@@ -41,6 +41,7 @@ async def throughput_data(db_session: AsyncSession):
 
 # ── GET /throughput/funnel ────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_funnel_empty(client):
     """Funnel snapshot on empty DB returns default structure."""
@@ -66,6 +67,7 @@ async def test_funnel_filtered_by_family(client, throughput_data):
 
 # ── GET /throughput/conversion-rates ──────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_conversion_rates_empty(client):
     resp = await client.get("/api/v1/throughput/conversion-rates")
@@ -80,6 +82,7 @@ async def test_conversion_rates_with_data(client, throughput_data):
 
 # ── GET /throughput/bottlenecks ───────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_bottlenecks_empty(client):
     resp = await client.get("/api/v1/throughput/bottlenecks")
@@ -87,6 +90,7 @@ async def test_bottlenecks_empty(client):
 
 
 # ── GET /throughput/projections ───────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_projections_empty(client):
@@ -96,6 +100,7 @@ async def test_projections_empty(client):
 
 # ── GET /throughput/daily-targets ─────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_daily_targets_empty(client):
     resp = await client.get("/api/v1/throughput/daily-targets")
@@ -103,6 +108,7 @@ async def test_daily_targets_empty(client):
 
 
 # ── GET /throughput/work-queue ────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_work_queue_empty(client):

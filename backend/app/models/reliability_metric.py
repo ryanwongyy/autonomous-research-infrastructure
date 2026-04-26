@@ -19,8 +19,12 @@ class ReliabilityMetric(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     paper_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("papers.id"), index=True)
-    family_id: Mapped[str | None] = mapped_column(String(8), ForeignKey("paper_families.id"), index=True)
-    metric_type: Mapped[str] = mapped_column(String(64), nullable=False)  # replication_rate, manifest_fidelity, expert_score, benchmark_percentile, correction_rate
+    family_id: Mapped[str | None] = mapped_column(
+        String(8), ForeignKey("paper_families.id"), index=True
+    )
+    metric_type: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )  # replication_rate, manifest_fidelity, expert_score, benchmark_percentile, correction_rate
     value: Mapped[float] = mapped_column(Float, nullable=False)
     threshold: Mapped[float | None] = mapped_column(Float)
     passes_threshold: Mapped[bool] = mapped_column(Boolean, default=True)

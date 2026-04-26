@@ -15,23 +15,34 @@ from app.models.rating import Rating
 async def memo_data(db_session: AsyncSession):
     """Create a paper (with optional rating) for significance memo tests."""
     family = PaperFamily(
-        id="F1", name="Test Family", short_name="TF",
-        description="For memo tests", lock_protocol_type="open", active=True,
+        id="F1",
+        name="Test Family",
+        short_name="TF",
+        description="For memo tests",
+        lock_protocol_type="open",
+        active=True,
     )
     db_session.add(family)
     await db_session.flush()
 
     paper = Paper(
-        id="memo_paper", title="Paper for Memo",
-        source="ape", family_id="F1", status="published",
+        id="memo_paper",
+        title="Paper for Memo",
+        source="ape",
+        family_id="F1",
+        status="published",
         review_status="peer_reviewed",
     )
     db_session.add(paper)
     await db_session.flush()
 
     rating = Rating(
-        paper_id="memo_paper", mu=30.0, sigma=4.0,
-        conservative_rating=18.0, elo=1650, matches_played=10,
+        paper_id="memo_paper",
+        mu=30.0,
+        sigma=4.0,
+        conservative_rating=18.0,
+        elo=1650,
+        matches_played=10,
         rank=3,
     )
     db_session.add(rating)
@@ -40,6 +51,7 @@ async def memo_data(db_session: AsyncSession):
 
 
 # -- GET /papers/{paper_id}/significance-memo (no memo yet) --------------------
+
 
 @pytest.mark.asyncio
 async def test_get_memo_none(client, memo_data):
@@ -60,6 +72,7 @@ async def test_get_memo_nonexistent_paper(client):
 
 
 # -- POST /papers/{paper_id}/significance-memo ---------------------------------
+
 
 @pytest.mark.asyncio
 async def test_create_memo_submit(client, memo_data):
@@ -121,6 +134,7 @@ async def test_create_memo_invalid_verdict(client, memo_data):
 
 
 # -- Round-trip: POST then GET -------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_memo_round_trip(client, memo_data):

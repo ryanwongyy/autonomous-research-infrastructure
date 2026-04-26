@@ -31,7 +31,9 @@ async def list_categories(
             continue
         cats = safe_json_loads(config.categories, [])
         for cat in cats:
-            category_entries.append({"slug": cat["slug"], "name": cat["name"], "domain_id": config.id})
+            category_entries.append(
+                {"slug": cat["slug"], "name": cat["name"], "domain_id": config.id}
+            )
 
     if category_entries:
         all_slugs = [c["slug"] for c in category_entries]
@@ -47,10 +49,12 @@ async def list_categories(
 
     categories = []
     for entry in category_entries:
-        categories.append({
-            **entry,
-            "paper_count": paper_counts.get(entry["slug"], 0),
-        })
+        categories.append(
+            {
+                **entry,
+                "paper_count": paper_counts.get(entry["slug"], 0),
+            }
+        )
 
     return categories
 

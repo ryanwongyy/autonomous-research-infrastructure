@@ -12,6 +12,7 @@ from app.models.rating import Rating
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest_asyncio.fixture
 async def stats_data(db_session: AsyncSession):
     """Create papers with ratings for stats queries."""
@@ -73,6 +74,7 @@ async def stats_data(db_session: AsyncSession):
 
 # ── GET /stats ────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_stats_empty_db(client):
     """Stats endpoint works on an empty database."""
@@ -105,14 +107,20 @@ async def test_stats_response_shape(client, stats_data):
     resp = await client.get("/api/v1/stats")
     data = resp.json()
     expected = {
-        "total_papers", "total_ai_papers", "total_benchmark_papers",
-        "total_matches", "total_tournament_runs", "ai_win_rate",
-        "avg_elo_ai", "avg_elo_benchmark",
+        "total_papers",
+        "total_ai_papers",
+        "total_benchmark_papers",
+        "total_matches",
+        "total_tournament_runs",
+        "ai_win_rate",
+        "avg_elo_ai",
+        "avg_elo_benchmark",
     }
     assert expected.issubset(set(data.keys()))
 
 
 # ── GET /stats/rating-distribution ────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_rating_distribution_empty(client):
@@ -151,6 +159,7 @@ async def test_rating_distribution_custom_bucket_size(client, stats_data):
 
 
 # ── GET /stats/trueskill-progression ──────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_trueskill_progression_empty(client):

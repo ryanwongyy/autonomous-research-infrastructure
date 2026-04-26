@@ -26,7 +26,9 @@ class CollegialSession(Base):
     __tablename__ = "collegial_sessions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    paper_id: Mapped[str] = mapped_column(String(64), ForeignKey("papers.id"), nullable=False, index=True)
+    paper_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("papers.id"), nullable=False, index=True
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     colleague_ids_json: Mapped[str] = mapped_column(Text, nullable=False)
     manuscript_snapshot: Mapped[str | None] = mapped_column(Text)

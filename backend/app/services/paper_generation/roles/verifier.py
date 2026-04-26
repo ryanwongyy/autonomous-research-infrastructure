@@ -93,6 +93,7 @@ No markdown, no commentary outside the JSON."""
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def verify_manuscript(
     session: AsyncSession,
     paper_id: str,
@@ -114,8 +115,7 @@ async def verify_manuscript(
     lock = await _load_active_lock(session, paper_id)
     if lock is None:
         raise ValueError(
-            f"No active lock for paper '{paper_id}'. "
-            "Cannot verify without a locked design."
+            f"No active lock for paper '{paper_id}'. Cannot verify without a locked design."
         )
 
     # Load all claim map entries
@@ -140,13 +140,15 @@ async def verify_manuscript(
     # Build claims YAML for the LLM
     claims_data = []
     for c in claims:
-        claims_data.append({
-            "claim_text": c.claim_text,
-            "claim_type": c.claim_type,
-            "source_card_id": c.source_card_id,
-            "source_span_ref": c.source_span_ref,
-            "result_object_ref": c.result_object_ref,
-        })
+        claims_data.append(
+            {
+                "claim_text": c.claim_text,
+                "claim_type": c.claim_type,
+                "source_card_id": c.source_card_id,
+                "source_span_ref": c.source_span_ref,
+                "result_object_ref": c.result_object_ref,
+            }
+        )
 
     claims_yaml = yaml.dump(claims_data, default_flow_style=False, sort_keys=False)
 
@@ -213,6 +215,7 @@ async def verify_manuscript(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
@@ -222,9 +225,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -246,10 +247,7 @@ async def _build_source_tier_map(session: AsyncSession) -> str:
     if not cards:
         return "(no source cards registered)"
 
-    lines = [
-        f"- {sc.id}: Tier {sc.tier} ({sc.name})"
-        for sc in cards
-    ]
+    lines = [f"- {sc.id}: Tier {sc.tier} ({sc.name})" for sc in cards]
     return "\n".join(lines)
 
 

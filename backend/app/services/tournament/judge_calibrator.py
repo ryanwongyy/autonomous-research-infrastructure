@@ -63,18 +63,14 @@ async def generate_calibration_variants(
     what would be corrupted.
     """
     family = (
-        await session.execute(
-            select(PaperFamily).where(PaperFamily.id == family_id)
-        )
+        await session.execute(select(PaperFamily).where(PaperFamily.id == family_id))
     ).scalar_one_or_none()
 
     if not family:
         raise ValueError(f"Family {family_id} not found")
 
     base_paper = (
-        await session.execute(
-            select(Paper).where(Paper.id == base_paper_id)
-        )
+        await session.execute(select(Paper).where(Paper.id == base_paper_id))
     ).scalar_one_or_none()
 
     if not base_paper:
@@ -86,10 +82,7 @@ async def generate_calibration_variants(
     # Pick up to variant_count corruptions (without replacement when possible)
     chosen = random.sample(corruptions, min(variant_count, len(corruptions)))
 
-    variants = [
-        build_variant_description(base_paper.title, c, idx)
-        for idx, c in enumerate(chosen)
-    ]
+    variants = [build_variant_description(base_paper.title, c, idx) for idx, c in enumerate(chosen)]
 
     return variants
 
@@ -120,9 +113,7 @@ async def run_calibration_check(
         }
     """
     family = (
-        await session.execute(
-            select(PaperFamily).where(PaperFamily.id == family_id)
-        )
+        await session.execute(select(PaperFamily).where(PaperFamily.id == family_id))
     ).scalar_one_or_none()
 
     if not family:
@@ -132,7 +123,11 @@ async def run_calibration_check(
     base_paper = (
         await session.execute(
             select(Paper)
-            .where(Paper.family_id == family_id, Paper.source == "benchmark", Paper.status == "published")
+            .where(
+                Paper.family_id == family_id,
+                Paper.source == "benchmark",
+                Paper.status == "published",
+            )
             .limit(1)
         )
     ).scalar_one_or_none()
@@ -166,11 +161,14 @@ async def run_calibration_check(
     if judge_model != model:
         # Caller requested a specific model -- honour it if possible
         from app.services.llm.router import get_provider_for_model
+
         try:
             provider = get_provider_for_model(judge_model)
             model = judge_model
         except Exception:
-            logger.debug("Requested judge model %s not available, using default %s", judge_model, model)
+            logger.debug(
+                "Requested judge model %s not available, using default %s", judge_model, model
+            )
 
     base_content = base_paper.abstract or f"Title: {base_paper.title}"
     base_title = base_paper.title
@@ -225,37 +223,44 @@ async def run_calibration_check(
                 if discriminated:
                     fatal_detected += 1
 
-            details.append({
-                "variant_index": variant["variant_index"],
-                "corruption_name": variant["corruption_name"],
-                "severity": variant["severity"],
-                "result_a_first": result_a_first.winner,
-                "result_b_first": result_b_first.winner,
-                "final_result": final,
-                "discriminated_correctly": discriminated,
-                "position_swap_consistent": swap_consistent,
-            })
+            details.append(
+                {
+                    "variant_index": variant["variant_index"],
+                    "corruption_name": variant["corruption_name"],
+                    "severity": variant["severity"],
+                    "result_a_first": result_a_first.winner,
+                    "result_b_first": result_b_first.winner,
+                    "final_result": final,
+                    "discriminated_correctly": discriminated,
+                    "position_swap_consistent": swap_consistent,
+                }
+            )
 
         except Exception as e:
             logger.error("Calibration variant check failed: %s", e)
-            details.append({
-                "variant_index": variant["variant_index"],
-                "corruption_name": variant["corruption_name"],
-                "severity": variant["severity"],
-                "error": str(e),
-                "discriminated_correctly": False,
-                "position_swap_consistent": False,
-            })
+            details.append(
+                {
+                    "variant_index": variant["variant_index"],
+                    "corruption_name": variant["corruption_name"],
+                    "severity": variant["severity"],
+                    "error": str(e),
+                    "discriminated_correctly": False,
+                    "position_swap_consistent": False,
+                }
+            )
 
     discrimination_score = correct_discriminations / max(total_checks, 1)
     consistency_score = consistent_swaps / max(total_checks, 1)
     fatal_detection_rate = fatal_detected / max(fatal_total, 1) if fatal_total else 1.0
 
-    calibrated = all(s > 0.7 for s in [
-        discrimination_score,
-        consistency_score,
-        fatal_detection_rate,
-    ])
+    calibrated = all(
+        s > 0.7
+        for s in [
+            discrimination_score,
+            consistency_score,
+            fatal_detection_rate,
+        ]
+    )
 
     return {
         "family_id": family_id,
@@ -271,6 +276,7 @@ async def run_calibration_check(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _empty_report(family_id: str, judge_model: str, reason: str = "") -> dict:
     """Return a zeroed-out calibration report."""

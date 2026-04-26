@@ -34,13 +34,13 @@ describe("AutonomyCardSection", () => {
   });
 
   it("applies green color for high score (>=0.8)", () => {
-    const { container } = render(<AutonomyCardSection card={makeCard({ overall_autonomy_score: 0.9 })} />);
+    render(<AutonomyCardSection card={makeCard({ overall_autonomy_score: 0.9 })} />);
     const scoreEl = screen.getByText("90%");
     expect(scoreEl.className).toContain("emerald");
   });
 
   it("applies red color for low score (<0.5)", () => {
-    const { container } = render(<AutonomyCardSection card={makeCard({ overall_autonomy_score: 0.3 })} />);
+    render(<AutonomyCardSection card={makeCard({ overall_autonomy_score: 0.3 })} />);
     const scoreEl = screen.getByText("30%");
     expect(scoreEl.className).toContain("red");
   });

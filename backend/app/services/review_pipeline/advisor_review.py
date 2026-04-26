@@ -96,5 +96,11 @@ async def run_advisor_review(paper_id: str) -> bool:
 
         await db.commit()
 
-    logger.info("[%s] Advisor review: %d/%d passed (threshold: %d)", paper_id, pass_count, len(advisor_models), threshold)
+    logger.info(
+        "[%s] Advisor review: %d/%d passed (threshold: %d)",
+        paper_id,
+        pass_count,
+        len(advisor_models),
+        threshold,
+    )
     return pass_count >= threshold

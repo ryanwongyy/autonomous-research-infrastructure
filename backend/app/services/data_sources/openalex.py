@@ -93,18 +93,20 @@ class OpenAlexSource(BaseDataSource):
 
                 oa = work.get("open_access") or {}
 
-                writer.writerow({
-                    "openalex_id": work.get("id", ""),
-                    "doi": work.get("doi", ""),
-                    "title": work.get("title", ""),
-                    "publication_year": work.get("publication_year", ""),
-                    "cited_by_count": work.get("cited_by_count", 0),
-                    "type": work.get("type", ""),
-                    "is_oa": oa.get("is_oa", False),
-                    "first_author": first_author,
-                    "journal": journal,
-                    "top_concept": top_concept,
-                })
+                writer.writerow(
+                    {
+                        "openalex_id": work.get("id", ""),
+                        "doi": work.get("doi", ""),
+                        "title": work.get("title", ""),
+                        "publication_year": work.get("publication_year", ""),
+                        "cited_by_count": work.get("cited_by_count", 0),
+                        "type": work.get("type", ""),
+                        "is_oa": oa.get("is_oa", False),
+                        "first_author": first_author,
+                        "journal": journal,
+                        "top_concept": top_concept,
+                    }
+                )
 
         return FetchResult(
             success=True,
@@ -114,9 +116,7 @@ class OpenAlexSource(BaseDataSource):
             description=f"Fetched {len(records)} academic works from OpenAlex for: {query[:80]}",
         )
 
-    async def _paginated_fetch(
-        self, api_params: dict, max_records: int
-    ) -> list[dict]:
+    async def _paginated_fetch(self, api_params: dict, max_records: int) -> list[dict]:
         records: list[dict] = []
         cursor = "*"
 

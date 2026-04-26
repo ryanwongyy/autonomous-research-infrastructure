@@ -16,10 +16,14 @@ class ReviewLayerConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     layer_name: Mapped[str] = mapped_column(String(32))
-    family_id: Mapped[str | None] = mapped_column(String(8), ForeignKey("paper_families.id"), index=True)
+    family_id: Mapped[str | None] = mapped_column(
+        String(8), ForeignKey("paper_families.id"), index=True
+    )
     status: Mapped[str] = mapped_column(String(16))
     bypass_condition_json: Mapped[str | None] = mapped_column(Text)
     shadow_results_json: Mapped[str | None] = mapped_column(Text)
     effectiveness_score: Mapped[float | None] = mapped_column(Float)
-    experiment_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rsi_experiments.id"), index=True)
+    experiment_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("rsi_experiments.id"), index=True
+    )
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now())

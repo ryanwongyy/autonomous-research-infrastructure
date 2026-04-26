@@ -4,10 +4,11 @@ import { useState } from "react";
 
 interface ShareButtonsProps {
   title: string;
-  paperId: string;
+  /** Reserved for future canonical-URL building; not currently consumed. */
+  paperId?: string;
 }
 
-export function ShareButtons({ title, paperId }: ShareButtonsProps) {
+export function ShareButtons({ title }: ShareButtonsProps) {
   const [copied, setCopied] = useState(false);
 
   function getUrl() {

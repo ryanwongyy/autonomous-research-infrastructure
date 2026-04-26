@@ -14,7 +14,9 @@ class ExpertReview(Base):
     __tablename__ = "expert_reviews"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    paper_id: Mapped[str] = mapped_column(String(64), ForeignKey("papers.id"), nullable=False, index=True)
+    paper_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("papers.id"), nullable=False, index=True
+    )
     expert_name: Mapped[str] = mapped_column(String(256), nullable=False)
     affiliation: Mapped[str | None] = mapped_column(String(256))
     review_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)

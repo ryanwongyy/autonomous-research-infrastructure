@@ -16,8 +16,12 @@ class AcknowledgmentRecord(Base):
     __tablename__ = "acknowledgment_records"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    paper_id: Mapped[str] = mapped_column(String(64), ForeignKey("papers.id"), nullable=False, index=True)
-    colleague_id: Mapped[int] = mapped_column(Integer, ForeignKey("colleague_profiles.id"), nullable=False, index=True)
+    paper_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("papers.id"), nullable=False, index=True
+    )
+    colleague_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("colleague_profiles.id"), nullable=False, index=True
+    )
     contribution_type: Mapped[str] = mapped_column(String(32), nullable=False)
     contribution_summary: Mapped[str] = mapped_column(Text, nullable=False)
     exchanges_count: Mapped[int] = mapped_column(Integer, default=0)

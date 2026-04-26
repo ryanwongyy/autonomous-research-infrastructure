@@ -20,7 +20,9 @@ class PromptVersion(Base):
     version: Mapped[int] = mapped_column(Integer)
     prompt_text: Mapped[str] = mapped_column(Text)
     diff_from_previous: Mapped[str | None] = mapped_column(Text)
-    experiment_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rsi_experiments.id"), index=True)
+    experiment_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("rsi_experiments.id"), index=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     performance_json: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now())

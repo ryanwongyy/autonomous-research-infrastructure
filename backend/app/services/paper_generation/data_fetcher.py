@@ -70,9 +70,7 @@ async def fetch_data(idea: ResearchIdea, paper_dir: str) -> DataResult:
                 total_rows += result.row_count
                 if result.columns:
                     all_columns = result.columns  # keep last set
-                logger.info(
-                    "Fetched %d rows from %s", result.row_count, source_id
-                )
+                logger.info("Fetched %d rows from %s", result.row_count, source_id)
             elif result.error:
                 logger.warning("Source %s failed: %s", source_id, result.error)
         except Exception as e:
@@ -87,9 +85,7 @@ async def fetch_data(idea: ResearchIdea, paper_dir: str) -> DataResult:
                 year = 2015 + (i % 10)
                 treatment = 1 if i > 50 else 0
                 outcome = 10 + treatment * 2 + (i % 5) * 0.5
-                f.write(
-                    f"{i},{year},{treatment},{outcome:.2f},{i*0.1:.2f},{i*0.05:.2f}\n"
-                )
+                f.write(f"{i},{year},{treatment},{outcome:.2f},{i * 0.1:.2f},{i * 0.05:.2f}\n")
         fetched_files.append(placeholder_path)
         total_rows = 100
         all_columns = [

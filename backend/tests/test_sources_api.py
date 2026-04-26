@@ -38,7 +38,7 @@ async def source_data(db_session: AsyncSession):
         requires_key=True,
         canonical_unit="opinion",
         claim_permissions='["judicial_opinions"]',
-        claim_prohibitions='[]',
+        claim_prohibitions="[]",
         fragility_score=0.3,
         active=True,
     )
@@ -52,8 +52,8 @@ async def source_data(db_session: AsyncSession):
         access_method="scrape",
         requires_key=False,
         canonical_unit="page",
-        claim_permissions='[]',
-        claim_prohibitions='[]',
+        claim_permissions="[]",
+        claim_prohibitions="[]",
         fragility_score=0.9,
         active=False,
     )
@@ -63,6 +63,7 @@ async def source_data(db_session: AsyncSession):
 
 
 # ── GET /sources ──────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_list_sources_empty(client):
@@ -100,6 +101,7 @@ async def test_list_sources_filter_by_tier(client, source_data):
 
 # ── GET /sources/{source_id} ─────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_get_source_detail(client, source_data):
     resp = await client.get("/api/v1/sources/federal_register")
@@ -117,6 +119,7 @@ async def test_get_source_not_found(client):
 
 
 # ── GET /sources/{source_id}/snapshots ────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_snapshots_empty(client, source_data):

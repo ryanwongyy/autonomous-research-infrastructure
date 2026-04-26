@@ -23,7 +23,7 @@ RELEASE_TRANSITIONS = {
         "all_reviews_passed",
         "package_complete",
         "lock_intact",
-        "benchmark_advisory",       # Advisory only — no longer a hard gate
+        "benchmark_advisory",  # Advisory only — no longer a hard gate
     ],
     ("candidate", "submitted"): [
         "human_signoff",
@@ -32,7 +32,7 @@ RELEASE_TRANSITIONS = {
         "significance_memo_present",  # Human editorial sign-off required
     ],
     ("submitted", "public"): [
-        "submission_confirmed",   # External submission recorded
+        "submission_confirmed",  # External submission recorded
     ],
     # Reverse transitions (for rejection)
     ("candidate", "internal"): ["rejection_recorded"],
@@ -77,10 +77,7 @@ async def _check_all_reviews_passed(session: AsyncSession, paper: Paper) -> dict
             "detail": f"Missing review stages: {', '.join(sorted(missing_stages))}",
         }
 
-    failed_stages = [
-        stage for stage, review in stage_verdicts.items()
-        if review.verdict == "fail"
-    ]
+    failed_stages = [stage for stage, review in stage_verdicts.items() if review.verdict == "fail"]
 
     if failed_stages:
         return {
@@ -98,9 +95,7 @@ async def _check_all_reviews_passed(session: AsyncSession, paper: Paper) -> dict
 
 async def _check_package_complete(session: AsyncSession, paper: Paper) -> dict:
     """PaperPackage must exist with a valid manifest hash."""
-    result = await session.execute(
-        select(PaperPackage).where(PaperPackage.paper_id == paper.id)
-    )
+    result = await session.execute(select(PaperPackage).where(PaperPackage.paper_id == paper.id))
     package = result.scalar_one_or_none()
 
     if not package:
@@ -133,9 +128,7 @@ async def _check_lock_intact(session: AsyncSession, paper: Paper) -> dict:
             "detail": "Paper has no lock_hash set.",
         }
 
-    result = await session.execute(
-        select(PaperPackage).where(PaperPackage.paper_id == paper.id)
-    )
+    result = await session.execute(select(PaperPackage).where(PaperPackage.paper_id == paper.id))
     package = result.scalar_one_or_none()
 
     if not package:
@@ -159,7 +152,9 @@ async def _check_lock_intact(session: AsyncSession, paper: Paper) -> dict:
         else:
             logger.warning(
                 "Lock hash mismatch for paper %s (soft enforcement): paper=%s package=%s",
-                paper.id, paper.lock_hash, package.lock_artifact_hash,
+                paper.id,
+                paper.lock_hash,
+                package.lock_artifact_hash,
             )
 
     return {
@@ -175,9 +170,7 @@ async def _check_benchmark_advisory(session: AsyncSession, paper: Paper) -> dict
     Tournament performance is a noisy signal, not a publication verdict.
     The actual submission decision is gated by the significance memo (Phase 2).
     """
-    rating_result = await session.execute(
-        select(Rating).where(Rating.paper_id == paper.id)
-    )
+    rating_result = await session.execute(select(Rating).where(Rating.paper_id == paper.id))
     rating = rating_result.scalar_one_or_none()
 
     if rating is None:
@@ -191,8 +184,16 @@ async def _check_benchmark_advisory(session: AsyncSession, paper: Paper) -> dict
             ),
         }
 
-    ci_lower = rating.confidence_lower if rating.confidence_lower is not None else rating.mu - 1.96 * rating.sigma
-    ci_upper = rating.confidence_upper if rating.confidence_upper is not None else rating.mu + 1.96 * rating.sigma
+    ci_lower = (
+        rating.confidence_lower
+        if rating.confidence_lower is not None
+        else rating.mu - 1.96 * rating.sigma
+    )
+    ci_upper = (
+        rating.confidence_upper
+        if rating.confidence_upper is not None
+        else rating.mu + 1.96 * rating.sigma
+    )
 
     return {
         "name": "benchmark_advisory",
@@ -250,9 +251,7 @@ async def _check_significance_memo_present(session: AsyncSession, paper: Paper) 
 
 async def _check_human_signoff(session: AsyncSession, paper: Paper) -> dict:
     """PaperPackage must have authorship_declaration set (human approved)."""
-    result = await session.execute(
-        select(PaperPackage).where(PaperPackage.paper_id == paper.id)
-    )
+    result = await session.execute(select(PaperPackage).where(PaperPackage.paper_id == paper.id))
     package = result.scalar_one_or_none()
 
     if not package or not package.authorship_declaration:
@@ -410,9 +409,7 @@ async def check_transition_preconditions(
         "blockers": [str]  # names of unmet preconditions
     }
     """
-    result = await session.execute(
-        select(Paper).where(Paper.id == paper_id)
-    )
+    result = await session.execute(select(Paper).where(Paper.id == paper_id))
     paper = result.scalar_one_or_none()
 
     if not paper:
@@ -449,11 +446,13 @@ async def check_transition_preconditions(
             result_item = await checker(session, paper)
             preconditions.append(result_item)
         else:
-            preconditions.append({
-                "name": name,
-                "met": False,
-                "detail": f"Unknown precondition checker: {name}",
-            })
+            preconditions.append(
+                {
+                    "name": name,
+                    "met": False,
+                    "detail": f"Unknown precondition checker: {name}",
+                }
+            )
 
     blockers = [p["name"] for p in preconditions if not p["met"]]
 
@@ -534,7 +533,11 @@ async def transition_release_status(
 
     logger.info(
         "Paper %s transitioned: %s -> %s (force=%s, approved_by=%s)",
-        paper_id, before_status, target_status, force, approved_by,
+        paper_id,
+        before_status,
+        target_status,
+        force,
+        approved_by,
     )
 
     return {
@@ -568,13 +571,15 @@ async def get_release_pipeline_status(
     for paper in papers:
         status = paper.release_status
         if status in pipeline:
-            pipeline[status].append({
-                "id": paper.id,
-                "title": paper.title,
-                "family_id": paper.family_id,
-                "funnel_stage": paper.funnel_stage,
-                "updated_at": paper.updated_at.isoformat() if paper.updated_at else None,
-            })
+            pipeline[status].append(
+                {
+                    "id": paper.id,
+                    "title": paper.title,
+                    "family_id": paper.family_id,
+                    "funnel_stage": paper.funnel_stage,
+                    "updated_at": paper.updated_at.isoformat() if paper.updated_at else None,
+                }
+            )
 
     counts = {status: len(items) for status, items in pipeline.items()}
 

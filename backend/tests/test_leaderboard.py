@@ -12,6 +12,7 @@ from app.models.rating import Rating
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest_asyncio.fixture
 async def leaderboard_data(db_session: AsyncSession):
     """Create a family with papers and ratings for leaderboard queries."""
@@ -62,6 +63,7 @@ async def leaderboard_data(db_session: AsyncSession):
 
 # ── GET /leaderboard ──────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_leaderboard_requires_family_id(client):
     """family_id is required — omitting it returns 422."""
@@ -108,9 +110,20 @@ async def test_leaderboard_entry_shape(client, leaderboard_data):
     resp = await client.get("/api/v1/leaderboard?family_id=F1")
     entry = resp.json()["entries"][0]
     expected_fields = {
-        "rank", "rank_change_48h", "paper_id", "title", "source",
-        "mu", "sigma", "conservative_rating", "elo",
-        "matches_played", "wins", "losses", "draws", "review_status",
+        "rank",
+        "rank_change_48h",
+        "paper_id",
+        "title",
+        "source",
+        "mu",
+        "sigma",
+        "conservative_rating",
+        "elo",
+        "matches_played",
+        "wins",
+        "losses",
+        "draws",
+        "review_status",
     }
     assert expected_fields.issubset(set(entry.keys()))
 

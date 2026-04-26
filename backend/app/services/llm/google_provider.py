@@ -31,9 +31,13 @@ class GoogleProvider(LLMProvider):
             if msg["role"] == "system":
                 system_instruction = msg["content"]
             elif msg["role"] == "user":
-                contents.append(types.Content(role="user", parts=[types.Part.from_text(msg["content"])]))
+                contents.append(
+                    types.Content(role="user", parts=[types.Part.from_text(msg["content"])])
+                )
             elif msg["role"] == "assistant":
-                contents.append(types.Content(role="model", parts=[types.Part.from_text(msg["content"])]))
+                contents.append(
+                    types.Content(role="model", parts=[types.Part.from_text(msg["content"])])
+                )
 
         config = types.GenerateContentConfig(
             temperature=temperature,

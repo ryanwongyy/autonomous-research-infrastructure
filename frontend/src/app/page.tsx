@@ -46,7 +46,6 @@ export default function HomePage() {
   const totalPapers = funnel?.total_active ?? 0;
   const submissionReady = funnel?.total_completed ?? 0;
   const activeFamilies = families.filter((f) => f.active).length;
-  const totalSources = families.reduce((sum, f) => sum + f.paper_count, 0);
 
   const releaseInternalCount = release?.internal?.count ?? 0;
   const releaseCandidateCount = release?.candidate?.count ?? 0;

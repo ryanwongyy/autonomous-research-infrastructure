@@ -38,7 +38,9 @@ async def list_domains(db: AsyncSession = Depends(get_db)):
 
 @router.get("/config/domains/{domain_id}", response_model=DomainConfigResponse)
 async def get_domain(domain_id: str, db: AsyncSession = Depends(get_db)):
-    dc = (await db.execute(select(DomainConfig).where(DomainConfig.id == domain_id))).scalar_one_or_none()
+    dc = (
+        await db.execute(select(DomainConfig).where(DomainConfig.id == domain_id))
+    ).scalar_one_or_none()
     if not dc:
         raise HTTPException(status_code=404, detail="Domain config not found")
 
@@ -58,8 +60,12 @@ async def get_domain(domain_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/config/domains/{domain_id}", response_model=DomainConfigResponse)
-async def update_domain(domain_id: str, update: DomainConfigUpdate, db: AsyncSession = Depends(get_db)):
-    dc = (await db.execute(select(DomainConfig).where(DomainConfig.id == domain_id))).scalar_one_or_none()
+async def update_domain(
+    domain_id: str, update: DomainConfigUpdate, db: AsyncSession = Depends(get_db)
+):
+    dc = (
+        await db.execute(select(DomainConfig).where(DomainConfig.id == domain_id))
+    ).scalar_one_or_none()
     if not dc:
         raise HTTPException(status_code=404, detail="Domain config not found")
 

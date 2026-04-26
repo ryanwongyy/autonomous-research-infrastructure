@@ -98,22 +98,22 @@ class FederalRegisterSource(BaseDataSource):
             writer.writeheader()
             for doc in records:
                 agencies = doc.get("agencies") or []
-                agency_names = ", ".join(
-                    a.get("name", "") for a in agencies if isinstance(a, dict)
-                )
+                agency_names = ", ".join(a.get("name", "") for a in agencies if isinstance(a, dict))
                 abstract = doc.get("abstract") or ""
-                writer.writerow({
-                    "document_number": doc.get("document_number", ""),
-                    "title": doc.get("title", ""),
-                    "type": doc.get("type", ""),
-                    "publication_date": doc.get("publication_date", ""),
-                    "agency": agency_names,
-                    "action": doc.get("action", ""),
-                    "effective_on": doc.get("effective_on", ""),
-                    "citation": doc.get("citation", ""),
-                    "url": doc.get("html_url", ""),
-                    "abstract_excerpt": abstract[:500] if abstract else "",
-                })
+                writer.writerow(
+                    {
+                        "document_number": doc.get("document_number", ""),
+                        "title": doc.get("title", ""),
+                        "type": doc.get("type", ""),
+                        "publication_date": doc.get("publication_date", ""),
+                        "agency": agency_names,
+                        "action": doc.get("action", ""),
+                        "effective_on": doc.get("effective_on", ""),
+                        "citation": doc.get("citation", ""),
+                        "url": doc.get("html_url", ""),
+                        "abstract_excerpt": abstract[:500] if abstract else "",
+                    }
+                )
 
         return FetchResult(
             success=True,
@@ -123,9 +123,7 @@ class FederalRegisterSource(BaseDataSource):
             description=f"Fetched {len(records)} Federal Register documents for query: {query[:80]}",
         )
 
-    async def _paginated_fetch(
-        self, api_params: dict, max_records: int
-    ) -> list[dict]:
+    async def _paginated_fetch(self, api_params: dict, max_records: int) -> list[dict]:
         """Fetch documents with pagination."""
         records: list[dict] = []
         page = 1

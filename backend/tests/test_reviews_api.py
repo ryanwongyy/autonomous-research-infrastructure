@@ -15,8 +15,12 @@ from app.models.review import Review
 async def review_data(db_session: AsyncSession):
     """Create a paper with reviews."""
     family = PaperFamily(
-        id="F1", name="Test", short_name="T",
-        description="For review tests", lock_protocol_type="open", active=True,
+        id="F1",
+        name="Test",
+        short_name="T",
+        description="For review tests",
+        lock_protocol_type="open",
+        active=True,
     )
     db_session.add(family)
     await db_session.flush()
@@ -50,6 +54,7 @@ async def review_data(db_session: AsyncSession):
 
 
 # ── GET /papers/{id}/reviews ──────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_get_reviews_for_paper(client, review_data):
@@ -94,6 +99,7 @@ async def test_review_response_shape(client, review_data):
 
 
 # ── POST /papers/{id}/review (trigger) ───────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_trigger_review_paper_not_found(client):

@@ -107,7 +107,10 @@ async def run_review_pipeline(
             f"Issues: {l1_review.content[:200]}"
         )
         await _set_paper_status(
-            session, paper_id, status="reviewing", review_status="errors",
+            session,
+            paper_id,
+            status="reviewing",
+            review_status="errors",
             funnel_stage="reviewing",
         )
         await session.commit()
@@ -134,7 +137,10 @@ async def run_review_pipeline(
             f"Issues: {l2_review.content[:200]}"
         )
         await _set_paper_status(
-            session, paper_id, status="reviewing", review_status="errors",
+            session,
+            paper_id,
+            status="reviewing",
+            review_status="errors",
             funnel_stage="reviewing",
         )
         await session.commit()
@@ -179,11 +185,12 @@ async def run_review_pipeline(
     if l3_verdict == "fail" and l4_verdict == "fail":
         logger.warning("[%s] Both L3 and L4 reject -- paper rejected", paper_id)
         report["decision"] = "reject"
-        report["summary"] = (
-            "Both method review and adversarial review rejected this paper."
-        )
+        report["summary"] = "Both method review and adversarial review rejected this paper."
         await _set_paper_status(
-            session, paper_id, status="reviewing", review_status="errors",
+            session,
+            paper_id,
+            status="reviewing",
+            review_status="errors",
             funnel_stage="reviewing",
         )
         await session.commit()
@@ -234,7 +241,8 @@ async def run_review_pipeline(
     # Update paper status based on decision.
     if decision == "pass":
         await _set_paper_status(
-            session, paper_id,
+            session,
+            paper_id,
             status="candidate",
             review_status="peer_reviewed",
             funnel_stage="candidate",
@@ -242,14 +250,16 @@ async def run_review_pipeline(
         )
     elif decision == "revision_needed":
         await _set_paper_status(
-            session, paper_id,
+            session,
+            paper_id,
             status="revision",
             review_status="issues",
             funnel_stage="revision",
         )
     elif decision == "reject":
         await _set_paper_status(
-            session, paper_id,
+            session,
+            paper_id,
             status="reviewing",
             review_status="errors",
             funnel_stage="reviewing",
@@ -258,9 +268,7 @@ async def run_review_pipeline(
     await session.commit()
 
     report["completed_at"] = datetime.now(UTC).isoformat()
-    logger.info(
-        "[%s] Review pipeline completed: decision=%s", paper_id, decision
-    )
+    logger.info("[%s] Review pipeline completed: decision=%s", paper_id, decision)
     return report
 
 
@@ -320,8 +328,10 @@ def _build_final_summary(
     elif decision == "revision_needed":
         revision_layers = []
         for name, v in [
-            ("L1", l1_verdict), ("L2", l2_verdict),
-            ("L3", l3_verdict), ("L4", l4_verdict),
+            ("L1", l1_verdict),
+            ("L2", l2_verdict),
+            ("L3", l3_verdict),
+            ("L4", l4_verdict),
         ]:
             if v == "revision_needed":
                 revision_layers.append(name)
@@ -379,9 +389,7 @@ async def _set_paper_status(
         values["release_status"] = release_status
 
     if values:
-        await session.execute(
-            update(Paper).where(Paper.id == paper_id).values(**values)
-        )
+        await session.execute(update(Paper).where(Paper.id == paper_id).values(**values))
 
 
 def _review_to_dict(review: Review) -> dict:

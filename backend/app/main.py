@@ -26,10 +26,13 @@ logger = logging.getLogger("ape_replica")
 # Sentry initialization (no-op if DSN not configured)
 if settings.sentry_dsn:
     import sentry_sdk
+
     sentry_sdk.init(
         dsn=settings.sentry_dsn,
         traces_sample_rate=0.1,
-        environment="production" if not settings.database_url.startswith("sqlite") else "development",
+        environment="production"
+        if not settings.database_url.startswith("sqlite")
+        else "development",
     )
 
 
@@ -53,6 +56,7 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]

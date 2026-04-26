@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { LeaderboardTable } from "../leaderboard-table";
 import type { LeaderboardEntry } from "@/lib/types";
 

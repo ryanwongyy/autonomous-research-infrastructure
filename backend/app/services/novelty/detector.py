@@ -38,9 +38,7 @@ Rate the semantic similarity from 0.0 (completely different research) to 1.0 (sa
 Return ONLY a JSON object: {{"similarity": float, "rationale": "one sentence"}}"""
 
 
-async def check_novelty(
-    session: AsyncSession, paper_id: str
-) -> NoveltyCheck:
+async def check_novelty(session: AsyncSession, paper_id: str) -> NoveltyCheck:
     """Compare a paper's design against all same-family papers.
 
     Uses structural comparison first, then LLM-based semantic comparison
@@ -51,19 +49,19 @@ async def check_novelty(
     - marginal: similarity 0.3-0.6 with at least one paper
     - derivative: similarity > 0.6 with at least one paper
     """
-    paper_result = await session.execute(
-        select(Paper).where(Paper.id == paper_id)
-    )
+    paper_result = await session.execute(select(Paper).where(Paper.id == paper_id))
     paper = paper_result.scalar_one_or_none()
     if paper is None:
         raise ValueError(f"Paper '{paper_id}' not found")
 
     # Load this paper's design
     lock_result = await session.execute(
-        select(LockArtifact).where(
+        select(LockArtifact)
+        .where(
             LockArtifact.paper_id == paper_id,
             LockArtifact.is_active.is_(True),
-        ).limit(1)
+        )
+        .limit(1)
     )
     lock = lock_result.scalar_one_or_none()
 
@@ -109,9 +107,7 @@ async def check_novelty(
         sim = structural_sim
         semantic_rationale = None
         if 0.2 <= structural_sim <= 0.7:
-            semantic_sim, semantic_rationale = await _semantic_similarity(
-                design, other_design
-            )
+            semantic_sim, semantic_rationale = await _semantic_similarity(design, other_design)
             if semantic_sim is not None:
                 sim = max(structural_sim, semantic_sim)
 
@@ -150,14 +146,15 @@ async def check_novelty(
 
     logger.info(
         "Novelty check for %s: verdict=%s, highest_sim=%.3f, checked=%d papers",
-        paper_id, verdict, highest_score, checked_count,
+        paper_id,
+        verdict,
+        highest_score,
+        checked_count,
     )
     return check
 
 
-async def _semantic_similarity(
-    design_a: dict, design_b: dict
-) -> tuple[float | None, str | None]:
+async def _semantic_similarity(design_a: dict, design_b: dict) -> tuple[float | None, str | None]:
     """Use LLM to assess semantic similarity between two research designs.
 
     Returns (similarity_score, rationale) or (None, None) if LLM unavailable.

@@ -14,8 +14,12 @@ from app.models.paper_family import PaperFamily
 async def public_papers(db_session: AsyncSession):
     """Create papers at various release statuses."""
     family = PaperFamily(
-        id="F1", name="Test", short_name="T",
-        description="Test family", lock_protocol_type="open", active=True,
+        id="F1",
+        name="Test",
+        short_name="T",
+        description="Test family",
+        lock_protocol_type="open",
+        active=True,
     )
     db_session.add(family)
     await db_session.flush()
@@ -46,6 +50,7 @@ async def public_papers(db_session: AsyncSession):
 
 # ── GET /papers/public ────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_public_papers_empty(client):
     resp = await client.get("/api/v1/papers/public")
@@ -67,6 +72,7 @@ async def test_public_papers_filters_by_release(client, public_papers):
 
 # ── GET /papers/feed.json ─────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_json_feed_empty(client):
     resp = await client.get("/api/v1/papers/feed.json")
@@ -87,6 +93,7 @@ async def test_json_feed_with_data(client, public_papers):
 
 
 # ── GET /papers/feed.atom ─────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_atom_feed_empty(client):
@@ -127,6 +134,7 @@ async def test_atom_feed_escapes_special_chars(client, public_papers):
     # We don't expect any literal "<title>foo & bar</title>" — must be &amp;
     # Find any <title> contents and verify they don't contain bare ampersands
     import re
+
     titles = re.findall(r"<title>(.*?)</title>", body)
     for t in titles:
         # An ampersand that is not part of a valid entity is invalid
@@ -134,6 +142,7 @@ async def test_atom_feed_escapes_special_chars(client, public_papers):
 
 
 # ── GET /papers/{id}/export ───────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_export_nonexistent_paper(client):

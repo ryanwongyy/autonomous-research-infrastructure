@@ -19,7 +19,13 @@ from app.utils import safe_json_loads
 logger = logging.getLogger(__name__)
 
 PIPELINE_ROLES = [
-    "scout", "designer", "data_steward", "analyst", "drafter", "verifier", "packager",
+    "scout",
+    "designer",
+    "data_steward",
+    "analyst",
+    "drafter",
+    "verifier",
+    "packager",
 ]
 
 # Map roles to the funnel stages they operate at
@@ -72,13 +78,15 @@ async def analyze_role_boundary_failures(
 
     for from_role, to_role, boundary_stages in _BOUNDARY_STAGES:
         if not boundary_stages:
-            boundaries.append({
-                "from_role": from_role,
-                "to_role": to_role,
-                "failure_count": 0,
-                "top_failure_types": [],
-                "friction_score": 0.0,
-            })
+            boundaries.append(
+                {
+                    "from_role": from_role,
+                    "to_role": to_role,
+                    "failure_count": 0,
+                    "top_failure_types": [],
+                    "friction_score": 0.0,
+                }
+            )
             continue
 
         # Count failures at the boundary stages
@@ -98,8 +106,7 @@ async def analyze_role_boundary_failures(
 
         failure_count = sum(row.cnt for row in failure_rows)
         top_failure_types = [
-            {"type": row.failure_type, "count": row.cnt}
-            for row in failure_rows[:5]
+            {"type": row.failure_type, "count": row.cnt} for row in failure_rows[:5]
         ]
 
         # Total papers that passed through the boundary stages (to compute friction)
@@ -113,9 +120,13 @@ async def analyze_role_boundary_failures(
                 if found_boundary:
                     all_stages_at_or_beyond.add(s)
 
-        paper_count_q = select(func.count()).select_from(Paper).where(
-            Paper.funnel_stage.in_(all_stages_at_or_beyond),
-            Paper.created_at >= cutoff,
+        paper_count_q = (
+            select(func.count())
+            .select_from(Paper)
+            .where(
+                Paper.funnel_stage.in_(all_stages_at_or_beyond),
+                Paper.created_at >= cutoff,
+            )
         )
         total_papers = (await session.execute(paper_count_q)).scalar() or 0
 
@@ -156,9 +167,7 @@ async def propose_role_split(
     Returns: {"experiment_id": int, "new_roles": [dict, dict], "rationale": str}
     """
     if role_name not in PIPELINE_ROLES:
-        raise ValueError(
-            f"Invalid role '{role_name}'. Must be one of: {', '.join(PIPELINE_ROLES)}"
-        )
+        raise ValueError(f"Invalid role '{role_name}'. Must be one of: {', '.join(PIPELINE_ROLES)}")
 
     stages = ROLE_TO_STAGES[role_name]
     if len(stages) < 2:
@@ -194,14 +203,18 @@ async def propose_role_split(
         role_name=f"{role_name}_sub_a",
         parent_role=role_name,
         status="proposed",
-        capabilities_json=json.dumps({
-            "inherited_from": role_name,
-            "stages": stages_a,
-        }),
-        boundaries_json=json.dumps({
-            "entry_stage": stages_a[0],
-            "exit_stage": stages_a[-1],
-        }),
+        capabilities_json=json.dumps(
+            {
+                "inherited_from": role_name,
+                "stages": stages_a,
+            }
+        ),
+        boundaries_json=json.dumps(
+            {
+                "entry_stage": stages_a[0],
+                "exit_stage": stages_a[-1],
+            }
+        ),
         prerequisite_stages_json=json.dumps(stages_a),
         experiment_id=experiment.id,
     )
@@ -209,14 +222,18 @@ async def propose_role_split(
         role_name=f"{role_name}_sub_b",
         parent_role=role_name,
         status="proposed",
-        capabilities_json=json.dumps({
-            "inherited_from": role_name,
-            "stages": stages_b,
-        }),
-        boundaries_json=json.dumps({
-            "entry_stage": stages_b[0],
-            "exit_stage": stages_b[-1],
-        }),
+        capabilities_json=json.dumps(
+            {
+                "inherited_from": role_name,
+                "stages": stages_b,
+            }
+        ),
+        boundaries_json=json.dumps(
+            {
+                "entry_stage": stages_b[0],
+                "exit_stage": stages_b[-1],
+            }
+        ),
         prerequisite_stages_json=json.dumps(stages_b),
         experiment_id=experiment.id,
     )
@@ -226,7 +243,10 @@ async def propose_role_split(
 
     logger.info(
         "Proposed role split for '%s' -> ('%s', '%s'), experiment=%s",
-        role_name, role_a.role_name, role_b.role_name, experiment.id,
+        role_name,
+        role_a.role_name,
+        role_b.role_name,
+        experiment.id,
     )
 
     def _role_to_dict(rc: RoleConfig) -> dict:
@@ -237,9 +257,7 @@ async def propose_role_split(
             "status": rc.status,
             "capabilities": safe_json_loads(rc.capabilities_json, None),
             "boundaries": safe_json_loads(rc.boundaries_json, None),
-            "prerequisite_stages": (
-                safe_json_loads(rc.prerequisite_stages_json, None)
-            ),
+            "prerequisite_stages": (safe_json_loads(rc.prerequisite_stages_json, None)),
             "experiment_id": rc.experiment_id,
         }
 
@@ -306,16 +324,20 @@ async def propose_role_merge(
         role_name=merged_name,
         parent_role=None,
         status="proposed",
-        capabilities_json=json.dumps({
-            "merged_from": [role_a, role_b],
-            "stages": merged_stages,
-            "capabilities_a": {"role": role_a, "stages": ROLE_TO_STAGES[role_a]},
-            "capabilities_b": {"role": role_b, "stages": ROLE_TO_STAGES[role_b]},
-        }),
-        boundaries_json=json.dumps({
-            "entry_stage": merged_stages[0],
-            "exit_stage": merged_stages[-1],
-        }),
+        capabilities_json=json.dumps(
+            {
+                "merged_from": [role_a, role_b],
+                "stages": merged_stages,
+                "capabilities_a": {"role": role_a, "stages": ROLE_TO_STAGES[role_a]},
+                "capabilities_b": {"role": role_b, "stages": ROLE_TO_STAGES[role_b]},
+            }
+        ),
+        boundaries_json=json.dumps(
+            {
+                "entry_stage": merged_stages[0],
+                "exit_stage": merged_stages[-1],
+            }
+        ),
         prerequisite_stages_json=json.dumps(merged_stages),
         experiment_id=experiment.id,
     )
@@ -324,7 +346,10 @@ async def propose_role_merge(
 
     logger.info(
         "Proposed role merge '%s' + '%s' -> '%s', experiment=%s",
-        role_a, role_b, merged_name, experiment.id,
+        role_a,
+        role_b,
+        merged_name,
+        experiment.id,
     )
 
     return {
@@ -380,30 +405,34 @@ async def get_role_architecture(
         # Any proposed sub-roles or modifications
         proposed = [c for c in role_configs if c.status == "proposed"]
         for p in proposed:
-            entry["proposed_changes"].append({
-                "config_id": p.id,
-                "type": "split" if p.parent_role else "modification",
-                "new_role_name": p.role_name,
-                "experiment_id": p.experiment_id,
-                "capabilities": safe_json_loads(p.capabilities_json, None),
-            })
+            entry["proposed_changes"].append(
+                {
+                    "config_id": p.id,
+                    "type": "split" if p.parent_role else "modification",
+                    "new_role_name": p.role_name,
+                    "experiment_id": p.experiment_id,
+                    "capabilities": safe_json_loads(p.capabilities_json, None),
+                }
+            )
 
         output.append(entry)
 
     # Then, show any additional roles not in the default pipeline (e.g. sub-roles, merged roles)
     for role_name, role_configs in sorted(config_by_role.items()):
         for c in role_configs:
-            output.append({
-                "role_name": c.role_name,
-                "stages": safe_json_loads(c.prerequisite_stages_json, []),
-                "status": c.status,
-                "config_id": c.id,
-                "family_id": c.family_id,
-                "parent_role": c.parent_role,
-                "proposed_changes": [],
-                "capabilities": safe_json_loads(c.capabilities_json, None),
-                "experiment_id": c.experiment_id,
-            })
+            output.append(
+                {
+                    "role_name": c.role_name,
+                    "stages": safe_json_loads(c.prerequisite_stages_json, []),
+                    "status": c.status,
+                    "config_id": c.id,
+                    "family_id": c.family_id,
+                    "parent_role": c.parent_role,
+                    "proposed_changes": [],
+                    "capabilities": safe_json_loads(c.capabilities_json, None),
+                    "experiment_id": c.experiment_id,
+                }
+            )
 
     return output
 
@@ -411,7 +440,17 @@ async def get_role_architecture(
 def _all_stages_ordered() -> list[str]:
     """Return all funnel stages in pipeline order (used for sorting)."""
     return [
-        "idea", "screened", "locked", "ingesting", "analyzing",
-        "drafting", "reviewing", "revision", "benchmark",
-        "candidate", "submitted", "public", "killed",
+        "idea",
+        "screened",
+        "locked",
+        "ingesting",
+        "analyzing",
+        "drafting",
+        "reviewing",
+        "revision",
+        "benchmark",
+        "candidate",
+        "submitted",
+        "public",
+        "killed",
     ]

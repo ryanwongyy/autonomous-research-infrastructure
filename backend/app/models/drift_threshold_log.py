@@ -15,10 +15,14 @@ class DriftThresholdLog(Base):
     __tablename__ = "drift_threshold_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    family_id: Mapped[str | None] = mapped_column(String(8), ForeignKey("paper_families.id"), index=True)
+    family_id: Mapped[str | None] = mapped_column(
+        String(8), ForeignKey("paper_families.id"), index=True
+    )
     previous_threshold: Mapped[float] = mapped_column(Float)
     new_threshold: Mapped[float] = mapped_column(Float)
     gate_block_rate: Mapped[float] = mapped_column(Float)
     downstream_failure_rate: Mapped[float] = mapped_column(Float)
-    experiment_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rsi_experiments.id"), index=True)
+    experiment_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("rsi_experiments.id"), index=True
+    )
     adjusted_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now())

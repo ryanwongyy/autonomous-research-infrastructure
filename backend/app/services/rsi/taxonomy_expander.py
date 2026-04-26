@@ -19,21 +19,123 @@ from app.utils import safe_json_loads
 logger = logging.getLogger(__name__)
 
 # Common stop words to exclude from keyword extraction
-_STOP_WORDS = frozenset({
-    "the", "a", "an", "is", "was", "are", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "shall", "can", "need", "must", "to", "of",
-    "in", "for", "on", "with", "at", "by", "from", "as", "into", "through",
-    "during", "before", "after", "above", "below", "between", "out", "off",
-    "up", "down", "over", "under", "again", "further", "then", "once",
-    "here", "there", "when", "where", "why", "how", "all", "each", "every",
-    "both", "few", "more", "most", "other", "some", "such", "no", "nor",
-    "not", "only", "own", "same", "so", "than", "too", "very", "just",
-    "because", "but", "and", "or", "if", "while", "that", "this", "it",
-    "its", "also", "about", "which", "their", "them", "they", "these",
-    "those", "what", "who", "whom", "any", "paper", "error", "issue",
-    "found", "check", "review", "section", "data", "none", "null",
-})
+_STOP_WORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "is",
+        "was",
+        "are",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "can",
+        "need",
+        "must",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "out",
+        "off",
+        "up",
+        "down",
+        "over",
+        "under",
+        "again",
+        "further",
+        "then",
+        "once",
+        "here",
+        "there",
+        "when",
+        "where",
+        "why",
+        "how",
+        "all",
+        "each",
+        "every",
+        "both",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "nor",
+        "not",
+        "only",
+        "own",
+        "same",
+        "so",
+        "than",
+        "too",
+        "very",
+        "just",
+        "because",
+        "but",
+        "and",
+        "or",
+        "if",
+        "while",
+        "that",
+        "this",
+        "it",
+        "its",
+        "also",
+        "about",
+        "which",
+        "their",
+        "them",
+        "they",
+        "these",
+        "those",
+        "what",
+        "who",
+        "whom",
+        "any",
+        "paper",
+        "error",
+        "issue",
+        "found",
+        "check",
+        "review",
+        "section",
+        "data",
+        "none",
+        "null",
+    }
+)
 
 _TOKEN_RE = re.compile(r"[a-z_][a-z0-9_]{2,}")
 
@@ -128,9 +230,7 @@ async def cluster_other_failures(
     record_keywords: list[tuple[int, set[str]]] = []
     kw_by_id: dict[int, set[str]] = {}
     for rec in others:
-        combined_text = " ".join(
-            filter(None, [rec.resolution, rec.corrective_action])
-        )
+        combined_text = " ".join(filter(None, [rec.resolution, rec.corrective_action]))
         kws = _extract_keywords(combined_text)
         record_keywords.append((rec.id, kws))
         kw_by_id[rec.id] = kws
@@ -154,36 +254,38 @@ async def cluster_other_failures(
             jaccard_sum = 0.0
             for i in range(len(record_ids)):
                 for j in range(i + 1, len(record_ids)):
-                    jaccard_sum += _jaccard(
-                        kw_by_id[record_ids[i]], kw_by_id[record_ids[j]]
-                    )
+                    jaccard_sum += _jaccard(kw_by_id[record_ids[i]], kw_by_id[record_ids[j]])
                     pair_count += 1
             cohesion = jaccard_sum / pair_count if pair_count > 0 else 0.0
         else:
             cohesion = 1.0
 
-        common = sorted(all_keywords, key=lambda k: sum(
-            1 for ks in keyword_sets if k in ks
-        ), reverse=True)[:10]
+        common = sorted(
+            all_keywords, key=lambda k: sum(1 for ks in keyword_sets if k in ks), reverse=True
+        )[:10]
 
-        clusters.append({
-            "cluster_id": idx,
-            "proposed_name": _name_from_keywords(keyword_sets),
-            "description": (
-                f"Cluster of {len(record_ids)} 'other' failures sharing "
-                f"keywords: {', '.join(common[:5])}"
-            ),
-            "record_ids": sorted(record_ids),
-            "size": len(record_ids),
-            "common_keywords": common,
-            "confidence": round(cohesion, 4),
-        })
+        clusters.append(
+            {
+                "cluster_id": idx,
+                "proposed_name": _name_from_keywords(keyword_sets),
+                "description": (
+                    f"Cluster of {len(record_ids)} 'other' failures sharing "
+                    f"keywords: {', '.join(common[:5])}"
+                ),
+                "record_ids": sorted(record_ids),
+                "size": len(record_ids),
+                "common_keywords": common,
+                "confidence": round(cohesion, 4),
+            }
+        )
 
     clusters.sort(key=lambda c: c["size"], reverse=True)
 
     logger.info(
         "Clustered %d 'other' failures into %d clusters (min_size=%d)",
-        len(others), len(clusters), min_cluster_size,
+        len(others),
+        len(clusters),
+        min_cluster_size,
     )
     return clusters
 
@@ -225,9 +327,11 @@ async def propose_new_failure_type(
     await session.flush()
 
     logger.info(
-        "Proposed new failure type '%s' from cluster of %d records "
-        "(proposal=%d, experiment=%d)",
-        proposed_name, cluster["size"], proposal.id, experiment.id,
+        "Proposed new failure type '%s' from cluster of %d records (proposal=%d, experiment=%d)",
+        proposed_name,
+        cluster["size"],
+        proposal.id,
+        experiment.id,
     )
 
     return {
@@ -297,7 +401,9 @@ async def approve_failure_type(
 
     logger.info(
         "Approved failure type '%s' (proposal=%d), reclassified %d records",
-        proposal.proposed_type_name, proposal_id, reclassified,
+        proposal.proposed_type_name,
+        proposal_id,
+        reclassified,
     )
 
     return {
@@ -330,9 +436,9 @@ async def get_taxonomy_status(session: AsyncSession) -> dict:
 
     # Pending proposals
     pending_result = await session.execute(
-        select(FailureTypeProposal).where(
-            FailureTypeProposal.status == "proposed"
-        ).order_by(FailureTypeProposal.created_at.desc())
+        select(FailureTypeProposal)
+        .where(FailureTypeProposal.status == "proposed")
+        .order_by(FailureTypeProposal.created_at.desc())
     )
     pending_proposals = pending_result.scalars().all()
 
@@ -350,9 +456,10 @@ async def get_taxonomy_status(session: AsyncSession) -> dict:
 
     # Recently approved proposals
     approved_result = await session.execute(
-        select(FailureTypeProposal).where(
-            FailureTypeProposal.status == "approved"
-        ).order_by(FailureTypeProposal.approved_at.desc()).limit(10)
+        select(FailureTypeProposal)
+        .where(FailureTypeProposal.status == "approved")
+        .order_by(FailureTypeProposal.approved_at.desc())
+        .limit(10)
     )
     approved_proposals = approved_result.scalars().all()
 
@@ -367,22 +474,28 @@ async def get_taxonomy_status(session: AsyncSession) -> dict:
     ]
 
     # Known canonical types from the classifier mapping
-    canonical_types = sorted({
-        "formatting", "data_error", "hallucination", "causal_overreach",
-        "source_drift", "design_violation", "logic_error", "other",
-    })
+    canonical_types = sorted(
+        {
+            "formatting",
+            "data_error",
+            "hallucination",
+            "causal_overreach",
+            "source_drift",
+            "design_violation",
+            "logic_error",
+            "other",
+        }
+    )
 
     # Types discovered via taxonomy expansion (in distribution but not canonical)
-    discovered_types = sorted(
-        t for t in type_distribution if t not in canonical_types
-    )
+    discovered_types = sorted(t for t in type_distribution if t not in canonical_types)
 
     return {
         "total_failures": total_failures,
         "other_count": other_count,
-        "other_percentage": round(
-            other_count / total_failures * 100, 2
-        ) if total_failures > 0 else 0.0,
+        "other_percentage": round(other_count / total_failures * 100, 2)
+        if total_failures > 0
+        else 0.0,
         "type_distribution": type_distribution,
         "canonical_types": canonical_types,
         "discovered_types": discovered_types,

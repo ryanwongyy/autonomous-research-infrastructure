@@ -54,6 +54,7 @@ logger = logging.getLogger(__name__)
 # Pipeline entry point
 # ---------------------------------------------------------------------------
 
+
 async def run_full_pipeline(
     session: AsyncSession,
     family_id: str,
@@ -219,11 +220,7 @@ async def run_full_pipeline(
         report["stages"]["verifier"] = stage_report
 
         verification_report = stage_report.get("verification", {})
-        recommendation = (
-            verification_report
-            .get("summary", {})
-            .get("recommendation", "revise")
-        )
+        recommendation = verification_report.get("summary", {}).get("recommendation", "revise")
 
         # If verifier recommends rejection, kill the paper
         if recommendation == "reject":
@@ -278,6 +275,7 @@ async def run_full_pipeline(
 # Legacy entry point (backward-compatible)
 # ---------------------------------------------------------------------------
 
+
 async def run_paper_generation(domain_config_id: str, paper_id: str | None = None):
     """Legacy entry point for paper generation.
 
@@ -300,6 +298,7 @@ async def run_paper_generation(domain_config_id: str, paper_id: str | None = Non
     if result.get("final_status", "").startswith("completed"):
         try:
             from app.services.review_pipeline.orchestrator import run_review_pipeline
+
             await run_review_pipeline(paper_id)
         except ImportError:
             logger.info("Review pipeline not available")
@@ -312,6 +311,7 @@ async def run_paper_generation(domain_config_id: str, paper_id: str | None = Non
 # ---------------------------------------------------------------------------
 # Stage implementations
 # ---------------------------------------------------------------------------
+
 
 async def _stage_scout(
     session: AsyncSession,
@@ -342,11 +342,13 @@ async def _stage_scout(
             idea_card=idea,
             provider=provider,
         )
-        screening_results.append({
-            "question": idea.get("research_question", "")[:80],
-            "composite": screening.get("weighted_composite", 0),
-            "passed": screening.get("pass", False),
-        })
+        screening_results.append(
+            {
+                "question": idea.get("research_question", "")[:80],
+                "composite": screening.get("weighted_composite", 0),
+                "passed": screening.get("pass", False),
+            }
+        )
 
         if screening.get("pass", False):
             score = screening.get("weighted_composite", 0)
@@ -539,18 +541,18 @@ async def _stage_collegial_review(
 
     # Load lock YAML for context
     lock_result = await session.execute(
-        select(LockArtifact).where(
+        select(LockArtifact)
+        .where(
             LockArtifact.paper_id == paper.id,
             LockArtifact.is_active.is_(True),
-        ).limit(1)
+        )
+        .limit(1)
     )
     lock = lock_result.scalar_one_or_none()
     lock_yaml = lock.lock_yaml if lock else ""
 
     # Load claims
-    claims_result = await session.execute(
-        select(ClaimMap).where(ClaimMap.paper_id == paper.id)
-    )
+    claims_result = await session.execute(select(ClaimMap).where(ClaimMap.paper_id == paper.id))
     claims = [
         {"claim_text": c.claim_text, "claim_type": c.claim_type}
         for c in claims_result.scalars().all()
@@ -560,6 +562,7 @@ async def _stage_collegial_review(
     target_venue = None
     if paper.family_id:
         from app.models.paper_family import PaperFamily
+
         fam_result = await session.execute(
             select(PaperFamily).where(PaperFamily.id == paper.family_id).limit(1)
         )
@@ -585,7 +588,11 @@ async def _stage_collegial_review(
     return {
         "status": "completed",
         "session_id": result.get("session_id"),
-        "suggestions_accepted": result.get("acknowledgments", [{}])[0].get("accepted_suggestions", 0) if result.get("acknowledgments") else 0,
+        "suggestions_accepted": result.get("acknowledgments", [{}])[0].get(
+            "accepted_suggestions", 0
+        )
+        if result.get("acknowledgments")
+        else 0,
         "acknowledgments_count": len(result.get("acknowledgments", [])),
         "revised_manuscript": result.get("revised_manuscript"),
         "session_summary": result.get("summary", ""),
@@ -655,6 +662,7 @@ async def _stage_packager(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _run_stage(
     stage_name: str,
     stage_fn,
@@ -671,9 +679,7 @@ async def _run_stage(
     except PipelineViolationError:
         raise  # Let boundary violations propagate
     except Exception as e:
-        logger.error(
-            "[%s] Stage '%s' failed: %s", paper.id, stage_name, e, exc_info=True
-        )
+        logger.error("[%s] Stage '%s' failed: %s", paper.id, stage_name, e, exc_info=True)
         result = {"status": "failed", "error": str(e)}
 
     elapsed = time.monotonic() - start
@@ -690,9 +696,7 @@ async def _run_stage(
     return result
 
 
-async def _ensure_paper(
-    session: AsyncSession, paper_id: str, family_id: str
-) -> Paper:
+async def _ensure_paper(session: AsyncSession, paper_id: str, family_id: str) -> Paper:
     """Load or create a Paper record."""
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
@@ -738,19 +742,13 @@ async def _reload_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _resolve_family_id(
-    session: AsyncSession, domain_config_id: str
-) -> str:
+async def _resolve_family_id(session: AsyncSession, domain_config_id: str) -> str:
     """Resolve a domain_config_id to a family_id.
 
     Falls back to the first active family if no direct mapping exists.
     """
     # Try direct lookup: some papers already have a family_id
-    stmt = (
-        select(PaperFamily)
-        .where(PaperFamily.active.is_(True))
-        .limit(1)
-    )
+    stmt = select(PaperFamily).where(PaperFamily.active.is_(True)).limit(1)
     result = await session.execute(stmt)
     family = result.scalar_one_or_none()
 

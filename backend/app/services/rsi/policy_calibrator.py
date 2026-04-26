@@ -44,6 +44,7 @@ _WEIGHTS_TARGET_KEY = "dimension_weights"
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def correlate_dimensions_with_outcomes(
     session: AsyncSession,
     family_id: str | None = None,
@@ -140,9 +141,7 @@ async def correlate_dimensions_with_outcomes(
 
         # Simple significance heuristic: consider significant if we have
         # at least 5 in each group and |r| > 0.15.
-        p_significant = (
-            n_acc >= 5 and n_rej >= 5 and abs(correlation) > 0.15
-        )
+        p_significant = n_acc >= 5 and n_rej >= 5 and abs(correlation) > 0.15
 
         correlations[dim] = {
             "correlation": round(correlation, 4),
@@ -211,9 +210,7 @@ async def propose_dimension_reweighting(
     if total == 0:
         proposed_weights = current_weights
     else:
-        proposed_weights = {
-            dim: round(val / total, 4) for dim, val in floored.items()
-        }
+        proposed_weights = {dim: round(val / total, 4) for dim, val in floored.items()}
 
     # Build rationale.
     most_pred = correlation_analysis.get("most_predictive", "N/A")
@@ -253,7 +250,8 @@ async def propose_dimension_reweighting(
 
     logger.info(
         "Tier 1c reweighting proposed (experiment %s): %s",
-        experiment.id, rationale,
+        experiment.id,
+        rationale,
     )
 
     return {
@@ -342,6 +340,7 @@ async def get_calibration_status(session: AsyncSession) -> dict:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _safe_mean(values: list[float]) -> float:
     """Return the arithmetic mean, or 0.0 for an empty list."""

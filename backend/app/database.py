@@ -35,11 +35,13 @@ _engine_kwargs: dict = {
 if not _is_sqlite:
     # PostgreSQL-specific pool settings for production
     _db_url, _connect_args = _prepare_pg_url(settings.database_url)
-    _engine_kwargs.update({
-        "pool_size": 10,
-        "max_overflow": 20,
-        "pool_recycle": 3600,
-    })
+    _engine_kwargs.update(
+        {
+            "pool_size": 10,
+            "max_overflow": 20,
+            "pool_recycle": 3600,
+        }
+    )
     if _connect_args:
         _engine_kwargs["connect_args"] = _connect_args
 else:

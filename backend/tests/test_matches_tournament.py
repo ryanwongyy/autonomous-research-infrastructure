@@ -14,8 +14,12 @@ from app.models.tournament_run import TournamentRun
 async def tournament_data(db_session: AsyncSession):
     """Create a family and a tournament run."""
     family = PaperFamily(
-        id="F1", name="Test", short_name="T",
-        description="For tournament tests", lock_protocol_type="open", active=True,
+        id="F1",
+        name="Test",
+        short_name="T",
+        description="For tournament tests",
+        lock_protocol_type="open",
+        active=True,
     )
     db_session.add(family)
     await db_session.flush()
@@ -37,6 +41,7 @@ async def tournament_data(db_session: AsyncSession):
 
 # ── GET /matches ──────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_list_matches_empty(client):
     resp = await client.get("/api/v1/matches")
@@ -46,6 +51,7 @@ async def test_list_matches_empty(client):
 
 # ── GET /matches/{match_id} ──────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_get_match_not_found(client):
     resp = await client.get("/api/v1/matches/99999")
@@ -53,6 +59,7 @@ async def test_get_match_not_found(client):
 
 
 # ── GET /tournament/runs ──────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_list_tournament_runs_empty(client):
@@ -85,6 +92,7 @@ async def test_list_tournament_runs_filter_by_family(client, tournament_data):
 
 # ── GET /tournament/runs/{run_id} ────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_get_tournament_run_not_found(client):
     resp = await client.get("/api/v1/tournament/runs/99999")
@@ -103,6 +111,7 @@ async def test_get_tournament_run_detail(client, tournament_data):
 
 
 # ── POST /tournament/run (auth required) ─────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_tournament_run_requires_admin(client, monkeypatch):

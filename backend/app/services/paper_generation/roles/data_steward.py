@@ -83,6 +83,7 @@ No markdown, no commentary outside the JSON."""
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def build_source_manifest(
     session: AsyncSession,
     paper_id: str,
@@ -147,9 +148,7 @@ async def build_source_manifest(
     for source_entry in manifest.get("sources", []):
         sc_id = source_entry.get("source_card_id", "")
         if sc_id not in known_ids:
-            logger.warning(
-                "Source manifest references unknown source card '%s'", sc_id
-            )
+            logger.warning("Source manifest references unknown source card '%s'", sc_id)
 
     logger.info(
         "Data Steward built manifest for paper %s (%d sources, %d Tier A)",
@@ -225,6 +224,7 @@ async def fetch_and_snapshot(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
@@ -234,9 +234,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -298,7 +296,10 @@ async def _fetch_source_data(
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         result = await fetch_from_source(
-            source_card.id, params, Path(tmp_dir), api_key=api_key,
+            source_card.id,
+            params,
+            Path(tmp_dir),
+            api_key=api_key,
         )
 
         if result.success and result.file_path:
@@ -370,13 +371,15 @@ def _generate_placeholder(source_card: SourceCard) -> bytes:
 
     for i in range(200):
         year = 2015 + (i % 10)
-        writer.writerow([
-            f"{source_card.id}_{i:04d}",
-            year,
-            f"{unit}_{i}",
-            round(10.0 + i * 0.5 + (i % 7) * 0.3, 2),
-            json.dumps({"source": source_card.id, "fetched": True}),
-        ])
+        writer.writerow(
+            [
+                f"{source_card.id}_{i:04d}",
+                year,
+                f"{unit}_{i}",
+                round(10.0 + i * 0.5 + (i % 7) * 0.3, 2),
+                json.dumps({"source": source_card.id, "fetched": True}),
+            ]
+        )
 
     content = buf.getvalue().encode("utf-8")
     logger.warning(

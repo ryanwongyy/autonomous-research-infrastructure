@@ -21,15 +21,27 @@ THRESHOLD_CEILING = 0.95
 THRESHOLD_STEP = 0.05
 
 # Funnel stages considered "past the drift gates"
-_POST_GATE_STAGES = frozenset({
-    "analyzing", "drafting", "reviewing", "revision",
-    "benchmark", "candidate", "submitted", "public",
-})
+_POST_GATE_STAGES = frozenset(
+    {
+        "analyzing",
+        "drafting",
+        "reviewing",
+        "revision",
+        "benchmark",
+        "candidate",
+        "submitted",
+        "public",
+    }
+)
 
 # Detection stages that correspond to drift-gate blocking
-_DRIFT_GATE_STAGES = frozenset({
-    "l2_provenance", "manifest_drift", "boundary_enforcer",
-})
+_DRIFT_GATE_STAGES = frozenset(
+    {
+        "l2_provenance",
+        "manifest_drift",
+        "boundary_enforcer",
+    }
+)
 
 
 async def compute_gate_metrics(
@@ -45,11 +57,7 @@ async def compute_gate_metrics(
     cutoff = datetime.now(UTC) - timedelta(days=days)
 
     # -- Total papers that entered the pipeline in the window -----------------
-    total_q = (
-        select(func.count())
-        .select_from(Paper)
-        .where(Paper.created_at >= cutoff)
-    )
+    total_q = select(func.count()).select_from(Paper).where(Paper.created_at >= cutoff)
     if family_id is not None:
         total_q = total_q.where(Paper.family_id == family_id)
     total_result = await session.execute(total_q)
@@ -64,12 +72,9 @@ async def compute_gate_metrics(
         }
 
     # -- Papers blocked at drift gates ----------------------------------------
-    blocked_q = (
-        select(func.count(func.distinct(FailureRecord.paper_id)))
-        .where(
-            FailureRecord.detection_stage.in_(_DRIFT_GATE_STAGES),
-            FailureRecord.created_at >= cutoff,
-        )
+    blocked_q = select(func.count(func.distinct(FailureRecord.paper_id))).where(
+        FailureRecord.detection_stage.in_(_DRIFT_GATE_STAGES),
+        FailureRecord.created_at >= cutoff,
     )
     if family_id is not None:
         blocked_q = blocked_q.where(FailureRecord.family_id == family_id)
@@ -105,9 +110,7 @@ async def compute_gate_metrics(
             )
         )
         if family_id is not None:
-            downstream_fail_q = downstream_fail_q.where(
-                FailureRecord.family_id == family_id
-            )
+            downstream_fail_q = downstream_fail_q.where(FailureRecord.family_id == family_id)
         downstream_fail_result = await session.execute(downstream_fail_q)
         downstream_fail_count: int = downstream_fail_result.scalar() or 0
         downstream_failure_rate = downstream_fail_count / passed_count
@@ -127,9 +130,7 @@ async def compute_gate_metrics(
             )
         )
         if family_id is not None:
-            revised_success_q = revised_success_q.where(
-                FailureRecord.family_id == family_id
-            )
+            revised_success_q = revised_success_q.where(FailureRecord.family_id == family_id)
         revised_result = await session.execute(revised_success_q)
         revised_count: int = revised_result.scalar() or 0
         blocked_then_succeeded_rate = revised_count / blocked_count
@@ -197,7 +198,7 @@ async def propose_threshold_adjustment(
             session,
             tier="2b",
             name=f"drift_threshold_{'decrease' if direction == 'decrease' else 'increase'}"
-                 f"{'_' + family_id if family_id else '_global'}",
+            f"{'_' + family_id if family_id else '_global'}",
             family_id=family_id,
             config_snapshot={
                 "current_threshold": current_threshold,
@@ -209,7 +210,10 @@ async def propose_threshold_adjustment(
 
     logger.info(
         "Threshold proposal for family=%s: %s (%.4f -> %.4f)",
-        family_id or "global", direction, current_threshold, proposed,
+        family_id or "global",
+        direction,
+        current_threshold,
+        proposed,
     )
 
     return {
@@ -235,8 +239,7 @@ async def apply_threshold(
     """
     if not (THRESHOLD_FLOOR <= new_threshold <= THRESHOLD_CEILING):
         raise ValueError(
-            f"Threshold {new_threshold} out of range "
-            f"[{THRESHOLD_FLOOR}, {THRESHOLD_CEILING}]"
+            f"Threshold {new_threshold} out of range [{THRESHOLD_FLOOR}, {THRESHOLD_CEILING}]"
         )
 
     current_threshold = await _get_effective_threshold(session, family_id)
@@ -257,7 +260,10 @@ async def apply_threshold(
 
     logger.info(
         "Applied drift threshold %.4f (was %.4f) for family=%s, log_id=%s",
-        new_threshold, current_threshold, family_id or "global", log_entry.id,
+        new_threshold,
+        current_threshold,
+        family_id or "global",
+        log_entry.id,
     )
 
     return {
@@ -305,6 +311,7 @@ async def get_threshold_history(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 async def _get_effective_threshold(
     session: AsyncSession,

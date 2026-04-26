@@ -15,7 +15,9 @@ class RSIGateLog(Base):
     __tablename__ = "rsi_gate_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    experiment_id: Mapped[int] = mapped_column(Integer, ForeignKey("rsi_experiments.id"), index=True)
+    experiment_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("rsi_experiments.id"), index=True
+    )
     gate_type: Mapped[str] = mapped_column(String(32))
     decision: Mapped[str] = mapped_column(String(16))
     metric_before_json: Mapped[str | None] = mapped_column(Text)

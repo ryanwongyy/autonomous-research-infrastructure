@@ -63,9 +63,10 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         await db.execute(
             select(
                 func.avg(case((Paper.source.in_(AI_SOURCES), Rating.elo))).label("avg_ai"),
-                func.avg(case((Paper.source.in_(BENCHMARK_SOURCES), Rating.elo))).label("avg_bench"),
-            )
-            .join(Paper, Rating.paper_id == Paper.id)
+                func.avg(case((Paper.source.in_(BENCHMARK_SOURCES), Rating.elo))).label(
+                    "avg_bench"
+                ),
+            ).join(Paper, Rating.paper_id == Paper.id)
         )
     ).one()
 
@@ -164,12 +165,16 @@ async def get_trueskill_progression(
     paper_map = {p.id: (p.title, p.source) for p in top_papers}
 
     snapshots = (
-        await db.execute(
-            select(RatingSnapshot)
-            .where(RatingSnapshot.paper_id.in_(paper_ids))
-            .order_by(RatingSnapshot.snapshot_date)
+        (
+            await db.execute(
+                select(RatingSnapshot)
+                .where(RatingSnapshot.paper_id.in_(paper_ids))
+                .order_by(RatingSnapshot.snapshot_date)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     data = [
         TrueSkillProgressionPoint(

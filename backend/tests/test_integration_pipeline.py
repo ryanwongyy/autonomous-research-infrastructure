@@ -96,7 +96,7 @@ async def test_funnel_snapshot_stage_counts(client, full_pipeline):
     # F_int_2: analyzing(2)
     # Total across all families:
     assert stages.get("candidate", 0) == 1  # int_p1
-    assert stages.get("public", 0) == 1     # int_p4
+    assert stages.get("public", 0) == 1  # int_p4
     assert stages.get("analyzing", 0) == 2  # int_p6, int_p7
 
 

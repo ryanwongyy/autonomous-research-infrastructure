@@ -71,6 +71,7 @@ _LAYER_SHARPENING_PATCHES: dict[str, str] = {
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def find_false_negatives(
     session: AsyncSession,
     layer: str,
@@ -124,12 +125,14 @@ async def find_false_negatives(
         )
     )
     for out in outcome_result.scalars().all():
-        false_negatives.append({
-            "paper_id": out.paper_id,
-            "review_verdict": "pass",
-            "outcome": "venue_rejection",
-            "outcome_detail": f"{out.decision} at {out.venue_name}",
-        })
+        false_negatives.append(
+            {
+                "paper_id": out.paper_id,
+                "review_verdict": "pass",
+                "outcome": "venue_rejection",
+                "outcome_detail": f"{out.decision} at {out.venue_name}",
+            }
+        )
 
     # -- Check correction records --
     correction_result = await session.execute(
@@ -138,12 +141,14 @@ async def find_false_negatives(
         )
     )
     for cr in correction_result.scalars().all():
-        false_negatives.append({
-            "paper_id": cr.paper_id,
-            "review_verdict": "pass",
-            "outcome": "correction",
-            "outcome_detail": f"{cr.correction_type}: {cr.description[:200]}",
-        })
+        false_negatives.append(
+            {
+                "paper_id": cr.paper_id,
+                "review_verdict": "pass",
+                "outcome": "correction",
+                "outcome_detail": f"{cr.correction_type}: {cr.description[:200]}",
+            }
+        )
 
     return false_negatives
 
@@ -178,9 +183,7 @@ async def find_false_positives(
     )
 
     # Get the actual paper_ids that had a fail/revision_needed at this layer.
-    failed_papers_result = await session.execute(
-        select(latest_fail_review.c.paper_id)
-    )
+    failed_papers_result = await session.execute(select(latest_fail_review.c.paper_id))
     failed_paper_ids = {row.paper_id for row in failed_papers_result.all()}
 
     if not failed_paper_ids:
@@ -196,12 +199,14 @@ async def find_false_positives(
 
     false_positives: list[dict] = []
     for out in accepted_result.scalars().all():
-        false_positives.append({
-            "paper_id": out.paper_id,
-            "review_verdict": "fail/revision_needed",
-            "outcome": "venue_accepted",
-            "outcome_detail": f"{out.decision} at {out.venue_name}",
-        })
+        false_positives.append(
+            {
+                "paper_id": out.paper_id,
+                "review_verdict": "fail/revision_needed",
+                "outcome": "venue_accepted",
+                "outcome_detail": f"{out.decision} at {out.venue_name}",
+            }
+        )
 
     return false_positives
 
@@ -267,11 +272,7 @@ async def analyze_layer_accuracy(
 
     precision = tp / (tp + fp_count) if (tp + fp_count) > 0 else 0.0
     recall = tp / (tp + fn_count) if (tp + fn_count) > 0 else 0.0
-    f1 = (
-        (2 * precision * recall) / (precision + recall)
-        if (precision + recall) > 0
-        else 0.0
-    )
+    f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
     # Determine which failure types this layer missed most often (from FN papers).
     fn_paper_ids = [item["paper_id"] for item in fn_list]
@@ -363,17 +364,14 @@ async def propose_review_prompt_patch(
             "experiment_id": None,
             "prompt_version_id": None,
             "patch_summary": (
-                f"Layer {layer} shows no actionable accuracy issues; "
-                "no patch proposed."
+                f"Layer {layer} shows no actionable accuracy issues; no patch proposed."
             ),
             "targeted_failures": [],
         }
 
     patched_text = current_prompt + "".join(patches)
 
-    exp_name = (
-        f"review_prompt_sharpen_{layer}_fn{fn_count}_fp{fp_count}"
-    )
+    exp_name = f"review_prompt_sharpen_{layer}_fn{fn_count}_fp{fp_count}"
     experiment = await create_experiment(
         session,
         tier="1b",
@@ -427,10 +425,10 @@ async def get_all_layer_accuracy(session: AsyncSession) -> list[dict]:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _validate_layer(layer: str) -> None:
     """Raise ValueError if layer is not a recognized review layer name."""
     if layer not in REVIEW_LAYERS:
         raise ValueError(
-            f"Unknown review layer '{layer}'. Must be one of: "
-            f"{', '.join(REVIEW_LAYERS)}"
+            f"Unknown review layer '{layer}'. Must be one of: {', '.join(REVIEW_LAYERS)}"
         )

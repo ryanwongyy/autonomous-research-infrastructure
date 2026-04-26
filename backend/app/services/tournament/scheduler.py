@@ -22,10 +22,10 @@ async def _get_eligible_families() -> list[dict]:
     """
     async with async_session() as db:
         families = (
-            await db.execute(
-                select(PaperFamily).where(PaperFamily.active.is_(True))
-            )
-        ).scalars().all()
+            (await db.execute(select(PaperFamily).where(PaperFamily.active.is_(True))))
+            .scalars()
+            .all()
+        )
 
         eligible: list[dict] = []
         for fam in families:
@@ -41,11 +41,13 @@ async def _get_eligible_families() -> list[dict]:
             ).scalar() or 0
 
             if count >= MIN_PAPERS_FOR_TOURNAMENT:
-                eligible.append({
-                    "family_id": fam.id,
-                    "short_name": fam.short_name,
-                    "paper_count": count,
-                })
+                eligible.append(
+                    {
+                        "family_id": fam.id,
+                        "short_name": fam.short_name,
+                        "paper_count": count,
+                    }
+                )
 
     return eligible
 
@@ -61,8 +63,7 @@ async def scheduled_tournament_run():
 
     eligible = await _get_eligible_families()
     logger.info(
-        f"Scheduled sweep: {len(eligible)} eligible families: "
-        f"{[e['family_id'] for e in eligible]}"
+        f"Scheduled sweep: {len(eligible)} eligible families: {[e['family_id'] for e in eligible]}"
     )
 
     if not eligible:
@@ -75,8 +76,7 @@ async def scheduled_tournament_run():
     failed = sum(1 for r in results if r.get("status") == "failed")
 
     logger.info(
-        f"Scheduled sweep finished: {completed} completed, "
-        f"{skipped} skipped, {failed} failed"
+        f"Scheduled sweep finished: {completed} completed, {skipped} skipped, {failed} failed"
     )
 
 

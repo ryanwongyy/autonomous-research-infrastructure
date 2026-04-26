@@ -68,12 +68,14 @@ async def correlate_rankings_with_outcomes(
     # Build pairs: (paper_id, rank, decision, decision_score)
     pairs: list[dict] = []
     for paper_id, rank, decision in rows:
-        pairs.append({
-            "paper_id": paper_id,
-            "rank": rank,
-            "decision": decision,
-            "decision_score": _DECISION_SCORES.get(decision, 0),
-        })
+        pairs.append(
+            {
+                "paper_id": paper_id,
+                "rank": rank,
+                "decision": decision,
+                "decision_score": _DECISION_SCORES.get(decision, 0),
+            }
+        )
 
     sample_size = len(pairs)
 
@@ -87,9 +89,7 @@ async def correlate_rankings_with_outcomes(
     # Assign fractional ranks to decision scores
     decision_scores = [p["decision_score"] for p in pairs]
     outcome_ranks = _fractional_ranks(decision_scores, ascending=False)
-    tournament_ranks = _fractional_ranks(
-        [p["rank"] for p in pairs], ascending=True
-    )
+    tournament_ranks = _fractional_ranks([p["rank"] for p in pairs], ascending=True)
 
     spearman_rho = _compute_spearman(tournament_ranks, outcome_ranks)
 
@@ -125,15 +125,16 @@ async def correlate_rankings_with_outcomes(
         is_good_outcome = p["decision"] == "accepted"
 
         if (is_high_rank and is_bad_outcome) or (is_low_rank and is_good_outcome):
-            misranked.append({
-                "paper_id": p["paper_id"],
-                "rank": p["rank"],
-                "decision": p["decision"],
-            })
+            misranked.append(
+                {
+                    "paper_id": p["paper_id"],
+                    "rank": p["rank"],
+                    "decision": p["decision"],
+                }
+            )
 
     rank_outcome_pairs = [
-        {"paper_id": p["paper_id"], "rank": p["rank"], "decision": p["decision"]}
-        for p in pairs
+        {"paper_id": p["paper_id"], "rank": p["rank"], "decision": p["decision"]} for p in pairs
     ]
 
     return {
@@ -277,7 +278,10 @@ async def propose_judge_adjustment(
 
     logger.info(
         "Proposed judge adjustment for family %s: experiment=%s, prompt_v=%s, %d adjustments",
-        family_id, experiment.id, prompt_version.id, len(adjustments),
+        family_id,
+        experiment.id,
+        prompt_version.id,
+        len(adjustments),
     )
 
     return {
@@ -315,14 +319,17 @@ async def get_judge_calibration_overview(session: AsyncSession) -> list[dict]:
     overview: list[dict] = []
     for family_id, data_count in eligible_families:
         report = await correlate_rankings_with_outcomes(session, family_id)
-        overview.append({
-            "family_id": family_id,
-            "data_points": data_count,
-            "spearman_rho": report["spearman_rho"],
-            "concordance_rate": report["concordance_rate"],
-            "misranked_count": len(report["misranked_papers"]),
-            "needs_calibration": report["spearman_rho"] < 0.5 or report["concordance_rate"] < 0.6,
-        })
+        overview.append(
+            {
+                "family_id": family_id,
+                "data_points": data_count,
+                "spearman_rho": report["spearman_rho"],
+                "concordance_rate": report["concordance_rate"],
+                "misranked_count": len(report["misranked_papers"]),
+                "needs_calibration": report["spearman_rho"] < 0.5
+                or report["concordance_rate"] < 0.6,
+            }
+        )
 
     return overview
 
@@ -330,6 +337,7 @@ async def get_judge_calibration_overview(session: AsyncSession) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _fractional_ranks(values: list[float | int], ascending: bool = True) -> list[float]:
     """Assign fractional (averaged) ranks to a list of values.

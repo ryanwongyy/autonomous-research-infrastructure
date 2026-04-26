@@ -38,29 +38,21 @@ async def run_observation_phase(session: AsyncSession) -> dict:
     Returns a comprehensive observation dict.
     """
     # -- Paper pipeline counts ---------------------------------------------------
-    total_result = await session.execute(
-        select(func.count()).select_from(Paper)
-    )
+    total_result = await session.execute(select(func.count()).select_from(Paper))
     total_papers = total_result.scalar() or 0
 
     active_result = await session.execute(
-        select(func.count()).select_from(Paper).where(
-            Paper.funnel_stage.notin_(["killed", "idea"])
-        )
+        select(func.count()).select_from(Paper).where(Paper.funnel_stage.notin_(["killed", "idea"]))
     )
     active_papers = active_result.scalar() or 0
 
     killed_result = await session.execute(
-        select(func.count()).select_from(Paper).where(
-            Paper.funnel_stage == "killed"
-        )
+        select(func.count()).select_from(Paper).where(Paper.funnel_stage == "killed")
     )
     killed_papers = killed_result.scalar() or 0
 
     # -- Global failure rate -----------------------------------------------------
-    failure_count_result = await session.execute(
-        select(func.count()).select_from(FailureRecord)
-    )
+    failure_count_result = await session.execute(select(func.count()).select_from(FailureRecord))
     total_failures = failure_count_result.scalar() or 0
     global_failure_rate = total_failures / total_papers if total_papers > 0 else 0.0
 
@@ -73,17 +65,15 @@ async def run_observation_phase(session: AsyncSession) -> dict:
         .group_by(FailureRecord.failure_type)
         .order_by(func.count().desc())
     )
-    failure_distribution = {
-        row.failure_type: row.cnt for row in failure_dist_result.all()
-    }
+    failure_distribution = {row.failure_type: row.cnt for row in failure_dist_result.all()}
 
     # -- Global acceptance rate --------------------------------------------------
     outcome_result = await session.execute(
         select(
             func.count().label("total"),
-            func.sum(
-                case((SubmissionOutcome.decision == "accepted", 1), else_=0)
-            ).label("accepted"),
+            func.sum(case((SubmissionOutcome.decision == "accepted", 1), else_=0)).label(
+                "accepted"
+            ),
         )
     )
     outcome_row = outcome_result.one()
@@ -96,9 +86,9 @@ async def run_observation_phase(session: AsyncSession) -> dict:
         select(
             ReliabilityMetric.metric_type,
             func.avg(ReliabilityMetric.value).label("avg_val"),
-            func.sum(
-                case((ReliabilityMetric.passes_threshold.is_(True), 1), else_=0)
-            ).label("passing"),
+            func.sum(case((ReliabilityMetric.passes_threshold.is_(True), 1), else_=0)).label(
+                "passing"
+            ),
             func.count().label("total"),
         ).group_by(ReliabilityMetric.metric_type)
     )
@@ -124,32 +114,38 @@ async def run_observation_phase(session: AsyncSession) -> dict:
     rating_row = rating_result.one()
     tournament_stats = {
         "avg_mu": round(float(rating_row.avg_mu), 4) if rating_row.avg_mu is not None else 0.0,
-        "avg_conservative": round(float(rating_row.avg_cons), 4) if rating_row.avg_cons is not None else 0.0,
-        "avg_sigma": round(float(rating_row.avg_sigma), 4) if rating_row.avg_sigma is not None else 0.0,
+        "avg_conservative": round(float(rating_row.avg_cons), 4)
+        if rating_row.avg_cons is not None
+        else 0.0,
+        "avg_sigma": round(float(rating_row.avg_sigma), 4)
+        if rating_row.avg_sigma is not None
+        else 0.0,
         "rated_papers": rating_row.rated_count or 0,
     }
 
     # -- Cohort trends -----------------------------------------------------------
     from app.services.rsi.improvement_targeter import compute_cohort_deltas
+
     cohort_data = await compute_cohort_deltas(session)
 
     # -- Family health -----------------------------------------------------------
     from app.services.rsi.family_config_optimizer import get_all_family_health
+
     family_health = await get_all_family_health(session)
 
     # -- Taxonomy status ---------------------------------------------------------
     from app.services.rsi.taxonomy_expander import get_taxonomy_status
+
     taxonomy = await get_taxonomy_status(session)
 
     # -- Active experiments ------------------------------------------------------
     from app.services.rsi.experiment_manager import get_active_experiments
+
     active_experiments = await get_active_experiments(session)
 
     # -- Recent gate log decisions -----------------------------------------------
     gate_result = await session.execute(
-        select(RSIGateLog)
-        .order_by(RSIGateLog.decided_at.desc())
-        .limit(20)
+        select(RSIGateLog).order_by(RSIGateLog.decided_at.desc()).limit(20)
     )
     recent_gates = [
         {
@@ -316,14 +312,15 @@ async def run_evaluation_phase(
             )
             recommended.append(eval_entry)
         else:
-            eval_entry["hold_reason"] = (
-                f"Low expected impact ({impact:.2f}); deferring"
-            )
+            eval_entry["hold_reason"] = f"Low expected impact ({impact:.2f}); deferring"
             hold.append(eval_entry)
 
     logger.info(
         "Evaluation phase complete: %d evaluated, %d recommended, %d hold, %d rejected",
-        len(evaluated), len(recommended), len(hold), len(rejected),
+        len(evaluated),
+        len(recommended),
+        len(hold),
+        len(rejected),
     )
 
     return {
@@ -346,10 +343,18 @@ async def _find_supporting_experiments(
 
     # Match by tier label
     for tier_code, label in {
-        "1a": "tier1a", "1b": "tier1b", "1c": "tier1c",
-        "2a": "tier2a", "2b": "tier2b", "2c": "tier2c",
-        "3a": "tier3a", "3b": "tier3b", "3c": "tier3c",
-        "4a": "tier4a", "4b": "tier4b", "4c": "tier4c",
+        "1a": "tier1a",
+        "1b": "tier1b",
+        "1c": "tier1c",
+        "2a": "tier2a",
+        "2b": "tier2b",
+        "2c": "tier2c",
+        "3a": "tier3a",
+        "3b": "tier3b",
+        "3c": "tier3c",
+        "4a": "tier4a",
+        "4b": "tier4b",
+        "4c": "tier4c",
     }.items():
         if label in target:
             result = await session.execute(
@@ -384,15 +389,14 @@ async def _find_supporting_experiments(
 
             # Count papers in family as cohort proxy
             count_result = await session.execute(
-                select(func.count()).select_from(Paper).where(
-                    Paper.family_id == family_id
-                )
+                select(func.count()).select_from(Paper).where(Paper.family_id == family_id)
             )
             cohort_paper_count = count_result.scalar() or 0
 
     # For cohort regressions, count papers in latest cohort
     if "cohort_regression" in target:
         from app.models.cohort_tag import CohortTag
+
         latest_cohort_result = await session.execute(
             select(CohortTag.cohort_id, func.count().label("cnt"))
             .group_by(CohortTag.cohort_id)
@@ -473,9 +477,7 @@ async def run_promotion_gate(
 
         if paper_count < _MIN_COHORT_SIZE:
             decision = "hold"
-            reason = (
-                f"Cohort too small ({paper_count} papers, need {_MIN_COHORT_SIZE})"
-            )
+            reason = f"Cohort too small ({paper_count} papers, need {_MIN_COHORT_SIZE})"
             held_count += 1
         elif risk > _MAX_CRITICAL_DEGRADATION * 10:  # risk > 0.5
             decision = "hold"
@@ -483,51 +485,56 @@ async def run_promotion_gate(
             held_count += 1
         else:
             decision = "promote"
-            reason = (
-                f"Impact {impact:.2f}, risk {risk:.2f}, "
-                f"cohort size {paper_count}"
-            )
+            reason = f"Impact {impact:.2f}, risk {risk:.2f}, cohort size {paper_count}"
             promoted_count += 1
 
-        decisions.append({
-            "target": proposal["target"],
-            "decision": decision,
-            "reason": reason,
-            "expected_impact": impact,
-            "risk_score": risk,
-            "cohort_paper_count": paper_count,
-        })
+        decisions.append(
+            {
+                "target": proposal["target"],
+                "decision": decision,
+                "reason": reason,
+                "expected_impact": impact,
+                "risk_score": risk,
+                "cohort_paper_count": paper_count,
+            }
+        )
 
     # Record holds
     for proposal in held_proposals:
         held_count += 1
-        decisions.append({
-            "target": proposal["target"],
-            "decision": "hold",
-            "reason": proposal.get("hold_reason", "Insufficient data or low impact"),
-            "expected_impact": proposal.get("expected_impact", 0.0),
-            "risk_score": proposal.get("risk_score", 0.0),
-            "cohort_paper_count": proposal.get("cohort_paper_count", 0),
-        })
+        decisions.append(
+            {
+                "target": proposal["target"],
+                "decision": "hold",
+                "reason": proposal.get("hold_reason", "Insufficient data or low impact"),
+                "expected_impact": proposal.get("expected_impact", 0.0),
+                "risk_score": proposal.get("risk_score", 0.0),
+                "cohort_paper_count": proposal.get("cohort_paper_count", 0),
+            }
+        )
 
     # Record rejections
     for proposal in rejected_proposals:
         rejected_count += 1
-        decisions.append({
-            "target": proposal["target"],
-            "decision": "reject",
-            "reason": proposal.get(
-                "rejection_reason",
-                "Critical metric degradation risk >5%",
-            ),
-            "expected_impact": proposal.get("expected_impact", 0.0),
-            "risk_score": proposal.get("risk_score", 0.0),
-            "cohort_paper_count": proposal.get("cohort_paper_count", 0),
-        })
+        decisions.append(
+            {
+                "target": proposal["target"],
+                "decision": "reject",
+                "reason": proposal.get(
+                    "rejection_reason",
+                    "Critical metric degradation risk >5%",
+                ),
+                "expected_impact": proposal.get("expected_impact", 0.0),
+                "risk_score": proposal.get("risk_score", 0.0),
+                "cohort_paper_count": proposal.get("cohort_paper_count", 0),
+            }
+        )
 
     logger.info(
         "Promotion gate complete: %d promoted, %d held, %d rejected",
-        promoted_count, held_count, rejected_count,
+        promoted_count,
+        held_count,
+        rejected_count,
     )
 
     return {
@@ -604,9 +611,7 @@ async def execute_meta_cycle(session: AsyncSession) -> dict:
             "rejected": promotion["rejected_count"],
             "overall_decision": overall_decision,
             "trend": observations.get("cohort_trends", {}).get("trend", "stable"),
-            "global_failure_rate": observations.get("failure", {}).get(
-                "global_failure_rate", 0.0
-            ),
+            "global_failure_rate": observations.get("failure", {}).get("global_failure_rate", 0.0),
             "global_acceptance_rate": observations.get("acceptance", {}).get(
                 "global_acceptance_rate", 0.0
             ),
@@ -614,7 +619,8 @@ async def execute_meta_cycle(session: AsyncSession) -> dict:
 
         logger.info(
             "Meta-pipeline cycle completed (run_id=%d): %s",
-            run_id, overall_decision,
+            run_id,
+            overall_decision,
         )
 
         return {"run_id": run_id, "status": "completed", "summary": summary}
@@ -633,9 +639,7 @@ async def get_meta_pipeline_runs(
 ) -> list[dict]:
     """List recent meta-pipeline runs, most recent first."""
     result = await session.execute(
-        select(MetaPipelineRun)
-        .order_by(MetaPipelineRun.started_at.desc())
-        .limit(limit)
+        select(MetaPipelineRun).order_by(MetaPipelineRun.started_at.desc()).limit(limit)
     )
     runs = result.scalars().all()
 
@@ -663,9 +667,7 @@ async def get_meta_pipeline_run(
 
     Returns None if the run does not exist.
     """
-    result = await session.execute(
-        select(MetaPipelineRun).where(MetaPipelineRun.id == run_id)
-    )
+    result = await session.execute(select(MetaPipelineRun).where(MetaPipelineRun.id == run_id))
     run = result.scalar_one_or_none()
     if run is None:
         return None

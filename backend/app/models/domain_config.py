@@ -14,7 +14,9 @@ class DomainConfig(Base):
     description: Mapped[str | None] = mapped_column(Text)
     data_sources: Mapped[str | None] = mapped_column(Text)  # JSON array of API configs
     analysis_tool: Mapped[str] = mapped_column(String(32), default="python")  # "R" or "python"
-    evaluation_criteria: Mapped[str | None] = mapped_column(Text)  # JSON: {rewards: [], penalties: []}
+    evaluation_criteria: Mapped[str | None] = mapped_column(
+        Text
+    )  # JSON: {rewards: [], penalties: []}
     review_models: Mapped[str | None] = mapped_column(Text)  # JSON: {stage: model_id}
     judge_model: Mapped[str] = mapped_column(String(128), default="gemini-2.0-flash")
     generation_model: Mapped[str] = mapped_column(String(128), default="claude-opus-4-6")

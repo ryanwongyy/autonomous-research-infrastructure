@@ -82,6 +82,7 @@ _MAX_PATCH_PATTERNS = 3
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def analyze_role_failures(
     session: AsyncSession,
     role_name: str,
@@ -97,8 +98,7 @@ async def analyze_role_failures(
     role_name = role_name.lower()
     if role_name not in ROLE_STAGE_MAP:
         raise ValueError(
-            f"Unknown role '{role_name}'. Must be one of: "
-            f"{', '.join(sorted(ROLE_STAGE_MAP))}"
+            f"Unknown role '{role_name}'. Must be one of: {', '.join(sorted(ROLE_STAGE_MAP))}"
         )
 
     detection_stage = ROLE_STAGE_MAP[role_name]
@@ -114,9 +114,7 @@ async def analyze_role_failures(
     if family_id is not None:
         failure_filters.append(FailureRecord.family_id == family_id)
 
-    failure_result = await session.execute(
-        select(FailureRecord).where(and_(*failure_filters))
-    )
+    failure_result = await session.execute(select(FailureRecord).where(and_(*failure_filters)))
     failures = failure_result.scalars().all()
 
     total_failures = len(failures)
@@ -173,13 +171,10 @@ async def analyze_role_failures(
         review_filters.append(Review.family_id == family_id)
 
     if detection_stage.startswith("l"):
-        first_pass_query = (
-            select(
-                func.count().label("total"),
-                func.count().filter(Review.verdict == "pass").label("passed"),
-            )
-            .where(and_(*review_filters))
-        )
+        first_pass_query = select(
+            func.count().label("total"),
+            func.count().filter(Review.verdict == "pass").label("passed"),
+        ).where(and_(*review_filters))
     else:
         first_pass_query = (
             select(
@@ -257,10 +252,7 @@ async def propose_prompt_patch(
 
     # Create experiment.
     total_failures = failure_analysis.get("total_failures", 0)
-    exp_name = (
-        f"role_prompt_patch_{role_name}_"
-        f"{'_'.join(targeted_types[:2])}_n{total_failures}"
-    )
+    exp_name = f"role_prompt_patch_{role_name}_{'_'.join(targeted_types[:2])}_n{total_failures}"
     experiment = await create_experiment(
         session,
         tier="1a",
@@ -333,8 +325,7 @@ async def evaluate_prompt_patch(
     role_name = config.get("role")
     if role_name is None or role_name not in ROLE_STAGE_MAP:
         raise ValueError(
-            f"Experiment {experiment_id} config missing valid 'role'. "
-            f"Found: {role_name}"
+            f"Experiment {experiment_id} config missing valid 'role'. Found: {role_name}"
         )
     detection_stage = ROLE_STAGE_MAP[role_name]
 
@@ -368,9 +359,7 @@ async def evaluate_prompt_patch(
     after_total = after_stats["failure_rate"]
 
     if before_total > 0:
-        improvement_pct = round(
-            ((before_total - after_total) / before_total) * 100, 2
-        )
+        improvement_pct = round(((before_total - after_total) / before_total) * 100, 2)
     elif after_total == 0:
         improvement_pct = 0.0
     else:
@@ -386,7 +375,11 @@ async def evaluate_prompt_patch(
 
     logger.info(
         "Tier 1a evaluation for experiment %s: %s (before=%d, after=%d, improvement=%.1f%%)",
-        experiment_id, decision, before_total, after_total, improvement_pct,
+        experiment_id,
+        decision,
+        before_total,
+        after_total,
+        improvement_pct,
     )
 
     return {
@@ -442,13 +435,15 @@ async def get_role_prompt_status(session: AsyncSession) -> list[dict]:
         )
         prompt_version_count = pv_count_result.scalar() or 0
 
-        statuses.append({
-            "role": role_name,
-            "detection_stage": detection_stage,
-            "has_active_override": active_prompt is not None,
-            "prompt_versions": prompt_version_count,
-            "experiments_by_status": experiments_by_status,
-            "recent_failures_90d": recent_failure_count,
-        })
+        statuses.append(
+            {
+                "role": role_name,
+                "detection_stage": detection_stage,
+                "has_active_override": active_prompt is not None,
+                "prompt_versions": prompt_version_count,
+                "experiments_by_status": experiments_by_status,
+                "recent_failures_90d": recent_failure_count,
+            }
+        )
 
     return statuses

@@ -17,30 +17,47 @@ from app.models.paper_family import PaperFamily
 async def autonomy_data(db_session: AsyncSession):
     """Create papers with autonomy cards for testing."""
     family = PaperFamily(
-        id="F1", name="Test Family", short_name="TF",
-        description="Family for autonomy tests", lock_protocol_type="open", active=True,
+        id="F1",
+        name="Test Family",
+        short_name="TF",
+        description="Family for autonomy tests",
+        lock_protocol_type="open",
+        active=True,
     )
     db_session.add(family)
     await db_session.flush()
 
     p1 = Paper(
-        id="auto_paper_1", title="Fully Autonomous Paper",
-        source="ape", family_id="F1", status="published",
+        id="auto_paper_1",
+        title="Fully Autonomous Paper",
+        source="ape",
+        family_id="F1",
+        status="published",
     )
     p2 = Paper(
-        id="auto_paper_2", title="Mixed Autonomy Paper",
-        source="ape", family_id="F1", status="published",
+        id="auto_paper_2",
+        title="Mixed Autonomy Paper",
+        source="ape",
+        family_id="F1",
+        status="published",
     )
     p_no_card = Paper(
-        id="no_card_paper", title="Paper Without Card",
-        source="ape", family_id="F1", status="published",
+        id="no_card_paper",
+        title="Paper Without Card",
+        source="ape",
+        family_id="F1",
+        status="published",
     )
     db_session.add_all([p1, p2, p_no_card])
     await db_session.flush()
 
     role_auto = {
-        "scout": "full_auto", "designer": "full_auto", "data_steward": "full_auto",
-        "analyst": "full_auto", "drafter": "full_auto", "verifier": "full_auto",
+        "scout": "full_auto",
+        "designer": "full_auto",
+        "data_steward": "full_auto",
+        "analyst": "full_auto",
+        "drafter": "full_auto",
+        "verifier": "full_auto",
         "packager": "full_auto",
     }
     card1 = AutonomyCard(
@@ -51,16 +68,22 @@ async def autonomy_data(db_session: AsyncSession):
     )
 
     role_mixed = {
-        "scout": "full_auto", "designer": "supervised", "data_steward": "full_auto",
-        "analyst": "human_driven", "drafter": "full_auto", "verifier": "full_auto",
+        "scout": "full_auto",
+        "designer": "supervised",
+        "data_steward": "full_auto",
+        "analyst": "human_driven",
+        "drafter": "full_auto",
+        "verifier": "full_auto",
         "packager": "full_auto",
     }
     card2 = AutonomyCard(
         paper_id="auto_paper_2",
         role_autonomy_json=json.dumps(role_mixed),
-        human_intervention_points_json=json.dumps([
-            {"role": "designer", "level": "supervised", "description": "Human reviewed design"},
-        ]),
+        human_intervention_points_json=json.dumps(
+            [
+                {"role": "designer", "level": "supervised", "description": "Human reviewed design"},
+            ]
+        ),
         overall_autonomy_score=0.71,
     )
 
@@ -70,6 +93,7 @@ async def autonomy_data(db_session: AsyncSession):
 
 
 # -- GET /papers/{paper_id}/autonomy-card --------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_paper_autonomy_card(client, autonomy_data):
@@ -114,6 +138,7 @@ async def test_paper_autonomy_nonexistent(client):
 
 
 # -- GET /families/{family_id}/autonomy-stats ----------------------------------
+
 
 @pytest.mark.asyncio
 async def test_family_autonomy_stats(client, autonomy_data):

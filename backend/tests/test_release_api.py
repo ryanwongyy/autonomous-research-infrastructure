@@ -14,20 +14,32 @@ from app.models.paper_family import PaperFamily
 async def release_papers(db_session: AsyncSession):
     """Create papers at various release stages."""
     family = PaperFamily(
-        id="F1", name="Test", short_name="T",
-        description="For release tests", lock_protocol_type="open", active=True,
+        id="F1",
+        name="Test",
+        short_name="T",
+        description="For release tests",
+        lock_protocol_type="open",
+        active=True,
     )
     db_session.add(family)
     await db_session.flush()
 
     internal = Paper(
-        id="rel_internal", title="Internal Paper", source="ape",
-        family_id="F1", status="published", release_status="internal",
+        id="rel_internal",
+        title="Internal Paper",
+        source="ape",
+        family_id="F1",
+        status="published",
+        release_status="internal",
         review_status="peer_reviewed",
     )
     candidate = Paper(
-        id="rel_candidate", title="Candidate Paper", source="ape",
-        family_id="F1", status="published", release_status="candidate",
+        id="rel_candidate",
+        title="Candidate Paper",
+        source="ape",
+        family_id="F1",
+        status="published",
+        release_status="candidate",
         review_status="peer_reviewed",
     )
     db_session.add_all([internal, candidate])
@@ -36,6 +48,7 @@ async def release_papers(db_session: AsyncSession):
 
 
 # ── GET /release/status ───────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_release_status_overview_empty(client):
@@ -54,6 +67,7 @@ async def test_release_status_with_data(client, release_papers):
 
 # ── GET /papers/{id}/release ──────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_paper_release_status(client, release_papers):
     resp = await client.get("/api/v1/papers/rel_internal/release")
@@ -71,9 +85,12 @@ async def test_paper_release_not_found(client):
 
 # ── GET /papers/{id}/release/preconditions ────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_preconditions_check(client, release_papers):
-    resp = await client.get("/api/v1/papers/rel_internal/release/preconditions?target_status=candidate")
+    resp = await client.get(
+        "/api/v1/papers/rel_internal/release/preconditions?target_status=candidate"
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert "can_transition" in data
@@ -86,6 +103,7 @@ async def test_preconditions_not_found(client):
 
 
 # ── POST /papers/{id}/release/transition ──────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_transition_not_found(client):

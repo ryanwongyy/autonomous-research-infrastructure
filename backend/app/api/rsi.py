@@ -182,6 +182,7 @@ logger = logging.getLogger(__name__)
 # Request body models
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class RollbackExperimentRequest(BaseModel):
     reason: str = Field("", max_length=5000)
 
@@ -223,6 +224,7 @@ class ProposeNewFailureTypeRequest(BaseModel):
 # Core — Dashboard & Experiments
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @router.get("/rsi/dashboard")
 async def rsi_dashboard(db: AsyncSession = Depends(get_db)):
     """Return the top-level RSI dashboard: experiment counts by tier/status and recent gate logs."""
@@ -251,7 +253,9 @@ async def get_experiment(experiment_id: int, db: AsyncSession = Depends(get_db))
 
 @router.post("/rsi/experiments/{experiment_id}/activate")
 @limiter.limit("20/hour")
-async def activate_experiment(request: Request, experiment_id: int, db: AsyncSession = Depends(get_db)):
+async def activate_experiment(
+    request: Request, experiment_id: int, db: AsyncSession = Depends(get_db)
+):
     """Activate a proposed/shadow experiment."""
     try:
         experiment = await svc_activate_experiment(db, experiment_id)
@@ -290,6 +294,7 @@ async def rollback_experiment(
 # Prompts — Versioning & Rollback
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @router.get("/rsi/prompts/{target_type}/{target_key}/history")
 async def get_prompt_history(
     target_type: str,
@@ -302,7 +307,9 @@ async def get_prompt_history(
 
 @router.post("/rsi/prompts/{version_id}/activate")
 @limiter.limit("20/hour")
-async def activate_prompt_version(request: Request, version_id: int, db: AsyncSession = Depends(get_db)):
+async def activate_prompt_version(
+    request: Request, version_id: int, db: AsyncSession = Depends(get_db)
+):
     """Activate a specific prompt version, deactivating all others for that target."""
     try:
         version = await svc_activate_prompt_version(db, version_id)
@@ -356,6 +363,7 @@ async def rollback_prompt(
 # Tier 1a — Role Prompt Optimisation
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @router.get("/rsi/tier1a/status")
 async def tier1a_status(db: AsyncSession = Depends(get_db)):
     """Get prompt-optimisation status for all pipeline roles."""
@@ -374,7 +382,10 @@ async def tier1a_analyze(
     """Analyze failure patterns for a specific pipeline role."""
     try:
         return await svc_analyze_role_failures(
-            db, role_name, family_id=family_id, lookback_days=lookback_days,
+            db,
+            role_name,
+            family_id=family_id,
+            lookback_days=lookback_days,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -417,6 +428,7 @@ async def tier1a_evaluate(request: Request, experiment_id: int, db: AsyncSession
 # Tier 1b — Review Prompt Sharpening
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @router.get("/rsi/tier1b/accuracy")
 async def tier1b_all_accuracy(db: AsyncSession = Depends(get_db)):
     """Get accuracy metrics across all review layers."""
@@ -451,6 +463,7 @@ async def tier1b_propose(request: Request, layer: str, db: AsyncSession = Depend
 # ═══════════════════════════════════════════════════════════════════════════════
 # Tier 1c — Policy Calibration
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @router.get("/rsi/tier1c/correlations")
 async def tier1c_correlations(
@@ -487,6 +500,7 @@ async def tier1c_propose_reweighting(request: Request, db: AsyncSession = Depend
 # Tier 2a — Family Config Optimisation
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @router.get("/rsi/tier2a/health")
 async def tier2a_all_health(db: AsyncSession = Depends(get_db)):
     """Get health summaries for all active paper families."""
@@ -519,6 +533,7 @@ async def tier2a_propose(request: Request, family_id: str, db: AsyncSession = De
 # ═══════════════════════════════════════════════════════════════════════════════
 # Tier 2b — Drift Threshold Tuning
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @router.get("/rsi/tier2b/metrics")
 async def tier2b_metrics(
@@ -560,11 +575,15 @@ async def tier2b_propose(
 
 @router.post("/rsi/tier2b/apply")
 @limiter.limit("20/hour")
-async def tier2b_apply(request: Request, body: ApplyThresholdRequest, db: AsyncSession = Depends(get_db)):
+async def tier2b_apply(
+    request: Request, body: ApplyThresholdRequest, db: AsyncSession = Depends(get_db)
+):
     """Apply a new drift threshold value."""
     try:
         result = await svc_apply_threshold(
-            db, new_threshold=body.new_threshold, family_id=body.family_id,
+            db,
+            new_threshold=body.new_threshold,
+            family_id=body.family_id,
         )
         await db.commit()
     except ValueError as e:
@@ -579,6 +598,7 @@ async def tier2b_apply(request: Request, body: ApplyThresholdRequest, db: AsyncS
 # ═══════════════════════════════════════════════════════════════════════════════
 # Tier 2c — Judge Calibration
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @router.get("/rsi/tier2c/overview")
 async def tier2c_overview(db: AsyncSession = Depends(get_db)):
@@ -612,6 +632,7 @@ async def tier2c_propose(request: Request, family_id: str, db: AsyncSession = De
 # Tier 3a — Layer Architecture
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @router.get("/rsi/tier3a/effectiveness")
 async def tier3a_effectiveness(
     family_id: str | None = Query(None, description="Scope to a family"),
@@ -641,7 +662,10 @@ async def tier3a_propose_bypass(
     """Propose bypassing a review layer under a specified condition."""
     try:
         result = await svc_propose_layer_bypass(
-            db, layer, family_id=body.family_id, condition=body.condition,
+            db,
+            layer,
+            family_id=body.family_id,
+            condition=body.condition,
         )
         await db.commit()
     except ValueError as e:
@@ -676,7 +700,9 @@ async def tier3a_enable_shadow(
 
 @router.post("/rsi/tier3a/evaluate-shadow/{config_id}")
 @limiter.limit("10/hour")
-async def tier3a_evaluate_shadow(request: Request, config_id: int, db: AsyncSession = Depends(get_db)):
+async def tier3a_evaluate_shadow(
+    request: Request, config_id: int, db: AsyncSession = Depends(get_db)
+):
     """Evaluate collected shadow-layer results to decide on promotion or removal."""
     try:
         result = await svc_evaluate_shadow_results(db, config_id)
@@ -693,6 +719,7 @@ async def tier3a_evaluate_shadow(request: Request, config_id: int, db: AsyncSess
 # ═══════════════════════════════════════════════════════════════════════════════
 # Tier 3b — Role Architecture
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @router.get("/rsi/tier3b/boundary-failures")
 async def tier3b_boundary_failures(db: AsyncSession = Depends(get_db)):
@@ -711,7 +738,9 @@ async def tier3b_architecture(
 
 @router.post("/rsi/tier3b/propose-split/{role_name}")
 @limiter.limit("10/hour")
-async def tier3b_propose_split(request: Request, role_name: str, db: AsyncSession = Depends(get_db)):
+async def tier3b_propose_split(
+    request: Request, role_name: str, db: AsyncSession = Depends(get_db)
+):
     """Propose splitting a role into sub-roles based on boundary-failure analysis."""
     try:
         result = await svc_propose_role_split(db, role_name)
@@ -748,6 +777,7 @@ async def tier3b_propose_merge(
 # ═══════════════════════════════════════════════════════════════════════════════
 # Tier 3c — Family Discovery
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @router.get("/rsi/tier3c/clusters")
 async def tier3c_clusters(db: AsyncSession = Depends(get_db)):
@@ -807,6 +837,7 @@ async def tier3c_approve(request: Request, proposal_id: int, db: AsyncSession = 
 # Tier 4a — Taxonomy Expansion
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @router.get("/rsi/tier4a/clusters")
 async def tier4a_clusters(db: AsyncSession = Depends(get_db)):
     """Cluster 'other' failures to discover potential new failure types."""
@@ -865,6 +896,7 @@ async def tier4a_approve(request: Request, proposal_id: int, db: AsyncSession = 
 # Tier 4b — Improvement Targeting
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @router.get("/rsi/tier4b/cohort-deltas")
 async def tier4b_cohort_deltas(db: AsyncSession = Depends(get_db)):
     """Compute cohort-over-cohort metric deltas to detect improvement or regression."""
@@ -886,6 +918,7 @@ async def tier4b_summary(db: AsyncSession = Depends(get_db)):
 # ═══════════════════════════════════════════════════════════════════════════════
 # Tier 4c — Meta Pipeline
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @router.post("/rsi/tier4c/start-cycle")
 @limiter.limit("2/hour")

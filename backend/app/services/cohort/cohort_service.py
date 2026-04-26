@@ -35,9 +35,7 @@ async def tag_paper_cohort(
     cohort_id = _current_cohort_id(generation_model)
 
     # Check if already tagged
-    result = await session.execute(
-        select(CohortTag).where(CohortTag.paper_id == paper_id)
-    )
+    result = await session.execute(select(CohortTag).where(CohortTag.paper_id == paper_id))
     existing = result.scalar_one_or_none()
 
     if existing:
@@ -58,9 +56,7 @@ async def tag_paper_cohort(
     return tag
 
 
-async def get_cohort_comparison(
-    session: AsyncSession, cohort_id: str | None = None
-) -> dict:
+async def get_cohort_comparison(session: AsyncSession, cohort_id: str | None = None) -> dict:
     """Compare metrics across cohorts or for a specific cohort."""
     query = select(CohortTag)
     if cohort_id:
@@ -77,34 +73,34 @@ async def get_cohort_comparison(
     comparison = []
     for cid, paper_ids in cohorts.items():
         # Get ratings for papers in this cohort
-        ratings_result = await session.execute(
-            select(Rating).where(Rating.paper_id.in_(paper_ids))
-        )
+        ratings_result = await session.execute(select(Rating).where(Rating.paper_id.in_(paper_ids)))
         ratings = ratings_result.scalars().all()
 
         avg_mu = sum(r.mu for r in ratings) / len(ratings) if ratings else 0.0
-        avg_conservative = sum(r.conservative_rating for r in ratings) / len(ratings) if ratings else 0.0
+        avg_conservative = (
+            sum(r.conservative_rating for r in ratings) / len(ratings) if ratings else 0.0
+        )
 
         # Get the generation model from any tag in this cohort
         sample_tag = next((t for t in tags if t.cohort_id == cid), None)
 
-        comparison.append({
-            "cohort_id": cid,
-            "paper_count": len(paper_ids),
-            "generation_model": sample_tag.generation_model if sample_tag else "unknown",
-            "avg_mu": round(avg_mu, 2),
-            "avg_conservative_rating": round(avg_conservative, 2),
-            "rated_papers": len(ratings),
-        })
+        comparison.append(
+            {
+                "cohort_id": cid,
+                "paper_count": len(paper_ids),
+                "generation_model": sample_tag.generation_model if sample_tag else "unknown",
+                "avg_mu": round(avg_mu, 2),
+                "avg_conservative_rating": round(avg_conservative, 2),
+                "rated_papers": len(ratings),
+            }
+        )
 
     return {"cohorts": comparison}
 
 
 async def get_cross_cohort_trends(session: AsyncSession) -> list[dict]:
     """Time series of cohort-level metrics."""
-    result = await session.execute(
-        select(CohortTag).order_by(CohortTag.created_at)
-    )
+    result = await session.execute(select(CohortTag).order_by(CohortTag.created_at))
     tags = result.scalars().all()
 
     # Group by cohort, preserving order

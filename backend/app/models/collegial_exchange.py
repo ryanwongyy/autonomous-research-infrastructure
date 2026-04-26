@@ -17,8 +17,12 @@ class CollegialExchange(Base):
     __tablename__ = "collegial_exchanges"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_id: Mapped[int] = mapped_column(Integer, ForeignKey("collegial_sessions.id"), nullable=False, index=True)
-    colleague_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("colleague_profiles.id"), index=True)
+    session_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("collegial_sessions.id"), nullable=False, index=True
+    )
+    colleague_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("colleague_profiles.id"), index=True
+    )
     speaker_role: Mapped[str] = mapped_column(String(16), nullable=False)
     turn_number: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)

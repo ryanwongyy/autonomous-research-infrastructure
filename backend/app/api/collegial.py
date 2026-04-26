@@ -34,6 +34,7 @@ router = APIRouter()
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 
+
 class ColleagueProfileCreate(BaseModel):
     name: str = Field(..., max_length=200)
     expertise_area: str = Field(..., max_length=500)
@@ -51,6 +52,7 @@ class CollegialReviewBody(BaseModel):
 # GET /collegial/profiles — list all colleague profiles
 # ---------------------------------------------------------------------------
 
+
 @router.get("/collegial/profiles")
 async def list_profiles(db: AsyncSession = Depends(get_db)):
     """Return all colleague profiles."""
@@ -65,6 +67,7 @@ async def list_profiles(db: AsyncSession = Depends(get_db)):
 # ---------------------------------------------------------------------------
 # GET /papers/{paper_id}/collegial-session — latest collegial session
 # ---------------------------------------------------------------------------
+
 
 @router.get("/papers/{paper_id}/collegial-session")
 async def get_collegial_session(
@@ -82,6 +85,7 @@ async def get_collegial_session(
 # GET /papers/{paper_id}/acknowledgments — acknowledgment records
 # ---------------------------------------------------------------------------
 
+
 @router.get("/papers/{paper_id}/acknowledgments")
 async def get_acknowledgments(
     paper_id: str,
@@ -89,9 +93,7 @@ async def get_acknowledgments(
 ):
     """Return all acknowledgment records for a paper."""
     result = await db.execute(
-        select(AcknowledgmentRecord).where(
-            AcknowledgmentRecord.paper_id == paper_id
-        )
+        select(AcknowledgmentRecord).where(AcknowledgmentRecord.paper_id == paper_id)
     )
     records = result.scalars().all()
     return {
@@ -115,6 +117,7 @@ async def get_acknowledgments(
 # ---------------------------------------------------------------------------
 # POST /papers/{paper_id}/collegial-review — trigger full collegial review
 # ---------------------------------------------------------------------------
+
 
 @router.post("/papers/{paper_id}/collegial-review")
 @limiter.limit("5/hour")
@@ -152,6 +155,7 @@ async def trigger_collegial_review(
 # ---------------------------------------------------------------------------
 # POST /collegial/profiles — create a new colleague profile
 # ---------------------------------------------------------------------------
+
 
 @router.post("/collegial/profiles", status_code=201)
 @limiter.limit("30/hour")

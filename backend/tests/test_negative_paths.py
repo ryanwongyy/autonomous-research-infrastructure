@@ -21,15 +21,14 @@ from app.models.paper_family import PaperFamily
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest_asyncio.fixture
 async def authed_admin_client(db_engine, monkeypatch):
     """Client with admin key -- needed for admin-gated endpoints."""
     monkeypatch.setattr("app.config.settings.ape_api_key", "test-api-key")
     monkeypatch.setattr("app.config.settings.ape_admin_key", "test-admin-key")
 
-    session_factory = async_sessionmaker(
-        db_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
     # Patch async_session used directly inside batch.py
     monkeypatch.setattr("app.api.batch.async_session", session_factory)
@@ -57,9 +56,7 @@ async def noauth_mutation_client(db_engine, monkeypatch):
     monkeypatch.setattr("app.config.settings.ape_api_key", "real-key")
     monkeypatch.setattr("app.config.settings.ape_admin_key", "real-admin-key")
 
-    session_factory = async_sessionmaker(
-        db_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr("app.api.batch.async_session", session_factory)
 
     from app.main import app
@@ -133,9 +130,7 @@ class TestLeaderboardNegative:
     @pytest.mark.asyncio
     async def test_invalid_sort_by_returns_422(self, client, family_and_paper):
         """sort_by has a regex pattern constraint; invalid values -> 422."""
-        resp = await client.get(
-            "/api/v1/leaderboard?family_id=NEG_F1&sort_by=drop_table"
-        )
+        resp = await client.get("/api/v1/leaderboard?family_id=NEG_F1&sort_by=drop_table")
         assert resp.status_code == 422
         body = resp.json()
         assert "detail" in body
@@ -143,33 +138,25 @@ class TestLeaderboardNegative:
     @pytest.mark.asyncio
     async def test_negative_offset_returns_422(self, client, family_and_paper):
         """offset has ge=0 constraint; negative -> 422."""
-        resp = await client.get(
-            "/api/v1/leaderboard?family_id=NEG_F1&offset=-1"
-        )
+        resp = await client.get("/api/v1/leaderboard?family_id=NEG_F1&offset=-1")
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_zero_limit_returns_422(self, client, family_and_paper):
         """limit has ge=1 constraint; 0 -> 422."""
-        resp = await client.get(
-            "/api/v1/leaderboard?family_id=NEG_F1&limit=0"
-        )
+        resp = await client.get("/api/v1/leaderboard?family_id=NEG_F1&limit=0")
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_limit_exceeds_max_returns_422(self, client, family_and_paper):
         """limit has le=250 constraint; 999 -> 422."""
-        resp = await client.get(
-            "/api/v1/leaderboard?family_id=NEG_F1&limit=999"
-        )
+        resp = await client.get("/api/v1/leaderboard?family_id=NEG_F1&limit=999")
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_nonexistent_family_returns_404(self, client):
         """Querying a family that does not exist -> 404."""
-        resp = await client.get(
-            "/api/v1/leaderboard?family_id=DOES_NOT_EXIST"
-        )
+        resp = await client.get("/api/v1/leaderboard?family_id=DOES_NOT_EXIST")
         assert resp.status_code == 404
         assert "detail" in resp.json()
 
@@ -238,13 +225,9 @@ class TestPapersNegative:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_export_paper_invalid_format_returns_422(
-        self, client, family_and_paper
-    ):
+    async def test_export_paper_invalid_format_returns_422(self, client, family_and_paper):
         """Export format has a pattern constraint (pdf|tex); 'docx' -> 422."""
-        resp = await client.get(
-            "/api/v1/papers/neg_paper_001/export?format=docx"
-        )
+        resp = await client.get("/api/v1/papers/neg_paper_001/export?format=docx")
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
@@ -269,25 +252,19 @@ class TestBatchNegative:
     """Auth gating and validation for batch endpoints."""
 
     @pytest.mark.asyncio
-    async def test_seed_families_without_auth_returns_401(
-        self, noauth_mutation_client
-    ):
+    async def test_seed_families_without_auth_returns_401(self, noauth_mutation_client):
         """POST /batch/seed-families without any API key -> 401."""
         resp = await noauth_mutation_client.post("/api/v1/batch/seed-families")
         assert resp.status_code == 401
         assert "detail" in resp.json()
 
     @pytest.mark.asyncio
-    async def test_seed_families_with_wrong_key_returns_403(
-        self, db_engine, monkeypatch
-    ):
+    async def test_seed_families_with_wrong_key_returns_403(self, db_engine, monkeypatch):
         """POST /batch/seed-families with the regular (non-admin) key -> 403."""
         monkeypatch.setattr("app.config.settings.ape_api_key", "regular-key")
         monkeypatch.setattr("app.config.settings.ape_admin_key", "admin-key")
 
-        session_factory = async_sessionmaker(
-            db_engine, class_=AsyncSession, expire_on_commit=False
-        )
+        session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
         monkeypatch.setattr("app.api.batch.async_session", session_factory)
         from app.main import app
 
@@ -309,63 +286,41 @@ class TestBatchNegative:
     @pytest.mark.asyncio
     async def test_generate_count_zero_returns_422(self, authed_admin_client):
         """POST /batch/generate with count=0 (below ge=1) -> 422."""
-        resp = await authed_admin_client.post(
-            "/api/v1/batch/generate", json={"count": 0}
-        )
+        resp = await authed_admin_client.post("/api/v1/batch/generate", json={"count": 0})
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_generate_count_too_large_returns_422(
-        self, authed_admin_client
-    ):
+    async def test_generate_count_too_large_returns_422(self, authed_admin_client):
         """POST /batch/generate with count=100 (above le=10) -> 422."""
-        resp = await authed_admin_client.post(
-            "/api/v1/batch/generate", json={"count": 100}
-        )
+        resp = await authed_admin_client.post("/api/v1/batch/generate", json={"count": 100})
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_generate_negative_count_returns_422(
-        self, authed_admin_client
-    ):
+    async def test_generate_negative_count_returns_422(self, authed_admin_client):
         """POST /batch/generate with count=-1 -> 422."""
-        resp = await authed_admin_client.post(
-            "/api/v1/batch/generate", json={"count": -1}
-        )
+        resp = await authed_admin_client.post("/api/v1/batch/generate", json={"count": -1})
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_generate_non_integer_count_returns_422(
-        self, authed_admin_client
-    ):
+    async def test_generate_non_integer_count_returns_422(self, authed_admin_client):
         """POST /batch/generate with count='abc' -> 422."""
-        resp = await authed_admin_client.post(
-            "/api/v1/batch/generate", json={"count": "abc"}
-        )
+        resp = await authed_admin_client.post("/api/v1/batch/generate", json={"count": "abc"})
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_batch_review_pending_without_auth_returns_401(
-        self, noauth_mutation_client
-    ):
+    async def test_batch_review_pending_without_auth_returns_401(self, noauth_mutation_client):
         """POST /batch/review-pending without key -> 401."""
-        resp = await noauth_mutation_client.post(
-            "/api/v1/batch/review-pending"
-        )
+        resp = await noauth_mutation_client.post("/api/v1/batch/review-pending")
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_batch_promote_without_auth_returns_401(
-        self, noauth_mutation_client
-    ):
+    async def test_batch_promote_without_auth_returns_401(self, noauth_mutation_client):
         """POST /batch/promote without key -> 401."""
         resp = await noauth_mutation_client.post("/api/v1/batch/promote")
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_batch_tournament_without_auth_returns_401(
-        self, noauth_mutation_client
-    ):
+    async def test_batch_tournament_without_auth_returns_401(self, noauth_mutation_client):
         """POST /batch/tournament without key -> 401."""
         resp = await noauth_mutation_client.post("/api/v1/batch/tournament")
         assert resp.status_code == 401
@@ -380,19 +335,13 @@ class TestTournamentNegative:
     """Auth and validation for tournament endpoints."""
 
     @pytest.mark.asyncio
-    async def test_trigger_tournament_without_auth_returns_401(
-        self, noauth_mutation_client
-    ):
+    async def test_trigger_tournament_without_auth_returns_401(self, noauth_mutation_client):
         """POST /tournament/run without any API key -> 401."""
-        resp = await noauth_mutation_client.post(
-            "/api/v1/tournament/run?family_id=F1"
-        )
+        resp = await noauth_mutation_client.post("/api/v1/tournament/run?family_id=F1")
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_trigger_tournament_with_wrong_key_returns_403(
-        self, client, monkeypatch
-    ):
+    async def test_trigger_tournament_with_wrong_key_returns_403(self, client, monkeypatch):
         """POST /tournament/run with regular key (not admin) -> 403."""
         monkeypatch.setattr("app.config.settings.ape_api_key", "regular-key")
         monkeypatch.setattr("app.config.settings.ape_admin_key", "admin-key")
@@ -403,21 +352,15 @@ class TestTournamentNegative:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_trigger_tournament_missing_family_id_returns_422(
-        self, authed_admin_client
-    ):
+    async def test_trigger_tournament_missing_family_id_returns_422(self, authed_admin_client):
         """POST /tournament/run without family_id query param -> 422."""
         resp = await authed_admin_client.post("/api/v1/tournament/run")
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_trigger_tournament_nonexistent_family_returns_404(
-        self, authed_admin_client
-    ):
+    async def test_trigger_tournament_nonexistent_family_returns_404(self, authed_admin_client):
         """POST /tournament/run for a family that does not exist -> 404."""
-        resp = await authed_admin_client.post(
-            "/api/v1/tournament/run?family_id=DOES_NOT_EXIST"
-        )
+        resp = await authed_admin_client.post("/api/v1/tournament/run?family_id=DOES_NOT_EXIST")
         assert resp.status_code == 404
         assert "detail" in resp.json()
 
@@ -506,40 +449,28 @@ class TestReleaseNegative:
     @pytest.mark.asyncio
     async def test_transition_nonexistent_paper_returns_404(self, client):
         """POST transition for a paper that does not exist -> 404."""
-        resp = await client.post(
-            "/api/v1/papers/NOPE/release/transition?target_status=candidate"
-        )
+        resp = await client.post("/api/v1/papers/NOPE/release/transition?target_status=candidate")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_transition_invalid_target_status_returns_422(
-        self, client, family_and_paper
-    ):
+    async def test_transition_invalid_target_status_returns_422(self, client, family_and_paper):
         """target_status has a Literal constraint; invalid value -> 422."""
         resp = await client.post(
-            "/api/v1/papers/neg_paper_001/release/transition"
-            "?target_status=bogus_status"
+            "/api/v1/papers/neg_paper_001/release/transition?target_status=bogus_status"
         )
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_transition_missing_target_status_returns_422(
-        self, client, family_and_paper
-    ):
+    async def test_transition_missing_target_status_returns_422(self, client, family_and_paper):
         """target_status is required; omitting it -> 422."""
-        resp = await client.post(
-            "/api/v1/papers/neg_paper_001/release/transition"
-        )
+        resp = await client.post("/api/v1/papers/neg_paper_001/release/transition")
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_transition_force_without_approved_by_returns_400(
-        self, client, family_and_paper
-    ):
+    async def test_transition_force_without_approved_by_returns_400(self, client, family_and_paper):
         """Force=true but no approved_by -> 400."""
         resp = await client.post(
-            "/api/v1/papers/neg_paper_001/release/transition"
-            "?target_status=candidate&force=true"
+            "/api/v1/papers/neg_paper_001/release/transition?target_status=candidate&force=true"
         )
         assert resp.status_code == 400
         assert "approved_by" in resp.json()["detail"]
@@ -547,36 +478,25 @@ class TestReleaseNegative:
     @pytest.mark.asyncio
     async def test_preconditions_nonexistent_paper_returns_404(self, client):
         """GET preconditions for nonexistent paper -> 404."""
-        resp = await client.get(
-            "/api/v1/papers/NOPE/release/preconditions?target_status=candidate"
-        )
+        resp = await client.get("/api/v1/papers/NOPE/release/preconditions?target_status=candidate")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_preconditions_invalid_target_returns_422(
-        self, client, family_and_paper
-    ):
+    async def test_preconditions_invalid_target_returns_422(self, client, family_and_paper):
         """Preconditions with invalid target_status -> 422."""
         resp = await client.get(
-            "/api/v1/papers/neg_paper_001/release/preconditions"
-            "?target_status=nonsense"
+            "/api/v1/papers/neg_paper_001/release/preconditions?target_status=nonsense"
         )
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_preconditions_missing_target_returns_422(
-        self, client, family_and_paper
-    ):
+    async def test_preconditions_missing_target_returns_422(self, client, family_and_paper):
         """Preconditions without target_status query param -> 422."""
-        resp = await client.get(
-            "/api/v1/papers/neg_paper_001/release/preconditions"
-        )
+        resp = await client.get("/api/v1/papers/neg_paper_001/release/preconditions")
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_get_release_status_nonexistent_paper_returns_404(
-        self, client
-    ):
+    async def test_get_release_status_nonexistent_paper_returns_404(self, client):
         """GET /papers/{id}/release for nonexistent paper -> 404."""
         resp = await client.get("/api/v1/papers/NOPE_999/release")
         assert resp.status_code == 404
@@ -600,23 +520,15 @@ class TestStatsNegative:
         assert data["conservative_distribution"] == []
 
     @pytest.mark.asyncio
-    async def test_rating_distribution_bucket_too_small_returns_422(
-        self, client
-    ):
+    async def test_rating_distribution_bucket_too_small_returns_422(self, client):
         """bucket_size has ge=5.0; 1.0 -> 422."""
-        resp = await client.get(
-            "/api/v1/stats/rating-distribution?bucket_size=1.0"
-        )
+        resp = await client.get("/api/v1/stats/rating-distribution?bucket_size=1.0")
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_rating_distribution_bucket_too_large_returns_422(
-        self, client
-    ):
+    async def test_rating_distribution_bucket_too_large_returns_422(self, client):
         """bucket_size has le=1000.0; 5000 -> 422."""
-        resp = await client.get(
-            "/api/v1/stats/rating-distribution?bucket_size=5000"
-        )
+        resp = await client.get("/api/v1/stats/rating-distribution?bucket_size=5000")
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
@@ -639,19 +551,13 @@ class TestStatsNegative:
     @pytest.mark.asyncio
     async def test_trueskill_progression_top_n_zero_returns_422(self, client):
         """top_n has ge=1; 0 -> 422."""
-        resp = await client.get(
-            "/api/v1/stats/trueskill-progression?top_n=0"
-        )
+        resp = await client.get("/api/v1/stats/trueskill-progression?top_n=0")
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_trueskill_progression_top_n_too_large_returns_422(
-        self, client
-    ):
+    async def test_trueskill_progression_top_n_too_large_returns_422(self, client):
         """top_n has le=50; 999 -> 422."""
-        resp = await client.get(
-            "/api/v1/stats/trueskill-progression?top_n=999"
-        )
+        resp = await client.get("/api/v1/stats/trueskill-progression?top_n=999")
         assert resp.status_code == 422
 
 
@@ -664,9 +570,7 @@ class TestMutationAuthMiddleware:
     """The MutationAuthMiddleware rejects mutating requests without a key."""
 
     @pytest.mark.asyncio
-    async def test_post_paper_without_key_returns_401(
-        self, noauth_mutation_client
-    ):
+    async def test_post_paper_without_key_returns_401(self, noauth_mutation_client):
         """POST /papers without API key -> 401."""
         resp = await noauth_mutation_client.post(
             "/api/v1/papers",
@@ -687,9 +591,7 @@ class TestMutationAuthMiddleware:
         monkeypatch.setattr("app.config.settings.ape_api_key", "correct-key")
         monkeypatch.setattr("app.config.settings.ape_admin_key", "admin-key")
 
-        session_factory = async_sessionmaker(
-            db_engine, class_=AsyncSession, expire_on_commit=False
-        )
+        session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
         from app.main import app
 
         async def _test_db():

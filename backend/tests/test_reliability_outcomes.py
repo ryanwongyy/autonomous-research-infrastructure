@@ -14,8 +14,12 @@ from app.models.paper_family import PaperFamily
 async def reliability_data(db_session: AsyncSession):
     """Create data for reliability and outcomes tests."""
     family = PaperFamily(
-        id="F1", name="Test", short_name="T",
-        description="For reliability tests", lock_protocol_type="open", active=True,
+        id="F1",
+        name="Test",
+        short_name="T",
+        description="For reliability tests",
+        lock_protocol_type="open",
+        active=True,
     )
     db_session.add(family)
     await db_session.flush()
@@ -35,6 +39,7 @@ async def reliability_data(db_session: AsyncSession):
 
 # ── GET /reliability/overview ─────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_reliability_overview_empty(client):
     resp = await client.get("/api/v1/reliability/overview")
@@ -49,6 +54,7 @@ async def test_reliability_overview_with_data(client, reliability_data):
 
 # ── GET /reliability/family/{family_id} ───────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_reliability_family(client, reliability_data):
     resp = await client.get("/api/v1/reliability/family/F1")
@@ -58,6 +64,7 @@ async def test_reliability_family(client, reliability_data):
 
 
 # ── GET /reliability/paper/{paper_id} ─────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_reliability_paper(client, reliability_data):
@@ -69,6 +76,7 @@ async def test_reliability_paper(client, reliability_data):
 
 # ── GET /papers/{id}/outcomes ─────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_outcomes_empty(client, reliability_data):
     """Paper with no outcomes returns empty list."""
@@ -78,6 +86,7 @@ async def test_outcomes_empty(client, reliability_data):
 
 
 # ── POST /papers/{id}/outcomes ────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_create_outcome(client, reliability_data):
@@ -110,6 +119,7 @@ async def test_create_outcome_then_list(client, reliability_data):
 
 # ── GET /outcomes/dashboard ───────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_outcomes_dashboard_empty(client):
     resp = await client.get("/api/v1/outcomes/dashboard")
@@ -117,6 +127,7 @@ async def test_outcomes_dashboard_empty(client):
 
 
 # ── GET /categories ───────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_list_categories_empty(client):
@@ -126,6 +137,7 @@ async def test_list_categories_empty(client):
 
 
 # ── GET /categories/{slug} ────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_get_category_not_found(client):

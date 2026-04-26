@@ -32,6 +32,7 @@ def _get_referee_models() -> list[str]:
         models.append("gpt-4o-mini")  # Third reviewer fallback
     return models
 
+
 REFEREE_PROMPT = """You are Referee {number} reviewing a research paper for a top academic journal.
 
 Provide a structured peer review covering:

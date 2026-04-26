@@ -22,8 +22,14 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 FailureType = Literal[
-    "data_error", "logic_error", "hallucination", "causal_overreach",
-    "source_drift", "design_violation", "formatting", "other",
+    "data_error",
+    "logic_error",
+    "hallucination",
+    "causal_overreach",
+    "source_drift",
+    "design_violation",
+    "formatting",
+    "other",
 ]
 SeverityLevel = Literal["low", "medium", "high", "critical"]
 
@@ -41,7 +47,9 @@ class CreateFailureRequest(BaseModel):
 
 @router.post("/failures")
 @limiter.limit("30/hour")
-async def create_failure(request: Request, body: CreateFailureRequest, db: AsyncSession = Depends(get_db)):
+async def create_failure(
+    request: Request, body: CreateFailureRequest, db: AsyncSession = Depends(get_db)
+):
     """Manually record a failure."""
     record = FailureRecord(
         paper_id=body.paper_id,

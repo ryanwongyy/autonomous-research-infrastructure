@@ -17,19 +17,29 @@ from app.models.source_snapshot import SourceSnapshot
 async def provenance_data(db_session: AsyncSession):
     """Create paper, source card, claims, and optional snapshots for provenance tests."""
     family = PaperFamily(
-        id="F1", name="Test Family", short_name="TF",
-        description="For provenance tests", lock_protocol_type="open", active=True,
+        id="F1",
+        name="Test Family",
+        short_name="TF",
+        description="For provenance tests",
+        lock_protocol_type="open",
+        active=True,
     )
     db_session.add(family)
     await db_session.flush()
 
     paper = Paper(
-        id="prov_paper", title="Paper with Claims",
-        source="ape", family_id="F1", status="published",
+        id="prov_paper",
+        title="Paper with Claims",
+        source="ape",
+        family_id="F1",
+        status="published",
     )
     paper_empty = Paper(
-        id="prov_empty", title="Paper with No Claims",
-        source="ape", family_id="F1", status="published",
+        id="prov_empty",
+        title="Paper with No Claims",
+        source="ape",
+        family_id="F1",
+        status="published",
     )
     db_session.add_all([paper, paper_empty])
     await db_session.flush()
@@ -102,6 +112,7 @@ async def provenance_data(db_session: AsyncSession):
 
 # -- GET /papers/{paper_id}/claims --------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_list_claims(client, provenance_data):
     resp = await client.get("/api/v1/papers/prov_paper/claims")
@@ -129,6 +140,7 @@ async def test_list_claims_paper_not_found(client):
 
 
 # -- GET /papers/{paper_id}/provenance -----------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_provenance_report(client, provenance_data):
@@ -163,6 +175,7 @@ async def test_provenance_not_found(client):
 
 
 # -- POST /papers/{paper_id}/claims/verify ------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_verify_claims(client, provenance_data):

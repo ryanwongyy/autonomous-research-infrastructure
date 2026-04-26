@@ -101,9 +101,7 @@ async def get_work_queue(
     Groups papers by their current stage and what work they need next.
     """
     # Get all active families and their current paper counts
-    families_result = await session.execute(
-        select(PaperFamily).where(PaperFamily.active.is_(True))
-    )
+    families_result = await session.execute(select(PaperFamily).where(PaperFamily.active.is_(True)))
     families = families_result.scalars().all()
 
     family_paper_counts = {}
@@ -177,14 +175,18 @@ async def get_work_queue(
                 ref_aware = ref_time.replace(tzinfo=UTC) if ref_time.tzinfo is None else ref_time
                 age_days = (datetime.now(UTC) - ref_aware).days
 
-            items.append({
-                "paper_id": p.id,
-                "title": p.title,
-                "family_id": p.family_id,
-                "days_in_stage": age_days,
-                "screening_score": p.overall_screening_score,
-                "family_priority": round(family_priority.get(p.family_id, 0.0), 3) if p.family_id else None,
-            })
+            items.append(
+                {
+                    "paper_id": p.id,
+                    "title": p.title,
+                    "family_id": p.family_id,
+                    "days_in_stage": age_days,
+                    "screening_score": p.overall_screening_score,
+                    "family_priority": round(family_priority.get(p.family_id, 0.0), 3)
+                    if p.family_id
+                    else None,
+                }
+            )
 
         work_queue[stage] = {
             "description": description,
@@ -202,7 +204,9 @@ async def get_work_queue(
             fam_id: {
                 "name": info["name"],
                 "paper_count": info["count"],
-                "current_share": round(info["count"] / total_papers, 3) if total_papers > 0 else 0.0,
+                "current_share": round(info["count"] / total_papers, 3)
+                if total_papers > 0
+                else 0.0,
                 "max_share": info["max_share"],
                 "priority_score": round(family_priority.get(fam_id, 0.0), 3),
             }

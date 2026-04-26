@@ -24,12 +24,16 @@ async def get_reviews(paper_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Paper not found")
 
     reviews = (
-        await db.execute(
-            select(Review)
-            .where(Review.paper_id == paper_id)
-            .order_by(Review.stage, Review.iteration)
+        (
+            await db.execute(
+                select(Review)
+                .where(Review.paper_id == paper_id)
+                .order_by(Review.stage, Review.iteration)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     return [
         {

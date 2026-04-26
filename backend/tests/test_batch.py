@@ -19,6 +19,7 @@ from app.database import get_db
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest_asyncio.fixture
 async def admin_client(db_engine, monkeypatch):
     """Client with admin key for batch endpoints.
@@ -29,9 +30,7 @@ async def admin_client(db_engine, monkeypatch):
     monkeypatch.setattr("app.config.settings.ape_api_key", "test-api-key")
     monkeypatch.setattr("app.config.settings.ape_admin_key", "test-admin-key")
 
-    session_factory = async_sessionmaker(
-        db_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
     # Patch the direct async_session used in batch.py
     monkeypatch.setattr("app.api.batch.async_session", session_factory)
@@ -55,6 +54,7 @@ async def admin_client(db_engine, monkeypatch):
 
 # ── Auth gating ───────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_batch_endpoints_require_admin_key(client, monkeypatch):
     """Batch endpoints reject requests without admin key."""
@@ -73,6 +73,7 @@ async def test_batch_endpoints_require_admin_key(client, monkeypatch):
 
 
 # ── POST /batch/seed-families ─────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_seed_families_creates_families(admin_client):
@@ -105,6 +106,7 @@ async def test_seed_families_idempotent(admin_client):
 
 # ── POST /batch/review-pending ────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_review_pending_empty(admin_client):
     """Review-pending with no awaiting papers returns empty results."""
@@ -116,6 +118,7 @@ async def test_review_pending_empty(admin_client):
 
 
 # ── POST /batch/promote ──────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_promote_empty(admin_client):
@@ -129,6 +132,7 @@ async def test_promote_empty(admin_client):
 
 
 # ── POST /batch/generate ─────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_generate_no_families(admin_client):

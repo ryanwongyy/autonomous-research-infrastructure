@@ -13,6 +13,7 @@ from app.models.paper_family import PaperFamily
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest_asyncio.fixture
 async def seeded_families(db_session: AsyncSession):
     """Insert two families into the test database."""
@@ -70,6 +71,7 @@ async def family_with_papers(db_session: AsyncSession, seeded_families):
 
 # ── GET /families ─────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_list_families_empty(client):
     """Empty database returns empty family list."""
@@ -120,9 +122,18 @@ async def test_list_families_response_shape(client, seeded_families):
     resp = await client.get("/api/v1/families")
     fam = resp.json()["families"][0]
     expected_keys = {
-        "id", "name", "short_name", "description", "lock_protocol_type",
-        "venue_ladder", "mandatory_checks", "fatal_failures",
-        "elite_ceiling", "max_portfolio_share", "paper_count", "active",
+        "id",
+        "name",
+        "short_name",
+        "description",
+        "lock_protocol_type",
+        "venue_ladder",
+        "mandatory_checks",
+        "fatal_failures",
+        "elite_ceiling",
+        "max_portfolio_share",
+        "paper_count",
+        "active",
     }
     assert expected_keys.issubset(set(fam.keys()))
 
@@ -137,6 +148,7 @@ async def test_list_families_venue_ladder_parsed(client, seeded_families):
 
 
 # ── GET /families/{family_id} ────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_get_family_detail(client, seeded_families):
@@ -156,8 +168,15 @@ async def test_get_family_detail_includes_extra_fields(client, seeded_families):
     """Detail endpoint includes fields not in the list endpoint."""
     resp = await client.get("/api/v1/families/F1")
     data = resp.json()
-    detail_fields = {"canonical_questions", "accepted_methods", "public_data_sources",
-                     "novelty_threshold", "benchmark_config", "review_rubric", "funnel_stages"}
+    detail_fields = {
+        "canonical_questions",
+        "accepted_methods",
+        "public_data_sources",
+        "novelty_threshold",
+        "benchmark_config",
+        "review_rubric",
+        "funnel_stages",
+    }
     assert detail_fields.issubset(set(data.keys()))
 
 

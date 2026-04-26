@@ -18,43 +18,62 @@ from app.models.rating import Rating
 async def cohort_data(db_session: AsyncSession):
     """Create papers with cohort tags and ratings for testing."""
     family = PaperFamily(
-        id="F1", name="Test Family", short_name="TF",
-        description="For cohort tests", lock_protocol_type="open", active=True,
+        id="F1",
+        name="Test Family",
+        short_name="TF",
+        description="For cohort tests",
+        lock_protocol_type="open",
+        active=True,
     )
     db_session.add(family)
     await db_session.flush()
 
     p1 = Paper(
-        id="cohort_p1", title="Paper 1 Q1",
-        source="ape", family_id="F1", status="published",
+        id="cohort_p1",
+        title="Paper 1 Q1",
+        source="ape",
+        family_id="F1",
+        status="published",
     )
     p2 = Paper(
-        id="cohort_p2", title="Paper 2 Q1",
-        source="ape", family_id="F1", status="published",
+        id="cohort_p2",
+        title="Paper 2 Q1",
+        source="ape",
+        family_id="F1",
+        status="published",
     )
     p3 = Paper(
-        id="cohort_p3", title="Paper 3 Q2",
-        source="ape", family_id="F1", status="published",
+        id="cohort_p3",
+        title="Paper 3 Q2",
+        source="ape",
+        family_id="F1",
+        status="published",
     )
     p_no_cohort = Paper(
-        id="no_cohort_paper", title="Untagged Paper",
-        source="ape", family_id="F1", status="draft",
+        id="no_cohort_paper",
+        title="Untagged Paper",
+        source="ape",
+        family_id="F1",
+        status="draft",
     )
     db_session.add_all([p1, p2, p3, p_no_cohort])
     await db_session.flush()
 
     tag1 = CohortTag(
-        paper_id="cohort_p1", cohort_id="2026-Q1-opus4",
+        paper_id="cohort_p1",
+        cohort_id="2026-Q1-opus4",
         generation_model="claude-opus-4-6",
         review_models_json=json.dumps(["gemini-2.0-flash"]),
         tournament_judge_model="gemini-2.0-flash",
     )
     tag2 = CohortTag(
-        paper_id="cohort_p2", cohort_id="2026-Q1-opus4",
+        paper_id="cohort_p2",
+        cohort_id="2026-Q1-opus4",
         generation_model="claude-opus-4-6",
     )
     tag3 = CohortTag(
-        paper_id="cohort_p3", cohort_id="2026-Q2-gpt4o",
+        paper_id="cohort_p3",
+        cohort_id="2026-Q2-gpt4o",
         generation_model="gpt-4o",
     )
     db_session.add_all([tag1, tag2, tag3])
@@ -62,12 +81,20 @@ async def cohort_data(db_session: AsyncSession):
 
     # Add ratings so cohort comparison has data
     r1 = Rating(
-        paper_id="cohort_p1", mu=28.0, sigma=5.0,
-        conservative_rating=13.0, elo=1600, matches_played=5,
+        paper_id="cohort_p1",
+        mu=28.0,
+        sigma=5.0,
+        conservative_rating=13.0,
+        elo=1600,
+        matches_played=5,
     )
     r2 = Rating(
-        paper_id="cohort_p2", mu=22.0, sigma=7.0,
-        conservative_rating=1.0, elo=1400, matches_played=3,
+        paper_id="cohort_p2",
+        mu=22.0,
+        sigma=7.0,
+        conservative_rating=1.0,
+        elo=1400,
+        matches_played=3,
     )
     db_session.add_all([r1, r2])
     await db_session.commit()
@@ -75,6 +102,7 @@ async def cohort_data(db_session: AsyncSession):
 
 
 # -- GET /cohorts --------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_list_cohorts_empty(client):
@@ -109,6 +137,7 @@ async def test_list_cohorts_has_metrics(client, cohort_data):
 
 # -- GET /cohorts/{cohort_id} --------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_get_cohort_detail(client, cohort_data):
     resp = await client.get("/api/v1/cohorts/2026-Q1-opus4")
@@ -128,6 +157,7 @@ async def test_get_cohort_not_found(client):
 
 
 # -- GET /papers/{paper_id}/cohort ---------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_paper_cohort(client, cohort_data):

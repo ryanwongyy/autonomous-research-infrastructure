@@ -62,7 +62,9 @@ def classify_failure(review: Review) -> FailureRecord | None:
             break
 
     # Determine severity from review
-    severity = review.severity if review.severity in ("low", "medium", "high", "critical") else "medium"
+    severity = (
+        review.severity if review.severity in ("low", "medium", "high", "critical") else "medium"
+    )
 
     return FailureRecord(
         paper_id=review.paper_id,
@@ -74,9 +76,7 @@ def classify_failure(review: Review) -> FailureRecord | None:
     )
 
 
-async def auto_record_failure(
-    session: AsyncSession, review: Review
-) -> FailureRecord | None:
+async def auto_record_failure(session: AsyncSession, review: Review) -> FailureRecord | None:
     """Auto-classify and persist a failure from a review verdict."""
     record = classify_failure(review)
     if record:
@@ -84,14 +84,15 @@ async def auto_record_failure(
         await session.flush()
         logger.info(
             "Auto-recorded failure: paper=%s, type=%s, stage=%s, severity=%s",
-            record.paper_id, record.failure_type, record.detection_stage, record.severity,
+            record.paper_id,
+            record.failure_type,
+            record.detection_stage,
+            record.severity,
         )
     return record
 
 
-async def get_failure_distribution(
-    session: AsyncSession, family_id: str | None = None
-) -> dict:
+async def get_failure_distribution(session: AsyncSession, family_id: str | None = None) -> dict:
     """Get failure counts by type, severity, and detection stage."""
     query = select(FailureRecord)
     if family_id:
@@ -117,15 +118,15 @@ async def get_failure_distribution(
     }
 
 
-async def get_failure_trends(
-    session: AsyncSession, days: int = 90
-) -> list[dict]:
+async def get_failure_trends(session: AsyncSession, days: int = 90) -> list[dict]:
     """Get failure counts grouped by date for recent period."""
     from datetime import datetime, timedelta
 
     cutoff = datetime.now(UTC) - timedelta(days=days)
     result = await session.execute(
-        select(FailureRecord).where(FailureRecord.created_at >= cutoff).order_by(FailureRecord.created_at)
+        select(FailureRecord)
+        .where(FailureRecord.created_at >= cutoff)
+        .order_by(FailureRecord.created_at)
     )
     records = result.scalars().all()
 

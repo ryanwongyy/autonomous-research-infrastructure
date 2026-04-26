@@ -59,7 +59,9 @@ async def register_prompt(
 
     logger.info(
         "Registered prompt version %s for %s/%s",
-        new_version, target_type, target_key,
+        new_version,
+        target_type,
+        target_key,
     )
     return prompt_version
 
@@ -86,9 +88,7 @@ async def activate_prompt_version(
     version_id: int,
 ) -> PromptVersion:
     """Activate a specific prompt version. Deactivates all other versions for the same target."""
-    result = await session.execute(
-        select(PromptVersion).where(PromptVersion.id == version_id)
-    )
+    result = await session.execute(select(PromptVersion).where(PromptVersion.id == version_id))
     version = result.scalar_one_or_none()
     if version is None:
         raise ValueError(f"Prompt version {version_id} not found")
@@ -108,7 +108,10 @@ async def activate_prompt_version(
 
     logger.info(
         "Activated prompt version %s (v%s) for %s/%s",
-        version.id, version.version, version.target_type, version.target_key,
+        version.id,
+        version.version,
+        version.target_type,
+        version.target_key,
     )
     return version
 
@@ -147,7 +150,9 @@ async def rollback_prompt(
     if prev_version is None:
         logger.warning(
             "No previous version to rollback to for %s/%s (was at v%s)",
-            target_type, target_key, active_version.version,
+            target_type,
+            target_key,
+            active_version.version,
         )
         return None
 
@@ -155,7 +160,10 @@ async def rollback_prompt(
 
     logger.info(
         "Rolled back prompt %s/%s from v%s to v%s",
-        target_type, target_key, active_version.version, prev_version.version,
+        target_type,
+        target_key,
+        active_version.version,
+        prev_version.version,
     )
     return prev_version
 
