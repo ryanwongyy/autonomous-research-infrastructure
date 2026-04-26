@@ -5,7 +5,7 @@ from __future__ import annotations
 import difflib
 import logging
 
-from sqlalchemy import select, func, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.prompt_version import PromptVersion

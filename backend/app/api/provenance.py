@@ -1,14 +1,14 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models.paper import Paper
 from app.models.claim_map import ClaimMap
+from app.models.paper import Paper
 from app.models.source_card import SourceCard
 from app.models.source_snapshot import SourceSnapshot
 from app.utils import safe_json_loads
@@ -109,7 +109,7 @@ async def get_paper_provenance(paper_id: str, db: AsyncSession = Depends(get_db)
                 tier_breakdown[tier] = tier_breakdown.get(tier, 0) + 1
 
     # Source freshness: batch query for latest snapshot per source
-    stale_threshold = datetime.now(timezone.utc) - timedelta(days=settings.source_stale_days)
+    stale_threshold = datetime.now(UTC) - timedelta(days=settings.source_stale_days)
     stale_sources = []
     fresh_sources = []
     if source_ids:
@@ -127,7 +127,7 @@ async def get_paper_provenance(paper_id: str, db: AsyncSession = Depends(get_db)
             fetched_at = snap_map.get(src_id)
             if fetched_at:
                 if fetched_at.tzinfo is None:
-                    fetched_at = fetched_at.replace(tzinfo=timezone.utc)
+                    fetched_at = fetched_at.replace(tzinfo=UTC)
                 if fetched_at < stale_threshold:
                     stale_sources.append(src_id)
                 else:
@@ -211,7 +211,7 @@ async def trigger_claim_verification(paper_id: str, db: AsyncSession = Depends(g
         )
         snapshot_map = {row.id: bool(row.snapshot_hash) for row in snap_results.all()}
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for claim in pending_claims:
         if not claim.source_card_id and not claim.result_object_ref:
             skipped += 1

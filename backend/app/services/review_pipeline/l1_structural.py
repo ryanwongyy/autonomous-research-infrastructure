@@ -236,7 +236,7 @@ async def _load_manuscript_text(paper: Paper) -> str | None:
     if tex_path:
         try:
             import aiofiles
-            async with aiofiles.open(tex_path, "r") as f:
+            async with aiofiles.open(tex_path) as f:
                 return await f.read()
         except (FileNotFoundError, ImportError):
             pass

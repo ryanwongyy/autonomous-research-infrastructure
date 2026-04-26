@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -255,7 +255,7 @@ async def generate_escalation_report(
         f"Paper: {paper.title[:100]}",
         f"Paper ID: {paper_id}",
         f"Family: {paper.family_id or 'N/A'}",
-        f"Generated: {datetime.now(timezone.utc).isoformat()}",
+        f"Generated: {datetime.now(UTC).isoformat()}",
         "=" * 60,
         "",
         "--- LAYER SUMMARIES ---",

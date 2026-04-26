@@ -433,7 +433,7 @@ async def _load_snapshot_text(snapshot: SourceSnapshot) -> str | None:
         return None
     try:
         import aiofiles
-        async with aiofiles.open(snapshot.snapshot_path, "r") as f:
+        async with aiofiles.open(snapshot.snapshot_path) as f:
             return await f.read()
     except (FileNotFoundError, ImportError, UnicodeDecodeError):
         return None

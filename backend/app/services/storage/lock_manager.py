@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import yaml
 from sqlalchemy import select
@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
-from app.utils import safe_json_loads
 from app.services.provenance.hasher import hash_content
+from app.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +189,7 @@ async def create_lock(
     # 5. Update paper-level lock fields.
     paper.lock_hash = lock_hash
     paper.lock_version = new_version
-    paper.lock_timestamp = datetime.now(timezone.utc)
+    paper.lock_timestamp = datetime.now(UTC)
     session.add(paper)
 
     await session.flush()

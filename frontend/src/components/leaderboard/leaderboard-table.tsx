@@ -20,20 +20,20 @@ interface LeaderboardTableProps {
 
 export const LeaderboardTable = memo(function LeaderboardTable({ entries }: LeaderboardTableProps) {
   return (
-    <div className="rounded-md border">
+    <div className="rounded-md border overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-16">Rank</TableHead>
-            <TableHead className="w-16">48h</TableHead>
-            <TableHead>Paper</TableHead>
-            <TableHead className="w-20">Source</TableHead>
-            <TableHead className="w-16 text-right">&mu;</TableHead>
-            <TableHead className="w-16 text-right">&sigma;</TableHead>
-            <TableHead className="w-20 text-right">Cons.</TableHead>
-            <TableHead className="w-16 text-right">Elo</TableHead>
-            <TableHead className="w-12 text-right">MP</TableHead>
-            <TableHead className="w-28">Status</TableHead>
+            <TableHead scope="col" className="w-16">Rank</TableHead>
+            <TableHead scope="col" className="w-16">48h</TableHead>
+            <TableHead scope="col">Paper</TableHead>
+            <TableHead scope="col" className="w-20">Source</TableHead>
+            <TableHead scope="col" className="w-16 text-right">&mu;</TableHead>
+            <TableHead scope="col" className="w-16 text-right">&sigma;</TableHead>
+            <TableHead scope="col" className="w-20 text-right">Cons.</TableHead>
+            <TableHead scope="col" className="w-16 text-right">Elo</TableHead>
+            <TableHead scope="col" className="w-12 text-right">MP</TableHead>
+            <TableHead scope="col" className="w-28">Status</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

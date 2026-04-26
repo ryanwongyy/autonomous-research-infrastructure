@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select, func, case
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.paper_family import PaperFamily
-from app.models.paper import Paper
-from app.models.rating import Rating
-from app.models.submission_outcome import SubmissionOutcome
 from app.models.failure_record import FailureRecord
+from app.models.paper import Paper
+from app.models.paper_family import PaperFamily
+from app.models.rating import Rating
 from app.models.reliability_metric import ReliabilityMetric
+from app.models.submission_outcome import SubmissionOutcome
 from app.services.rsi.experiment_manager import create_experiment
 from app.utils import safe_json_loads
 

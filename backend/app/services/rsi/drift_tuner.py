@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.paper import Paper
-from app.models.failure_record import FailureRecord
-from app.models.drift_threshold_log import DriftThresholdLog
 from app.config import settings
+from app.models.drift_threshold_log import DriftThresholdLog
+from app.models.failure_record import FailureRecord
+from app.models.paper import Paper
 from app.services.rsi.experiment_manager import create_experiment
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ async def compute_gate_metrics(
     Measures how well the current threshold separates good from bad papers:
     block rate, downstream failure rate, and blocked-then-succeeded rate.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
 
     # -- Total papers that entered the pipeline in the window -----------------
     total_q = (

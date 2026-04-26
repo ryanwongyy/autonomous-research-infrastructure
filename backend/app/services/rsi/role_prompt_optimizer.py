@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.failure_record import FailureRecord
-from app.models.review import Review
 from app.models.paper import Paper
-from app.models.rsi_experiment import RSIExperiment
 from app.models.prompt_version import PromptVersion
+from app.models.review import Review
+from app.models.rsi_experiment import RSIExperiment
 from app.services.rsi.experiment_manager import create_experiment
-from app.services.rsi.prompt_registry import register_prompt, get_active_prompt
+from app.services.rsi.prompt_registry import get_active_prompt, register_prompt
 from app.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ async def analyze_role_failures(
         )
 
     detection_stage = ROLE_STAGE_MAP[role_name]
-    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    cutoff = datetime.now(UTC) - timedelta(days=lookback_days)
 
     # ------------------------------------------------------------------
     # 1. Query failure records for this detection stage
@@ -405,7 +405,7 @@ async def get_role_prompt_status(session: AsyncSession) -> list[dict]:
     For each role reports whether there is an active prompt override, the
     number of experiments by status, and the latest failure count.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     recent_cutoff = now - timedelta(days=90)
     statuses: list[dict] = []
 

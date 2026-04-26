@@ -11,24 +11,27 @@ Each role has clearly defined read/write boundaries:
 7. Packager   - assembles final package (computes hashes, no content edits)
 """
 
-from app.services.paper_generation.roles.scout import generate_ideas, screen_idea
+from app.services.paper_generation.roles.analyst import execute_analysis, generate_analysis_code
+from app.services.paper_generation.roles.data_steward import (
+    build_source_manifest,
+    fetch_and_snapshot,
+)
 from app.services.paper_generation.roles.designer import create_research_design, lock_design
-from app.services.paper_generation.roles.data_steward import build_source_manifest, fetch_and_snapshot
-from app.services.paper_generation.roles.analyst import generate_analysis_code, execute_analysis
 from app.services.paper_generation.roles.drafter import compose_manuscript
-from app.services.paper_generation.roles.verifier import verify_manuscript
 from app.services.paper_generation.roles.packager import build_package
+from app.services.paper_generation.roles.scout import generate_ideas, screen_idea
+from app.services.paper_generation.roles.verifier import verify_manuscript
 
 __all__ = [
-    "generate_ideas",
-    "screen_idea",
-    "create_research_design",
-    "lock_design",
+    "build_package",
     "build_source_manifest",
+    "compose_manuscript",
+    "create_research_design",
+    "execute_analysis",
     "fetch_and_snapshot",
     "generate_analysis_code",
-    "execute_analysis",
-    "compose_manuscript",
+    "generate_ideas",
+    "lock_design",
+    "screen_idea",
     "verify_manuscript",
-    "build_package",
 ]

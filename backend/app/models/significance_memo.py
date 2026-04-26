@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Text, Integer, DateTime, ForeignKey, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -31,4 +31,4 @@ class SignificanceMemo(Base):
     editorial_verdict: Mapped[str] = mapped_column(String(16), nullable=False)  # submit / hold / kill
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    paper: Mapped["Paper"] = relationship(lazy="joined")
+    paper: Mapped[Paper] = relationship(lazy="joined")

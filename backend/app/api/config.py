@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.domain_config import DomainConfig
-from app.schemas.config import DomainConfigResponse, DomainConfigUpdate, CategoryInfo
+from app.schemas.config import CategoryInfo, DomainConfigResponse, DomainConfigUpdate
 from app.utils import safe_json_loads
 
 router = APIRouter()

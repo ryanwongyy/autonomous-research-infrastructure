@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -120,9 +121,9 @@ async def get_failure_trends(
     session: AsyncSession, days: int = 90
 ) -> list[dict]:
     """Get failure counts grouped by date for recent period."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     result = await session.execute(
         select(FailureRecord).where(FailureRecord.created_at >= cutoff).order_by(FailureRecord.created_at)
     )

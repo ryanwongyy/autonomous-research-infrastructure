@@ -10,12 +10,13 @@ import csv
 import io
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
 from app.models.source_card import SourceCard
@@ -24,7 +25,6 @@ from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
 from app.services.provenance.hasher import hash_content
 from app.services.storage.artifact_store import FilesystemArtifactStore
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +200,7 @@ async def fetch_and_snapshot(
         file_size_bytes=len(content),
         record_count=_estimate_record_count(content),
         fetch_parameters=json.dumps(fetch_params) if fetch_params else None,
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=datetime.now(UTC),
     )
     session.add(snapshot)
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -241,10 +241,10 @@ async def _get_snapshot(
 
 def _check_snapshot_staleness(snapshot: SourceSnapshot) -> dict:
     """Check if a snapshot is stale based on its fetch date."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     fetched = snapshot.fetched_at
     if fetched.tzinfo is None:
-        fetched = fetched.replace(tzinfo=timezone.utc)
+        fetched = fetched.replace(tzinfo=UTC)
 
     delta = now - fetched
     days_stale = delta.days

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.paper import Paper
 from app.models.rating import Rating
 from app.models.submission_outcome import SubmissionOutcome
 from app.services.rsi.experiment_manager import create_experiment
-from app.services.rsi.prompt_registry import register_prompt, get_active_prompt
+from app.services.rsi.prompt_registry import get_active_prompt, register_prompt
 
 logger = logging.getLogger(__name__)
 

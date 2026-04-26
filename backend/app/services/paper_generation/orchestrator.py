@@ -36,13 +36,16 @@ from app.services.paper_generation.boundary_enforcer import (
     PipelineViolationError,
     verify_lock_integrity,
 )
-from app.services.paper_generation.roles.scout import generate_ideas, screen_idea
+from app.services.paper_generation.roles.analyst import execute_analysis, generate_analysis_code
+from app.services.paper_generation.roles.data_steward import (
+    build_source_manifest,
+    fetch_and_snapshot,
+)
 from app.services.paper_generation.roles.designer import create_research_design, lock_design
-from app.services.paper_generation.roles.data_steward import build_source_manifest, fetch_and_snapshot
-from app.services.paper_generation.roles.analyst import generate_analysis_code, execute_analysis
 from app.services.paper_generation.roles.drafter import compose_manuscript
-from app.services.paper_generation.roles.verifier import verify_manuscript
 from app.services.paper_generation.roles.packager import build_package
+from app.services.paper_generation.roles.scout import generate_ideas, screen_idea
+from app.services.paper_generation.roles.verifier import verify_manuscript
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +72,9 @@ async def run_full_pipeline(
     """
     pipeline_start = time.monotonic()
 
-    # Resolve provider once for all roles
+    # Resolve provider once for all roles (model is selected per-role downstream)
     if provider is None:
-        provider, model = await get_generation_provider()
+        provider, _model = await get_generation_provider()
 
     # Generate paper ID if not provided
     if not paper_id:
@@ -530,9 +533,9 @@ async def _stage_collegial_review(
     provider: LLMProvider,
 ) -> dict[str, Any]:
     """Collegial review stage: constructive multi-turn feedback from colleagues."""
-    from app.services.collegial.review_loop import run_full_collegial_review
-    from app.models.lock_artifact import LockArtifact
     from app.models.claim_map import ClaimMap
+    from app.models.lock_artifact import LockArtifact
+    from app.services.collegial.review_loop import run_full_collegial_review
 
     # Load lock YAML for context
     lock_result = await session.execute(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Text, Float, Boolean, DateTime, func
+from sqlalchemy import Boolean, DateTime, Float, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -40,4 +40,4 @@ class SourceCard(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # One-to-many relationship
-    snapshots: Mapped[list["SourceSnapshot"]] = relationship(back_populates="source_card", lazy="selectin")
+    snapshots: Mapped[list[SourceSnapshot]] = relationship(back_populates="source_card", lazy="selectin")

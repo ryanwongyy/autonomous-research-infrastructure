@@ -1,12 +1,12 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db, async_session
+from app.database import async_session, get_db
 from app.models.paper import Paper
 from app.models.review import Review
 from app.services.review_pipeline.orchestrator import run_review_pipeline

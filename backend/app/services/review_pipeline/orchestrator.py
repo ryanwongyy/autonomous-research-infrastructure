@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, update
@@ -27,8 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.paper import Paper
 from app.models.review import Review
-from app.utils import safe_json_loads
-
 from app.services.review_pipeline.l1_structural import run_structural_review
 from app.services.review_pipeline.l2_provenance import run_provenance_review
 from app.services.review_pipeline.l3_method import run_method_review
@@ -37,6 +35,7 @@ from app.services.review_pipeline.l5_human_escalation import (
     check_escalation_needed,
     generate_escalation_report,
 )
+from app.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +68,7 @@ async def run_review_pipeline(
         "completed_at": str,
     }
     """
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     report: dict[str, Any] = {
         "paper_id": paper_id,
         "decision": "pending",
@@ -85,7 +84,7 @@ async def run_review_pipeline(
     if paper is None:
         report["decision"] = "reject"
         report["summary"] = f"Paper '{paper_id}' not found."
-        report["completed_at"] = datetime.now(timezone.utc).isoformat()
+        report["completed_at"] = datetime.now(UTC).isoformat()
         return report
 
     # Update paper status to 'reviewing'.
@@ -112,7 +111,7 @@ async def run_review_pipeline(
             funnel_stage="reviewing",
         )
         await session.commit()
-        report["completed_at"] = datetime.now(timezone.utc).isoformat()
+        report["completed_at"] = datetime.now(UTC).isoformat()
         return report
 
     if l1_review.verdict == "revision_needed":
@@ -139,7 +138,7 @@ async def run_review_pipeline(
             funnel_stage="reviewing",
         )
         await session.commit()
-        report["completed_at"] = datetime.now(timezone.utc).isoformat()
+        report["completed_at"] = datetime.now(UTC).isoformat()
         return report
 
     if l2_review.verdict == "revision_needed":
@@ -188,7 +187,7 @@ async def run_review_pipeline(
             funnel_stage="reviewing",
         )
         await session.commit()
-        report["completed_at"] = datetime.now(timezone.utc).isoformat()
+        report["completed_at"] = datetime.now(UTC).isoformat()
         return report
 
     # ==================================================================
@@ -210,7 +209,7 @@ async def run_review_pipeline(
             "See L5 report for details."
         )
         await session.commit()
-        report["completed_at"] = datetime.now(timezone.utc).isoformat()
+        report["completed_at"] = datetime.now(UTC).isoformat()
         return report
 
     # ==================================================================
@@ -258,7 +257,7 @@ async def run_review_pipeline(
 
     await session.commit()
 
-    report["completed_at"] = datetime.now(timezone.utc).isoformat()
+    report["completed_at"] = datetime.now(UTC).isoformat()
     logger.info(
         "[%s] Review pipeline completed: decision=%s", paper_id, decision
     )

@@ -8,8 +8,8 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.significance_memo import SignificanceMemo
 from app.models.rating import Rating
+from app.models.significance_memo import SignificanceMemo
 
 logger = logging.getLogger(__name__)
 

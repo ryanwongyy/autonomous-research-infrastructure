@@ -253,7 +253,7 @@ async def batch_promote(request: Request):
             check = await check_transition_preconditions(session, paper_id, "candidate")
 
             if check["can_transition"]:
-                result = await transition_release_status(
+                await transition_release_status(
                     session, paper_id, "candidate", approved_by="batch_auto_promote"
                 )
                 await session.commit()

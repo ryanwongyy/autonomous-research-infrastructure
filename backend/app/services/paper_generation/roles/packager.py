@@ -9,12 +9,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.acknowledgment_record import AcknowledgmentRecord
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
@@ -23,7 +24,6 @@ from app.services.provenance.hasher import (
     compute_merkle_root,
     hash_content,
 )
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +182,7 @@ async def build_package(
         },
         "component_hashes": component_hashes,
         "merkle_root": merkle_root,
-        "packaged_at": datetime.now(timezone.utc).isoformat(),
+        "packaged_at": datetime.now(UTC).isoformat(),
     }, indent=2)
 
     # -----------------------------------------------------------------------
@@ -271,7 +271,7 @@ async def build_package(
         authorship_declaration=authorship_declaration,
         ai_contribution_log=ai_contribution_log,
         disclosure_text=disclosure_text,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     session.add(package)
 

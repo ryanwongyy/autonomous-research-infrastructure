@@ -1,7 +1,7 @@
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
 from app.config import settings
 from app.database import async_session

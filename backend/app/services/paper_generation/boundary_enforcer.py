@@ -9,15 +9,14 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.paper import Paper
-from sqlalchemy import select
-
-from app.models.lock_artifact import LockArtifact
-from app.models.claim_map import ClaimMap
-from app.services.storage.lock_manager import verify_lock, extract_design_fields
 from app.config import settings
+from app.models.claim_map import ClaimMap
+from app.models.lock_artifact import LockArtifact
+from app.models.paper import Paper
+from app.services.storage.lock_manager import extract_design_fields, verify_lock
 
 logger = logging.getLogger(__name__)
 

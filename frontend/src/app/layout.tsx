@@ -15,12 +15,32 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://ari.example.com"),
   title: {
     default: "Autonomous research infrastructure for AI governance",
     template: "%s | Autonomous research infrastructure for AI governance",
   },
   description:
     "An autonomous research infrastructure that generates, reviews, benchmarks, and releases rigorous AI governance research across 11 paper families.",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true },
+  },
+  openGraph: {
+    type: "website",
+    siteName: "Autonomous Research Infrastructure",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary",
+  },
+  alternates: {
+    types: {
+      "application/json": "/api/v1/papers/feed.json",
+      "application/atom+xml": "/api/v1/papers/feed.atom",
+    },
+  },
 };
 
 export default function RootLayout({

@@ -5,16 +5,16 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.failure_record import FailureRecord
 from app.models.paper import Paper
 from app.models.role_config import RoleConfig
-from app.utils import safe_json_loads
 from app.services.rsi.experiment_manager import create_experiment
+from app.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ async def analyze_role_boundary_failures(
         "highest_friction": {"from": str, "to": str, "score": float},
     }
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    cutoff = datetime.now(UTC) - timedelta(days=lookback_days)
 
     boundaries: list[dict] = []
     highest_friction: dict = {"from": "", "to": "", "score": 0.0}

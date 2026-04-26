@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.correction_record import CorrectionRecord
@@ -144,7 +144,7 @@ async def compute_paper_reliability(
     }
 
     # Persist metrics
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     paper_result = await session.execute(select(Paper).where(Paper.id == paper_id))
     paper = paper_result.scalar_one_or_none()
     family_id = paper.family_id if paper else None

@@ -14,11 +14,11 @@ import logging
 
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import async_session
 from app.models.paper import Paper
 from app.models.review import Review
 from app.services.llm.router import get_provider_for_model
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 

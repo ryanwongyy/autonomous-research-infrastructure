@@ -25,16 +25,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
+from app.services.llm.router import get_judge_provider
 from app.services.tournament.control_variants import (
-    get_corruptions_for_protocol,
     build_variant_description,
+    get_corruptions_for_protocol,
 )
 from app.services.tournament.judge import (
     get_family_judge_prompt,
     judge_match,
     resolve_match,
 )
-from app.services.llm.router import get_judge_provider
 
 logger = logging.getLogger(__name__)
 

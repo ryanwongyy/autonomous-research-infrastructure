@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Text, Integer, DateTime, ForeignKey, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -33,4 +33,4 @@ class PaperPackage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     verified_at: Mapped[datetime | None] = mapped_column(DateTime)
 
-    paper: Mapped["Paper"] = relationship(back_populates="package")
+    paper: Mapped[Paper] = relationship(back_populates="package")

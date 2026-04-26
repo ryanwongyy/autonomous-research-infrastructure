@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.domain_config import DomainConfig
 from app.models.paper import Paper
 from app.models.rating import Rating
-from app.models.domain_config import DomainConfig
 from app.schemas.leaderboard import LeaderboardEntry
 from app.utils import safe_json_loads
 

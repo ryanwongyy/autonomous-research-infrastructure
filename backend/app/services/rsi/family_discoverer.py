@@ -7,12 +7,12 @@ import logging
 import re
 from collections import Counter, defaultdict
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.family_proposal import FamilyProposal
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
-from app.models.family_proposal import FamilyProposal
 from app.services.rsi.experiment_manager import create_experiment
 from app.utils import safe_json_loads
 

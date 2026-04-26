@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import select, func, case
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.failure_record import FailureRecord
 from app.models.meta_pipeline_run import MetaPipelineRun
-from app.utils import safe_json_loads
 from app.models.paper import Paper
 from app.models.rating import Rating
 from app.models.reliability_metric import ReliabilityMetric
 from app.models.rsi_experiment import RSIExperiment
 from app.models.rsi_gate_log import RSIGateLog
 from app.models.submission_outcome import SubmissionOutcome
+from app.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +163,7 @@ async def run_observation_phase(session: AsyncSession) -> dict:
     ]
 
     observation = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "pipeline": {
             "total_papers": total_papers,
             "active_papers": active_papers,
@@ -546,7 +546,7 @@ async def execute_meta_cycle(session: AsyncSession) -> dict:
 
     Returns dict with run_id, final status, and summary.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Create the run record
     run = MetaPipelineRun(
@@ -594,7 +594,7 @@ async def execute_meta_cycle(session: AsyncSession) -> dict:
         run.promotion_decision = overall_decision[:16]
         run.production_delta_json = json.dumps(promotion, default=str)
         run.status = "completed"
-        run.completed_at = datetime.now(timezone.utc)
+        run.completed_at = datetime.now(UTC)
         await session.flush()
 
         summary = {
@@ -621,7 +621,7 @@ async def execute_meta_cycle(session: AsyncSession) -> dict:
 
     except Exception:
         run.status = "failed"
-        run.completed_at = datetime.now(timezone.utc)
+        run.completed_at = datetime.now(UTC)
         await session.flush()
         logger.exception("Meta-pipeline cycle failed (run_id=%d)", run_id)
         raise

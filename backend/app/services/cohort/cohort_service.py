@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def _current_cohort_id(generation_model: str) -> str:
     """Generate a cohort ID from current quarter and model."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     quarter = (now.month - 1) // 3 + 1
     # Shorten model name for readability
     short_model = generation_model.split("/")[-1].replace("claude-", "").replace("-", "")[:10]

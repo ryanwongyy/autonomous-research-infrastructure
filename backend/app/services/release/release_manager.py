@@ -2,9 +2,9 @@
 Each transition has preconditions that must be met."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import select, func, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -506,7 +506,7 @@ async def transition_release_status(
 
     # Perform the transition
     before_status = check["current_status"]
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     await session.execute(
         update(Paper)

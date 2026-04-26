@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import {
   LineChart,
   Line,
@@ -28,10 +28,10 @@ const COLORS = [
 
 export const TrueSkillProgression = memo(function TrueSkillProgression({ data }: TrueSkillProgressionProps) {
   // Group by paper_id
-  const paperIds = [...new Set(data.map((d) => d.paper_id))];
-  const dates = [...new Set(data.map((d) => d.date))].sort();
+  const paperIds = useMemo(() => [...new Set(data.map((d) => d.paper_id))], [data]);
+  const dates = useMemo(() => [...new Set(data.map((d) => d.date))].sort(), [data]);
 
-  const chartData = dates.map((date) => {
+  const chartData = useMemo(() => dates.map((date) => {
     const point: Record<string, string | number> = { date };
     for (const paperId of paperIds) {
       const match = data.find((d) => d.date === date && d.paper_id === paperId);
@@ -40,12 +40,15 @@ export const TrueSkillProgression = memo(function TrueSkillProgression({ data }:
       }
     }
     return point;
-  });
+  }), [data, dates, paperIds]);
 
-  const paperTitles: Record<string, string> = {};
-  for (const d of data) {
-    paperTitles[d.paper_id] = d.title.slice(0, 30);
-  }
+  const paperTitles = useMemo(() => {
+    const titles: Record<string, string> = {};
+    for (const d of data) {
+      titles[d.paper_id] = d.title.slice(0, 30);
+    }
+    return titles;
+  }, [data]);
 
   return (
     <Card className="col-span-2">
@@ -58,10 +61,10 @@ export const TrueSkillProgression = memo(function TrueSkillProgression({ data }:
         <div role="img" aria-label={`Line chart: TrueSkill progression over ${dates.length} dates for top ${Math.min(paperIds.length, 5)} papers.`}>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted-foreground) / 0.2)" />
               <XAxis dataKey="date" fontSize={12} />
               <YAxis />
-              <Tooltip />
+              <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: "0.5rem", color: "hsl(var(--popover-foreground))", fontSize: "0.75rem" }} />
               <Legend />
               {paperIds.slice(0, 5).map((paperId, i) => (
                 <Line

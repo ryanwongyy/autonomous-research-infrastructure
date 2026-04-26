@@ -1,10 +1,10 @@
 import logging
 
-from app.services.llm.provider import LLMProvider
-from app.services.llm.anthropic_provider import AnthropicProvider
-from app.services.llm.openai_provider import OpenAIProvider
-from app.services.llm.google_provider import GoogleProvider
 from app.config import settings
+from app.services.llm.anthropic_provider import AnthropicProvider
+from app.services.llm.google_provider import GoogleProvider
+from app.services.llm.openai_provider import OpenAIProvider
+from app.services.llm.provider import LLMProvider
 
 logger = logging.getLogger(__name__)
 

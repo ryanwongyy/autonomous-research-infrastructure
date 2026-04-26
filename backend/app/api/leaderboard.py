@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.paper import Paper
-from app.models.rating import Rating
 from app.models.paper_family import PaperFamily
+from app.models.rating import Rating
 from app.schemas.leaderboard import LeaderboardEntry, LeaderboardResponse
 
 router = APIRouter()

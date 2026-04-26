@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Text, Integer, Float, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -37,4 +37,4 @@ class Match(Base):
     integrity_penalty_b: Mapped[bool] = mapped_column(Boolean, default=False)  # paper B had integrity issue
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    family: Mapped["PaperFamily | None"] = relationship(back_populates="matches", lazy="joined")
+    family: Mapped[PaperFamily | None] = relationship(back_populates="matches", lazy="joined")

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Text, Integer, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -31,4 +31,4 @@ class LockArtifact(Base):
     superseded_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("lock_artifacts.id"), index=True)  # newer version
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    paper: Mapped["Paper"] = relationship(back_populates="lock_artifacts")
+    paper: Mapped[Paper] = relationship(back_populates="lock_artifacts")

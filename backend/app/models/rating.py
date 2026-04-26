@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Float, Integer, DateTime, ForeignKey, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -33,5 +33,5 @@ class Rating(Base):
     family_id: Mapped[str | None] = mapped_column(String(8), ForeignKey("paper_families.id"), index=True)  # ratings are family-scoped
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
-    paper: Mapped["Paper"] = relationship(back_populates="rating")
-    family: Mapped["PaperFamily | None"] = relationship(back_populates="ratings", lazy="joined")
+    paper: Mapped[Paper] = relationship(back_populates="rating")
+    family: Mapped[PaperFamily | None] = relationship(back_populates="ratings", lazy="joined")

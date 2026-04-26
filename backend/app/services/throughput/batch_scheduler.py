@@ -1,14 +1,14 @@
 """Manages daily batch sizes to hit annual throughput targets."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
-from app.services.throughput.funnel_tracker import FUNNEL_STAGES_ORDERED, ANNUAL_TARGETS
+from app.services.throughput.funnel_tracker import ANNUAL_TARGETS, FUNNEL_STAGES_ORDERED
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,8 @@ async def compute_daily_targets(
 
     Returns daily target counts per pipeline stage.
     """
-    now = datetime.now(timezone.utc)
-    year_start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+    now = datetime.now(UTC)
+    year_start = datetime(now.year, 1, 1, tzinfo=UTC)
     days_elapsed = max((now - year_start).days, 1)
     days_remaining = max(365 - days_elapsed, 1)
 
@@ -174,8 +174,8 @@ async def get_work_queue(
             age_days = 0
             ref_time = p.updated_at or p.created_at
             if ref_time:
-                ref_aware = ref_time.replace(tzinfo=timezone.utc) if ref_time.tzinfo is None else ref_time
-                age_days = (datetime.now(timezone.utc) - ref_aware).days
+                ref_aware = ref_time.replace(tzinfo=UTC) if ref_time.tzinfo is None else ref_time
+                age_days = (datetime.now(UTC) - ref_aware).days
 
             items.append({
                 "paper_id": p.id,

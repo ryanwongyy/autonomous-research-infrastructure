@@ -7,17 +7,17 @@ import json
 import logging
 import math
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.review import Review
 from app.models.paper import Paper
-from app.models.submission_outcome import SubmissionOutcome
-from app.utils import safe_json_loads
-from app.models.rsi_experiment import RSIExperiment
 from app.models.prompt_version import PromptVersion
+from app.models.review import Review
+from app.models.rsi_experiment import RSIExperiment
+from app.models.submission_outcome import SubmissionOutcome
 from app.services.rsi.experiment_manager import create_experiment
-from app.services.rsi.prompt_registry import register_prompt, get_active_prompt
+from app.services.rsi.prompt_registry import get_active_prompt, register_prompt
+from app.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 

@@ -346,7 +346,7 @@ except Exception as e:
                 "stderr": stderr_bytes.decode("utf-8", errors="replace"),
                 "exit_code": proc.returncode or 0,
             }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if proc:
                 proc.kill()
             return {
@@ -408,7 +408,7 @@ async def _execute_in_container(code_content: str) -> dict[str, Any]:
                 "stderr": stderr_bytes.decode("utf-8", errors="replace"),
                 "exit_code": proc.returncode or 0,
             }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if proc:
                 proc.kill()
             # Force-remove the container if stuck

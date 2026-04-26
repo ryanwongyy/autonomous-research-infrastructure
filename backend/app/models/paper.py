@@ -3,18 +3,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Text, Integer, Float, DateTime, ForeignKey, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 if TYPE_CHECKING:
+    from app.models.claim_map import ClaimMap
+    from app.models.lock_artifact import LockArtifact
+    from app.models.paper_family import PaperFamily
+    from app.models.paper_package import PaperPackage
     from app.models.rating import Rating
     from app.models.review import Review
-    from app.models.paper_family import PaperFamily
-    from app.models.lock_artifact import LockArtifact
-    from app.models.claim_map import ClaimMap
-    from app.models.paper_package import PaperPackage
 
 
 class Paper(Base):
@@ -53,10 +53,10 @@ class Paper(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
-    rating: Mapped["Rating"] = relationship(back_populates="paper", uselist=False, lazy="joined")
-    reviews: Mapped[list["Review"]] = relationship(back_populates="paper", lazy="selectin")
-    family: Mapped["PaperFamily | None"] = relationship(back_populates="papers", foreign_keys=[family_id], lazy="joined")
-    secondary_family: Mapped["PaperFamily | None"] = relationship(foreign_keys=[secondary_family_id], lazy="joined")
-    lock_artifacts: Mapped[list["LockArtifact"]] = relationship(back_populates="paper", lazy="selectin")
-    claim_maps: Mapped[list["ClaimMap"]] = relationship(back_populates="paper", lazy="selectin")
-    package: Mapped["PaperPackage | None"] = relationship(back_populates="paper", uselist=False, lazy="joined")
+    rating: Mapped[Rating] = relationship(back_populates="paper", uselist=False, lazy="joined")
+    reviews: Mapped[list[Review]] = relationship(back_populates="paper", lazy="selectin")
+    family: Mapped[PaperFamily | None] = relationship(back_populates="papers", foreign_keys=[family_id], lazy="joined")
+    secondary_family: Mapped[PaperFamily | None] = relationship(foreign_keys=[secondary_family_id], lazy="joined")
+    lock_artifacts: Mapped[list[LockArtifact]] = relationship(back_populates="paper", lazy="selectin")
+    claim_maps: Mapped[list[ClaimMap]] = relationship(back_populates="paper", lazy="selectin")
+    package: Mapped[PaperPackage | None] = relationship(back_populates="paper", uselist=False, lazy="joined")

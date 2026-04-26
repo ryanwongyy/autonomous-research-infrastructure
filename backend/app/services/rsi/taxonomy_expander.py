@@ -6,9 +6,9 @@ import json
 import logging
 import re
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.failure_record import FailureRecord
@@ -291,7 +291,7 @@ async def approve_failure_type(
 
     # Update proposal status
     proposal.status = "approved"
-    proposal.approved_at = datetime.now(timezone.utc)
+    proposal.approved_at = datetime.now(UTC)
 
     await session.flush()
 

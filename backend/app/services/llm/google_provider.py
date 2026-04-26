@@ -4,8 +4,8 @@ import logging
 from google import genai
 from google.genai import types
 
-from app.services.llm.provider import LLMProvider, _llm_retry
 from app.config import settings
+from app.services.llm.provider import LLMProvider, _llm_retry
 
 logger = logging.getLogger(__name__)
 

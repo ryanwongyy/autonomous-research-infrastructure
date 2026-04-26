@@ -2,9 +2,9 @@
 Provides conversion rates, bottleneck detection, and projection."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.paper import Paper
@@ -88,7 +88,7 @@ async def get_conversion_rates(
         "period_days": 365
     }
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
 
     query = select(Paper.funnel_stage, func.count()).group_by(Paper.funnel_stage)
     if family_id:
@@ -154,7 +154,7 @@ async def detect_bottlenecks(
 
     Returns [{"stage": str, "stuck_count": int, "avg_days_in_stage": float, "severity": str}]
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     bottlenecks = []
 
     # Thresholds for how long a paper can sit in a stage before it's considered stuck
@@ -194,7 +194,7 @@ async def detect_bottlenecks(
 
         stuck_count = len(stuck_papers)
         total_days = sum(
-            (now - (p.updated_at.replace(tzinfo=timezone.utc) if p.updated_at.tzinfo is None else p.updated_at)).days
+            (now - (p.updated_at.replace(tzinfo=UTC) if p.updated_at.tzinfo is None else p.updated_at)).days
             for p in stuck_papers
         )
         avg_days = total_days / stuck_count if stuck_count > 0 else 0.0
@@ -245,7 +245,7 @@ async def project_annual_output(
         "gap_analysis": str
     }
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days_of_data)
+    cutoff = datetime.now(UTC) - timedelta(days=days_of_data)
     scale_factor = 365 / days_of_data
 
     # Count papers created (ideas generated) in the window

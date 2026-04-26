@@ -4,17 +4,17 @@ prompt adjustments to sharpen layer accuracy."""
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.review import Review
-from app.models.submission_outcome import SubmissionOutcome
 from app.models.correction_record import CorrectionRecord
 from app.models.failure_record import FailureRecord
+from app.models.review import Review
+from app.models.submission_outcome import SubmissionOutcome
 from app.services.rsi.experiment_manager import create_experiment
-from app.services.rsi.prompt_registry import register_prompt, get_active_prompt
+from app.services.rsi.prompt_registry import get_active_prompt, register_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ async def find_false_negatives(
     post-publication correction.
     """
     _validate_layer(layer)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    cutoff = datetime.now(UTC) - timedelta(days=lookback_days)
 
     # -- Subquery: papers that PASSED this layer (latest verdict per paper) --
     latest_review = (
@@ -160,7 +160,7 @@ async def find_false_positives(
     layers and was accepted at a venue.
     """
     _validate_layer(layer)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    cutoff = datetime.now(UTC) - timedelta(days=lookback_days)
 
     # -- Subquery: papers that FAILED this layer at some point --
     latest_fail_review = (
@@ -229,7 +229,7 @@ async def analyze_layer_accuracy(
     fn_count = len(fn_list)
     fp_count = len(fp_list)
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    cutoff = datetime.now(UTC) - timedelta(days=lookback_days)
 
     # Total reviews at this layer in the window.
     total_result = await session.execute(

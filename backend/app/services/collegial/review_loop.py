@@ -18,15 +18,15 @@ The convergence loop:
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.colleague_profile import ColleagueProfile
-from app.models.collegial_session import CollegialSession
-from app.models.collegial_exchange import CollegialExchange
 from app.models.acknowledgment_record import AcknowledgmentRecord
+from app.models.colleague_profile import ColleagueProfile
+from app.models.collegial_exchange import CollegialExchange
+from app.models.collegial_session import CollegialSession
 from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
 from app.utils import safe_json_loads
@@ -804,7 +804,7 @@ async def complete_session(
 
     collegial_session.status = final_status
     collegial_session.session_summary = session_summary
-    collegial_session.completed_at = datetime.now(timezone.utc)
+    collegial_session.completed_at = datetime.now(UTC)
     collegial_session.quality_trajectory_json = json.dumps(quality_trajectory)
     collegial_session.final_quality_score = final_score
     session.add(collegial_session)

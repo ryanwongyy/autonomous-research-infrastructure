@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -27,4 +27,4 @@ class TournamentRun(Base):
     ai_papers: Mapped[int] = mapped_column(Integer, default=0)  # how many were AI-generated
     judge_calibration_score: Mapped[float | None] = mapped_column(Float)  # calibration check result
 
-    family: Mapped["PaperFamily | None"] = relationship(back_populates="tournament_runs", lazy="joined")
+    family: Mapped[PaperFamily | None] = relationship(back_populates="tournament_runs", lazy="joined")

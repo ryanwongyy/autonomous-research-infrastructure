@@ -7,7 +7,6 @@ reviews on papers, and retrieving session/acknowledgment records.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -43,8 +42,8 @@ class ColleagueProfileCreate(BaseModel):
 
 
 class CollegialReviewBody(BaseModel):
-    manuscript_latex: Optional[str] = Field(None, max_length=500000)
-    target_venue: Optional[str] = Field(None, max_length=300)
+    manuscript_latex: str | None = Field(None, max_length=500000)
+    target_venue: str | None = Field(None, max_length=300)
     max_rounds: int = Field(5, ge=1, le=20)
 
 

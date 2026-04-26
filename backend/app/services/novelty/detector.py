@@ -13,9 +13,9 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.lock_artifact import LockArtifact
 from app.models.novelty_check import NoveltyCheck
 from app.models.paper import Paper
-from app.models.lock_artifact import LockArtifact
 from app.services.storage.lock_manager import extract_design_fields
 
 logger = logging.getLogger(__name__)
