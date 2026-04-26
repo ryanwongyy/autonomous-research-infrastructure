@@ -25,8 +25,10 @@ test.describe("Category detail page", () => {
       },
     });
     await page.goto("/categories/climate_policy");
+    // Scope to the breadcrumb nav so we don't match the footer's "Categories" link
+    const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
     await expect(
-      page.getByRole("link", { name: "Categories" }),
+      breadcrumb.getByRole("link", { name: "Categories" }),
     ).toBeVisible({ timeout: 10_000 });
     // Breadcrumb shows the category name in addition to the heading
     await expect(page.getByText("climate policy").first()).toBeVisible();
