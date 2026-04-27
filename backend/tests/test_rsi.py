@@ -22,9 +22,7 @@ async def admin_client(db_engine, monkeypatch):
 
     from app.main import app
 
-    session_factory = async_sessionmaker(
-        db_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def _test_db():
         async with session_factory() as session:
@@ -49,9 +47,7 @@ async def non_admin_client(db_engine, monkeypatch):
 
     from app.main import app
 
-    session_factory = async_sessionmaker(
-        db_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def _test_db():
         async with session_factory() as session:

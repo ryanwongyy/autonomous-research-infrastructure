@@ -158,6 +158,10 @@ export async function getReleaseStatus(
 
 // ── Papers ──────────────────────────────────────────────────────────
 
+export async function getPublicPapers(limit = 100): Promise<Paper[]> {
+  return apiFetch(`/papers/public?limit=${limit}`);
+}
+
 export async function getPaper(paperId: string): Promise<Paper> {
   return apiFetch(`/papers/${paperId}`);
 }

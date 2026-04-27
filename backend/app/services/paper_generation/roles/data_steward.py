@@ -10,12 +10,14 @@ import csv
 import io
 import json
 import logging
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
 from app.models.source_card import SourceCard
@@ -24,7 +26,6 @@ from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
 from app.services.provenance.hasher import hash_content
 from app.services.storage.artifact_store import FilesystemArtifactStore
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ No markdown, no commentary outside the JSON."""
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 async def build_source_manifest(
     session: AsyncSession,
@@ -147,9 +149,7 @@ async def build_source_manifest(
     for source_entry in manifest.get("sources", []):
         sc_id = source_entry.get("source_card_id", "")
         if sc_id not in known_ids:
-            logger.warning(
-                "Source manifest references unknown source card '%s'", sc_id
-            )
+            logger.warning("Source manifest references unknown source card '%s'", sc_id)
 
     logger.info(
         "Data Steward built manifest for paper %s (%d sources, %d Tier A)",
@@ -181,8 +181,9 @@ async def fetch_and_snapshot(
     if source_card is None:
         raise ValueError(f"Source card '{source_id}' not found.")
 
-    # Fetch data (dev mode: generate placeholder content)
-    content = await _fetch_source_data(source_card, fetch_params)
+    # Fetch data (real HTTP fetch, with provenance proof attached).
+    fetched = await _fetch_source_data(source_card, fetch_params)
+    content = fetched.content
 
     # Hash and store in content-addressed artifact store
     content_hash = hash_content(content)
@@ -192,7 +193,9 @@ async def fetch_and_snapshot(
     # Determine storage path
     store_path = store._hash_path(content_hash)
 
-    # Create the SourceSnapshot record
+    # Create the SourceSnapshot record. The provenance proof (request URL,
+    # response hash, timestamp) is persisted so L2 Provenance can verify
+    # this snapshot was produced by a real fetch, not a placeholder.
     snapshot = SourceSnapshot(
         source_card_id=source_id,
         snapshot_hash=content_hash,
@@ -200,7 +203,8 @@ async def fetch_and_snapshot(
         file_size_bytes=len(content),
         record_count=_estimate_record_count(content),
         fetch_parameters=json.dumps(fetch_params) if fetch_params else None,
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=datetime.now(UTC),
+        provenance_proof_json=json.dumps(fetched.proof) if fetched.proof else None,
     )
     session.add(snapshot)
 
@@ -225,6 +229,7 @@ async def fetch_and_snapshot(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
@@ -234,9 +239,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -276,19 +279,42 @@ def _validate_tier_requirements(protocol_type: str, manifest: dict) -> None:
             )
 
 
+@dataclass
+class _FetchedData:
+    """Internal: the bytes of a fetched source plus its provenance proof.
+
+    ``proof`` is the dict returned by the source client (Step 2). It is
+    written verbatim into ``SourceSnapshot.provenance_proof_json`` and used
+    by L2 Provenance to verify that the snapshot was produced by a real HTTP
+    fetch rather than a synthetic placeholder.
+
+    For placeholder fallback (DATA_MODE=permissive), proof is set to a
+    sentinel dict ``{"method": "placeholder", ...}`` so L2 can recognise
+    and reject it.
+    """
+
+    content: bytes
+    proof: dict | None
+
+
 async def _fetch_source_data(
     source_card: SourceCard,
     fetch_params: dict[str, Any] | None,
-) -> bytes:
+) -> _FetchedData:
     """Fetch data from a source card via the data source registry.
 
-    Tries the real API client first. Falls back to placeholder data only if
-    no client exists for this source or the real fetch fails.
+    Tries the real API client first. Behaviour on failure depends on
+    `settings.data_mode`:
+      - "real"       — raise `DataFetchError` (no placeholder fallback)
+      - "permissive" — fall back to synthetic placeholder data (dev only)
     """
     import tempfile
+    from datetime import UTC, datetime
     from pathlib import Path
 
+    from app.config import settings
     from app.services.data_sources.registry import fetch_from_source
+    from app.services.paper_generation.data_fetcher import DataFetchError
 
     # Build FetchParams from the LLM-generated fetch_params dict
     params = _build_fetch_params(fetch_params)
@@ -296,9 +322,13 @@ async def _fetch_source_data(
     # Resolve API key for sources that need one
     api_key = _api_key_for_source(source_card.id)
 
+    fetch_error: str | None = None
     with tempfile.TemporaryDirectory() as tmp_dir:
         result = await fetch_from_source(
-            source_card.id, params, Path(tmp_dir), api_key=api_key,
+            source_card.id,
+            params,
+            Path(tmp_dir),
+            api_key=api_key,
         )
 
         if result.success and result.file_path:
@@ -309,17 +339,38 @@ async def _fetch_source_data(
                 result.row_count,
                 len(content),
             )
-            return content
+            return _FetchedData(content=content, proof=result.proof)
 
-        if result.error:
-            logger.warning(
-                "Real fetch failed for '%s': %s — falling back to placeholder",
-                source_card.id,
-                result.error,
-            )
+        fetch_error = result.error or "no client returned data"
 
-    # Fallback: generate placeholder data
-    return _generate_placeholder(source_card)
+    # Real fetch failed.
+    if settings.data_mode == "real":
+        raise DataFetchError(
+            f"Real fetch failed for source '{source_card.id}': {fetch_error}. "
+            f"DATA_MODE=real disallows placeholder fallback. "
+            f"Either provide a working client/API key for this source, or set "
+            f"DATA_MODE=permissive (NOT recommended in production)."
+        )
+
+    # Permissive mode: fall back to placeholder. Mark the proof so L2 can
+    # see this snapshot is NOT grounded in real data.
+    logger.error(
+        "DATA_MODE=permissive: real fetch failed for '%s' (%s) — emitting "
+        "SYNTHETIC placeholder data. Papers built on this are NOT grounded "
+        "in real sources and MUST NOT be released to the public.",
+        source_card.id,
+        fetch_error,
+    )
+    placeholder_proof = {
+        "method": "placeholder",
+        "source_id": source_card.id,
+        "fetch_error": fetch_error,
+        "fetched_at": datetime.now(UTC).isoformat(),
+    }
+    return _FetchedData(
+        content=_generate_placeholder(source_card),
+        proof=placeholder_proof,
+    )
 
 
 def _build_fetch_params(raw: dict[str, Any] | None):
@@ -370,13 +421,15 @@ def _generate_placeholder(source_card: SourceCard) -> bytes:
 
     for i in range(200):
         year = 2015 + (i % 10)
-        writer.writerow([
-            f"{source_card.id}_{i:04d}",
-            year,
-            f"{unit}_{i}",
-            round(10.0 + i * 0.5 + (i % 7) * 0.3, 2),
-            json.dumps({"source": source_card.id, "fetched": True}),
-        ])
+        writer.writerow(
+            [
+                f"{source_card.id}_{i:04d}",
+                year,
+                f"{unit}_{i}",
+                round(10.0 + i * 0.5 + (i % 7) * 0.3, 2),
+                json.dumps({"source": source_card.id, "fetched": True}),
+            ]
+        )
 
     content = buf.getvalue().encode("utf-8")
     logger.warning(

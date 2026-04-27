@@ -14,7 +14,12 @@ from pathlib import Path
 
 import httpx
 
-from app.services.data_sources.base import BaseDataSource, FetchParams, FetchResult
+from app.services.data_sources.base import (
+    BaseDataSource,
+    FetchParams,
+    FetchResult,
+    make_http_proof,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +53,7 @@ class RegulationsGovSource(BaseDataSource):
             api_params["filter[postedDate][le]"] = params.date_range_end
 
         try:
-            records = await self._paginated_fetch(api_params, params.max_records)
+            records, proof = await self._paginated_fetch(api_params, params.max_records)
         except Exception as e:
             logger.error("Regulations.gov fetch failed: %s", e)
             return FetchResult(success=False, error=str(e))
@@ -58,6 +63,7 @@ class RegulationsGovSource(BaseDataSource):
                 success=True,
                 row_count=0,
                 description="No matching Regulations.gov documents found",
+                proof=proof,
             )
 
         output_path = output_dir / "regulations_gov.csv"
@@ -80,18 +86,20 @@ class RegulationsGovSource(BaseDataSource):
             for doc in records:
                 attrs = doc.get("attributes", {})
                 excerpt = attrs.get("highlightedContent") or attrs.get("title") or ""
-                writer.writerow({
-                    "document_id": doc.get("id", ""),
-                    "document_type": attrs.get("documentType", ""),
-                    "title": attrs.get("title", ""),
-                    "posted_date": attrs.get("postedDate", ""),
-                    "agency_id": attrs.get("agencyId", ""),
-                    "docket_id": attrs.get("docketId", ""),
-                    "comment_start_date": attrs.get("commentStartDate", ""),
-                    "comment_end_date": attrs.get("commentEndDate", ""),
-                    "url": f"https://www.regulations.gov/document/{doc.get('id', '')}",
-                    "excerpt": excerpt[:500] if excerpt else "",
-                })
+                writer.writerow(
+                    {
+                        "document_id": doc.get("id", ""),
+                        "document_type": attrs.get("documentType", ""),
+                        "title": attrs.get("title", ""),
+                        "posted_date": attrs.get("postedDate", ""),
+                        "agency_id": attrs.get("agencyId", ""),
+                        "docket_id": attrs.get("docketId", ""),
+                        "comment_start_date": attrs.get("commentStartDate", ""),
+                        "comment_end_date": attrs.get("commentEndDate", ""),
+                        "url": f"https://www.regulations.gov/document/{doc.get('id', '')}",
+                        "excerpt": excerpt[:500] if excerpt else "",
+                    }
+                )
 
         return FetchResult(
             success=True,
@@ -99,13 +107,16 @@ class RegulationsGovSource(BaseDataSource):
             row_count=len(records),
             columns=columns,
             description=f"Fetched {len(records)} Regulations.gov documents for: {query[:80]}",
+            proof=proof,
         )
 
     async def _paginated_fetch(
         self, api_params: dict, max_records: int
-    ) -> list[dict]:
+    ) -> tuple[list[dict], dict | None]:
+        """Returns ``(records, proof)``; ``proof`` is built from the first page."""
         records: list[dict] = []
         page = 1
+        proof: dict | None = None
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             while len(records) < max_records:
@@ -115,6 +126,13 @@ class RegulationsGovSource(BaseDataSource):
                     params=api_params,
                 )
                 resp.raise_for_status()
+                if proof is None:
+                    proof = make_http_proof(
+                        request_url=str(resp.url),
+                        response_status=resp.status_code,
+                        response_body=resp.content,
+                        fetched_via="regulations_gov_client_v1",
+                    )
                 data = resp.json()
 
                 results = data.get("data", [])
@@ -130,7 +148,7 @@ class RegulationsGovSource(BaseDataSource):
                 if page > 10:  # Safety cap
                     break
 
-        return records[:max_records]
+        return records[:max_records], proof
 
     def supports_query(self, research_question: str) -> bool:
         rq = research_question.lower()

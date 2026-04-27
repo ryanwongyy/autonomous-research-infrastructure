@@ -34,57 +34,39 @@ async def paper_in_db(db_session: AsyncSession) -> Paper:
 async def test_check_preconditions_internal_to_candidate(
     db_session: AsyncSession, paper_in_db: Paper
 ):
-    result = await check_transition_preconditions(
-        db_session, paper_in_db.id, "candidate"
-    )
+    result = await check_transition_preconditions(db_session, paper_in_db.id, "candidate")
     assert "can_transition" in result
     assert result["current_status"] == "internal"
     assert result["target_status"] == "candidate"
 
 
 @pytest.mark.asyncio
-async def test_invalid_transition_target(
-    db_session: AsyncSession, paper_in_db: Paper
-):
-    result = await check_transition_preconditions(
-        db_session, paper_in_db.id, "nonexistent_status"
-    )
+async def test_invalid_transition_target(db_session: AsyncSession, paper_in_db: Paper):
+    result = await check_transition_preconditions(db_session, paper_in_db.id, "nonexistent_status")
     # Should either block or raise — depends on implementation
     assert "can_transition" in result or "error" in str(result)
 
 
 @pytest.mark.asyncio
-async def test_force_transition(
-    db_session: AsyncSession, paper_in_db: Paper
-):
+async def test_force_transition(db_session: AsyncSession, paper_in_db: Paper):
     """Force=True should bypass preconditions."""
-    result = await transition_release_status(
-        db_session, paper_in_db.id, "candidate", force=True
-    )
+    result = await transition_release_status(db_session, paper_in_db.id, "candidate", force=True)
     assert result["success"] is True
     assert result["after"] == "candidate"
     assert result["forced"] is True
 
 
 @pytest.mark.asyncio
-async def test_transition_updates_paper(
-    db_session: AsyncSession, paper_in_db: Paper
-):
-    await transition_release_status(
-        db_session, paper_in_db.id, "candidate", force=True
-    )
+async def test_transition_updates_paper(db_session: AsyncSession, paper_in_db: Paper):
+    await transition_release_status(db_session, paper_in_db.id, "candidate", force=True)
     await db_session.refresh(paper_in_db)
     assert paper_in_db.release_status == "candidate"
 
 
 @pytest.mark.asyncio
-async def test_cannot_skip_states(
-    db_session: AsyncSession, paper_in_db: Paper
-):
+async def test_cannot_skip_states(db_session: AsyncSession, paper_in_db: Paper):
     """Internal → public should fail (must go through candidate, submitted)."""
-    result = await check_transition_preconditions(
-        db_session, paper_in_db.id, "public"
-    )
+    result = await check_transition_preconditions(db_session, paper_in_db.id, "public")
     # The state machine should not allow skipping intermediate states
     if result.get("can_transition"):
         # If it allows, there should be blockers
@@ -93,8 +75,6 @@ async def test_cannot_skip_states(
 
 @pytest.mark.asyncio
 async def test_nonexistent_paper(db_session: AsyncSession):
-    result = await check_transition_preconditions(
-        db_session, "nonexistent_paper_id", "candidate"
-    )
+    result = await check_transition_preconditions(db_session, "nonexistent_paper_id", "candidate")
     # Should indicate failure
     assert not result.get("can_transition", True)

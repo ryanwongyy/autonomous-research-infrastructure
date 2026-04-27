@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -19,7 +19,9 @@ class RSIExperiment(Base):
     name: Mapped[str] = mapped_column(String(256))
     status: Mapped[str] = mapped_column(String(32))
     cohort_id: Mapped[str | None] = mapped_column(String(64))
-    family_id: Mapped[str | None] = mapped_column(String(8), ForeignKey("paper_families.id"), index=True)
+    family_id: Mapped[str | None] = mapped_column(
+        String(8), ForeignKey("paper_families.id"), index=True
+    )
     created_by: Mapped[str] = mapped_column(String(64), default="system")
     proposed_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now())
     activated_at: Mapped[datetime | None] = mapped_column(DateTime)

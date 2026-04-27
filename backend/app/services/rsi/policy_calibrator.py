@@ -7,17 +7,17 @@ import json
 import logging
 import math
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.review import Review
 from app.models.paper import Paper
-from app.models.submission_outcome import SubmissionOutcome
-from app.utils import safe_json_loads
-from app.models.rsi_experiment import RSIExperiment
 from app.models.prompt_version import PromptVersion
+from app.models.review import Review
+from app.models.rsi_experiment import RSIExperiment
+from app.models.submission_outcome import SubmissionOutcome
 from app.services.rsi.experiment_manager import create_experiment
-from app.services.rsi.prompt_registry import register_prompt, get_active_prompt
+from app.services.rsi.prompt_registry import get_active_prompt, register_prompt
+from app.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ _WEIGHTS_TARGET_KEY = "dimension_weights"
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 async def correlate_dimensions_with_outcomes(
     session: AsyncSession,
@@ -140,9 +141,7 @@ async def correlate_dimensions_with_outcomes(
 
         # Simple significance heuristic: consider significant if we have
         # at least 5 in each group and |r| > 0.15.
-        p_significant = (
-            n_acc >= 5 and n_rej >= 5 and abs(correlation) > 0.15
-        )
+        p_significant = n_acc >= 5 and n_rej >= 5 and abs(correlation) > 0.15
 
         correlations[dim] = {
             "correlation": round(correlation, 4),
@@ -211,9 +210,7 @@ async def propose_dimension_reweighting(
     if total == 0:
         proposed_weights = current_weights
     else:
-        proposed_weights = {
-            dim: round(val / total, 4) for dim, val in floored.items()
-        }
+        proposed_weights = {dim: round(val / total, 4) for dim, val in floored.items()}
 
     # Build rationale.
     most_pred = correlation_analysis.get("most_predictive", "N/A")
@@ -253,7 +250,8 @@ async def propose_dimension_reweighting(
 
     logger.info(
         "Tier 1c reweighting proposed (experiment %s): %s",
-        experiment.id, rationale,
+        experiment.id,
+        rationale,
     )
 
     return {
@@ -342,6 +340,7 @@ async def get_calibration_status(session: AsyncSession) -> dict:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _safe_mean(values: list[float]) -> float:
     """Return the arithmetic mean, or 0.0 for an empty list."""

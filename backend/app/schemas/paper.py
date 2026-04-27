@@ -26,6 +26,8 @@ class PaperResponse(PaperBase):
     id: str
     status: str
     review_status: str
+    release_status: str = "internal"
+    funnel_stage: str = "idea"
     paper_pdf_path: str | None = None
     created_at: datetime
     updated_at: datetime

@@ -1,17 +1,17 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import case, cast, Integer, select, func, and_
+from sqlalchemy import Integer, and_, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.match import Match
 from app.models.paper import Paper
 from app.models.rating import Rating
-from app.models.match import Match
-from app.models.tournament_run import TournamentRun
 from app.models.rating_snapshot import RatingSnapshot
+from app.models.tournament_run import TournamentRun
 from app.schemas.stats import (
-    StatsResponse,
     RatingDistributionBucket,
     RatingDistributionResponse,
+    StatsResponse,
     TrueSkillProgressionPoint,
     TrueSkillProgressionResponse,
 )
@@ -56,16 +56,17 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
     total_runs = (await db.execute(select(func.count(TournamentRun.id)))).scalar() or 0
 
-    ai_win_rate = (ai_wins / total_matches * 100) if total_matches > 0 else 0.0
+    ai_win_rate = (ai_wins / total_matches) if total_matches > 0 else 0.0
 
     # Avg elo for both groups in one query (was 2 queries)
     elo_row = (
         await db.execute(
             select(
                 func.avg(case((Paper.source.in_(AI_SOURCES), Rating.elo))).label("avg_ai"),
-                func.avg(case((Paper.source.in_(BENCHMARK_SOURCES), Rating.elo))).label("avg_bench"),
-            )
-            .join(Paper, Rating.paper_id == Paper.id)
+                func.avg(case((Paper.source.in_(BENCHMARK_SOURCES), Rating.elo))).label(
+                    "avg_bench"
+                ),
+            ).join(Paper, Rating.paper_id == Paper.id)
         )
     ).one()
 
@@ -164,12 +165,16 @@ async def get_trueskill_progression(
     paper_map = {p.id: (p.title, p.source) for p in top_papers}
 
     snapshots = (
-        await db.execute(
-            select(RatingSnapshot)
-            .where(RatingSnapshot.paper_id.in_(paper_ids))
-            .order_by(RatingSnapshot.snapshot_date)
+        (
+            await db.execute(
+                select(RatingSnapshot)
+                .where(RatingSnapshot.paper_id.in_(paper_ids))
+                .order_by(RatingSnapshot.snapshot_date)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     data = [
         TrueSkillProgressionPoint(

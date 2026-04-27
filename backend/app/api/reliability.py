@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.reliability.reliability_engine import (
-    compute_paper_reliability,
     compute_family_reliability,
+    compute_paper_reliability,
     get_reliability_overview,
 )
 

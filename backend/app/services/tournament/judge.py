@@ -45,6 +45,7 @@ Provide a brief justification (2-3 sentences) followed by your verdict on a new 
 # Family-specific prompt builder
 # ---------------------------------------------------------------------------
 
+
 def get_family_judge_prompt(family) -> str:
     """Build a family-specific judge system prompt.
 
@@ -86,8 +87,7 @@ def get_family_judge_prompt(family) -> str:
         if isinstance(rubric, dict) and "criteria" not in rubric:
             # rubric might be {"criterion_name": weight, ...}
             criteria_list = [
-                {"name": k, "weight": v} for k, v in rubric.items()
-                if k not in ("criteria",)
+                {"name": k, "weight": v} for k, v in rubric.items() if k not in ("criteria",)
             ]
         for item in criteria_list:
             if isinstance(item, dict):
@@ -137,17 +137,19 @@ def get_family_judge_prompt(family) -> str:
             )
 
     # --- verdict instructions ---
-    lines.extend([
-        "## Verdict",
-        "Compare Paper A and Paper B on the criteria above.",
-        "",
-        "Respond with EXACTLY one of these three options:",
-        '- "PAPER_A" if Paper A is clearly better',
-        '- "PAPER_B" if Paper B is clearly better',
-        '- "DRAW" if the papers are of comparable quality',
-        "",
-        "Provide a brief justification (2-3 sentences) then your verdict on a new line.",
-    ])
+    lines.extend(
+        [
+            "## Verdict",
+            "Compare Paper A and Paper B on the criteria above.",
+            "",
+            "Respond with EXACTLY one of these three options:",
+            '- "PAPER_A" if Paper A is clearly better',
+            '- "PAPER_B" if Paper B is clearly better',
+            '- "DRAW" if the papers are of comparable quality',
+            "",
+            "Provide a brief justification (2-3 sentences) then your verdict on a new line.",
+        ]
+    )
 
     return "\n".join(lines)
 
@@ -166,6 +168,7 @@ def _safe_json(text: str | None, default):
 # Data classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class JudgmentResult:
     winner: str  # "a_wins", "b_wins", "draw"
@@ -176,6 +179,7 @@ class JudgmentResult:
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_judgment(response: str) -> str:
     """Parse the LLM response to extract the verdict."""
@@ -202,6 +206,7 @@ def parse_judgment(response: str) -> str:
 # ---------------------------------------------------------------------------
 # Core judge function
 # ---------------------------------------------------------------------------
+
 
 async def judge_match(
     provider: LLMProvider,
@@ -231,7 +236,9 @@ async def judge_match(
             if rewards:
                 system_prompt += "\n\nAdditional rewards:\n" + "\n".join(f"- {r}" for r in rewards)
             if penalties:
-                system_prompt += "\n\nAdditional penalties:\n" + "\n".join(f"- {p}" for p in penalties)
+                system_prompt += "\n\nAdditional penalties:\n" + "\n".join(
+                    f"- {p}" for p in penalties
+                )
 
     # Round 1: Paper A first
     prompt_a_first = f"""## Paper A: {paper_a_title}

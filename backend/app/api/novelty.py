@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 
 @router.post("/papers/{paper_id}/novelty-check")
 @limiter.limit("10/hour")
-async def trigger_novelty_check(request: Request, paper_id: str, db: AsyncSession = Depends(get_db)):
+async def trigger_novelty_check(
+    request: Request, paper_id: str, db: AsyncSession = Depends(get_db)
+):
     """Trigger a novelty check for a paper."""
     try:
         check = await check_novelty(db, paper_id)

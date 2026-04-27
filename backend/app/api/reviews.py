@@ -1,12 +1,12 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db, async_session
+from app.database import async_session, get_db
 from app.models.paper import Paper
 from app.models.review import Review
 from app.services.review_pipeline.orchestrator import run_review_pipeline
@@ -24,12 +24,16 @@ async def get_reviews(paper_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Paper not found")
 
     reviews = (
-        await db.execute(
-            select(Review)
-            .where(Review.paper_id == paper_id)
-            .order_by(Review.stage, Review.iteration)
+        (
+            await db.execute(
+                select(Review)
+                .where(Review.paper_id == paper_id)
+                .order_by(Review.stage, Review.iteration)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     return [
         {

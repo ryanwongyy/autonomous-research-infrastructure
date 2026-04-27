@@ -14,7 +14,12 @@ from pathlib import Path
 
 import httpx
 
-from app.services.data_sources.base import BaseDataSource, FetchParams, FetchResult
+from app.services.data_sources.base import (
+    BaseDataSource,
+    FetchParams,
+    FetchResult,
+    make_http_proof,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +71,7 @@ class FederalRegisterSource(BaseDataSource):
             api_params["conditions[publication_date][lte]"] = params.date_range_end
 
         try:
-            records = await self._paginated_fetch(api_params, params.max_records)
+            records, proof = await self._paginated_fetch(api_params, params.max_records)
         except Exception as e:
             logger.error("Federal Register fetch failed: %s", e)
             return FetchResult(success=False, error=str(e))
@@ -76,6 +81,7 @@ class FederalRegisterSource(BaseDataSource):
                 success=True,
                 row_count=0,
                 description="No matching Federal Register documents found",
+                proof=proof,
             )
 
         # Write to CSV
@@ -98,22 +104,22 @@ class FederalRegisterSource(BaseDataSource):
             writer.writeheader()
             for doc in records:
                 agencies = doc.get("agencies") or []
-                agency_names = ", ".join(
-                    a.get("name", "") for a in agencies if isinstance(a, dict)
-                )
+                agency_names = ", ".join(a.get("name", "") for a in agencies if isinstance(a, dict))
                 abstract = doc.get("abstract") or ""
-                writer.writerow({
-                    "document_number": doc.get("document_number", ""),
-                    "title": doc.get("title", ""),
-                    "type": doc.get("type", ""),
-                    "publication_date": doc.get("publication_date", ""),
-                    "agency": agency_names,
-                    "action": doc.get("action", ""),
-                    "effective_on": doc.get("effective_on", ""),
-                    "citation": doc.get("citation", ""),
-                    "url": doc.get("html_url", ""),
-                    "abstract_excerpt": abstract[:500] if abstract else "",
-                })
+                writer.writerow(
+                    {
+                        "document_number": doc.get("document_number", ""),
+                        "title": doc.get("title", ""),
+                        "type": doc.get("type", ""),
+                        "publication_date": doc.get("publication_date", ""),
+                        "agency": agency_names,
+                        "action": doc.get("action", ""),
+                        "effective_on": doc.get("effective_on", ""),
+                        "citation": doc.get("citation", ""),
+                        "url": doc.get("html_url", ""),
+                        "abstract_excerpt": abstract[:500] if abstract else "",
+                    }
+                )
 
         return FetchResult(
             success=True,
@@ -121,20 +127,29 @@ class FederalRegisterSource(BaseDataSource):
             row_count=len(records),
             columns=columns,
             description=f"Fetched {len(records)} Federal Register documents for query: {query[:80]}",
+            proof=proof,
         )
 
     async def _paginated_fetch(
         self, api_params: dict, max_records: int
-    ) -> list[dict]:
-        """Fetch documents with pagination."""
+    ) -> tuple[list[dict], dict | None]:
+        """Returns ``(records, proof)``; ``proof`` is built from the first page."""
         records: list[dict] = []
         page = 1
+        proof: dict | None = None
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             while len(records) < max_records:
                 api_params["page"] = page
                 resp = await client.get(f"{API_BASE}/documents.json", params=api_params)
                 resp.raise_for_status()
+                if proof is None:
+                    proof = make_http_proof(
+                        request_url=str(resp.url),
+                        response_status=resp.status_code,
+                        response_body=resp.content,
+                        fetched_via="federal_register_client_v1",
+                    )
                 data = resp.json()
 
                 results = data.get("results", [])
@@ -149,7 +164,7 @@ class FederalRegisterSource(BaseDataSource):
                 if page > total_pages or page > 10:  # Safety cap: 10 pages max
                     break
 
-        return records[:max_records]
+        return records[:max_records], proof
 
     def supports_query(self, research_question: str) -> bool:
         rq = research_question.lower()

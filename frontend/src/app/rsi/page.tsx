@@ -144,7 +144,7 @@ export default async function RSIPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{activeCount}</div>
+                <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{activeCount}</div>
               </CardContent>
             </Card>
             <Card>
@@ -154,7 +154,7 @@ export default async function RSIPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{proposedCount}</div>
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{proposedCount}</div>
               </CardContent>
             </Card>
             <Card>
@@ -164,7 +164,7 @@ export default async function RSIPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{rolledBackCount}</div>
+                <div className="text-2xl font-bold text-red-600 dark:text-red-400">{rolledBackCount}</div>
               </CardContent>
             </Card>
           </div>

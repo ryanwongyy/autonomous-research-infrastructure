@@ -62,7 +62,6 @@ POLICY-USEFULNESS (score each 1-5 independently):
 - evidence_strength: How strong is the evidentiary base for the policy-relevant claims?
 - stakeholder_relevance: Are the relevant governance stakeholders clearly identified?
 - implementation_feasibility: Are the implied policy changes practically implementable?""",
-
     "measurement_text": """You are an expert reviewer specializing in text-as-data and measurement methods.
 
 Review this paper against the following criteria:
@@ -92,7 +91,6 @@ POLICY-USEFULNESS (score each 1-5 independently):
 - evidence_strength: How strong is the evidentiary base for the policy-relevant claims?
 - stakeholder_relevance: Are the relevant governance stakeholders clearly identified?
 - implementation_feasibility: Are the implied policy changes practically implementable?""",
-
     "comparative_historical": """You are an expert reviewer specializing in comparative and historical analysis.
 
 Review this paper against the following criteria:
@@ -122,7 +120,6 @@ POLICY-USEFULNESS (score each 1-5 independently):
 - evidence_strength: How strong is the evidentiary base for the policy-relevant claims?
 - stakeholder_relevance: Are the relevant governance stakeholders clearly identified?
 - implementation_feasibility: Are the implied policy changes practically implementable?""",
-
     "doctrinal": """You are an expert reviewer specializing in doctrinal legal analysis.
 
 Review this paper against the following criteria:
@@ -152,7 +149,6 @@ POLICY-USEFULNESS (score each 1-5 independently):
 - evidence_strength: How strong is the evidentiary base for the policy-relevant claims?
 - stakeholder_relevance: Are the relevant governance stakeholders clearly identified?
 - implementation_feasibility: Are the implied policy changes practically implementable?""",
-
     "process_tracing": """You are an expert reviewer specializing in process tracing methodology.
 
 Review this paper against the following criteria:
@@ -182,7 +178,6 @@ POLICY-USEFULNESS (score each 1-5 independently):
 - evidence_strength: How strong is the evidentiary base for the policy-relevant claims?
 - stakeholder_relevance: Are the relevant governance stakeholders clearly identified?
 - implementation_feasibility: Are the implied policy changes practically implementable?""",
-
     "theory": """You are an expert reviewer specializing in formal theoretical models.
 
 Review this paper against the following criteria:
@@ -212,7 +207,6 @@ POLICY-USEFULNESS (score each 1-5 independently):
 - evidence_strength: How strong is the evidentiary base for the policy-relevant claims?
 - stakeholder_relevance: Are the relevant governance stakeholders clearly identified?
 - implementation_feasibility: Are the implied policy changes practically implementable?""",
-
     "synthesis_bibliometric": """You are an expert reviewer specializing in systematic reviews and bibliometric analysis.
 
 Review this paper against the following criteria:
@@ -300,8 +294,13 @@ async def run_method_review(session: AsyncSession, paper_id: str) -> Review:
             family_id=None,
             verdict="fail",
             severity="critical",
-            issues=[{"check": "paper_exists", "severity": "critical",
-                     "message": f"Paper '{paper_id}' not found."}],
+            issues=[
+                {
+                    "check": "paper_exists",
+                    "severity": "critical",
+                    "message": f"Paper '{paper_id}' not found.",
+                }
+            ],
             content="Method review aborted: paper not found.",
             model_used=METHOD_MODEL,
             scores={},
@@ -326,8 +325,13 @@ async def run_method_review(session: AsyncSession, paper_id: str) -> Review:
             family_id=paper.family_id,
             verdict="fail",
             severity="critical",
-            issues=[{"check": "manuscript_missing", "severity": "critical",
-                     "message": "No manuscript content available for review."}],
+            issues=[
+                {
+                    "check": "manuscript_missing",
+                    "severity": "critical",
+                    "message": "No manuscript content available for review.",
+                }
+            ],
             content="Method review aborted: no manuscript content.",
             model_used=METHOD_MODEL,
             scores={},
@@ -346,11 +350,13 @@ async def run_method_review(session: AsyncSession, paper_id: str) -> Review:
     # Format fatal failures and mandatory checks into the prompt.
     fatal_str = (
         "\n".join(f"- {f}" for f in fatal_failures)
-        if isinstance(fatal_failures, list) else str(fatal_failures)
+        if isinstance(fatal_failures, list)
+        else str(fatal_failures)
     )
     mandatory_str = (
         "\n".join(f"- {c}" for c in mandatory_checks)
-        if isinstance(mandatory_checks, list) else str(mandatory_checks)
+        if isinstance(mandatory_checks, list)
+        else str(mandatory_checks)
     )
 
     review_prompt = prompt_template.format(
@@ -386,8 +392,9 @@ async def run_method_review(session: AsyncSession, paper_id: str) -> Review:
             family_id=paper.family_id,
             verdict="fail",
             severity="critical",
-            issues=[{"check": "llm_error", "severity": "critical",
-                     "message": f"LLM call failed: {exc}"}],
+            issues=[
+                {"check": "llm_error", "severity": "critical", "message": f"LLM call failed: {exc}"}
+            ],
             content=f"Method review aborted: LLM error ({exc})",
             model_used=METHOD_MODEL,
             scores={},
@@ -403,11 +410,13 @@ async def run_method_review(session: AsyncSession, paper_id: str) -> Review:
 
     if parsed is None:
         # Could not parse JSON -- treat the raw response as a text review.
-        issues.append({
-            "check": "response_parse_error",
-            "severity": "warning",
-            "message": "Could not parse structured JSON from model response.",
-        })
+        issues.append(
+            {
+                "check": "response_parse_error",
+                "severity": "warning",
+                "message": "Could not parse structured JSON from model response.",
+            }
+        )
         # Attempt to extract verdict from text.
         verdict = _extract_text_verdict(response)
     else:
@@ -423,21 +432,25 @@ async def run_method_review(session: AsyncSession, paper_id: str) -> Review:
             scores[name] = {"score": score, "weight": weight}
 
             for issue_text in criterion_issues:
-                issues.append({
-                    "check": f"method_{name.lower().replace(' ', '_')}",
-                    "severity": "warning" if score >= 3 else "critical",
-                    "message": issue_text,
-                    "criterion": name,
-                    "score": score,
-                })
+                issues.append(
+                    {
+                        "check": f"method_{name.lower().replace(' ', '_')}",
+                        "severity": "warning" if score >= 3 else "critical",
+                        "message": issue_text,
+                        "criterion": name,
+                        "score": score,
+                    }
+                )
 
             for change in required_changes:
-                issues.append({
-                    "check": f"required_change_{name.lower().replace(' ', '_')}",
-                    "severity": "critical",
-                    "message": f"Required change ({name}): {change}",
-                    "criterion": name,
-                })
+                issues.append(
+                    {
+                        "check": f"required_change_{name.lower().replace(' ', '_')}",
+                        "severity": "critical",
+                        "message": f"Required change ({name}): {change}",
+                        "criterion": name,
+                    }
+                )
 
         # ------------------------------------------------------------------
         # 7. Apply weights to compute overall score
@@ -529,7 +542,8 @@ async def _load_manuscript(paper: Paper) -> str | None:
     if tex_path:
         try:
             import aiofiles
-            async with aiofiles.open(tex_path, "r") as f:
+
+            async with aiofiles.open(tex_path) as f:
                 return await f.read()
         except (FileNotFoundError, ImportError):
             pass
@@ -581,8 +595,7 @@ def _build_user_message(
 
     if lock_content:
         parts.append(
-            f"\n\n--- LOCK ARTIFACT (Protocol: {protocol_type}) ---\n"
-            f"{lock_content[:3000]}"
+            f"\n\n--- LOCK ARTIFACT (Protocol: {protocol_type}) ---\n{lock_content[:3000]}"
         )
 
     # Truncate manuscript to fit within token limits (roughly 12k chars ~3k tokens).
@@ -622,7 +635,7 @@ def _parse_review_response(response: str) -> dict | None:
     brace_end = response.rfind("}")
     if brace_start >= 0 and brace_end > brace_start:
         try:
-            return json.loads(response[brace_start:brace_end + 1])
+            return json.loads(response[brace_start : brace_end + 1])
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -693,6 +706,10 @@ async def _create_review(
     await session.flush()
     logger.info(
         "[%s] L3 method review (%s): verdict=%s, issues=%d, model=%s",
-        paper_id, family_id or "no-family", verdict, len(issues), model_used,
+        paper_id,
+        family_id or "no-family",
+        verdict,
+        len(issues),
+        model_used,
     )
     return review
