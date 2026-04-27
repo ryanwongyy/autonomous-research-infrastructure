@@ -26,10 +26,13 @@ logger = logging.getLogger("ape_replica")
 # Sentry initialization (no-op if DSN not configured)
 if settings.sentry_dsn:
     import sentry_sdk
+
     sentry_sdk.init(
         dsn=settings.sentry_dsn,
         traces_sample_rate=0.1,
-        environment="production" if not settings.database_url.startswith("sqlite") else "development",
+        environment="production"
+        if not settings.database_url.startswith("sqlite")
+        else "development",
     )
 
 
@@ -53,6 +56,7 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
@@ -154,16 +158,33 @@ async def health():
 
 
 # Register routers
-from app.api import leaderboard, stats, papers, matches, tournament, categories, config, reviews  # noqa: E402
-from app.api import families, sources, provenance  # noqa: E402
-from app.api import release, throughput, significance_memos  # noqa: E402
-from app.api import reliability  # noqa: E402
-from app.api import outcomes, corrections, expert_reviews  # noqa: E402
-from app.api import autonomy, failures  # noqa: E402
-from app.api import novelty, cohorts  # noqa: E402
-from app.api import rsi  # noqa: E402
-from app.api import collegial  # noqa: E402
-from app.api import batch  # noqa: E402
+from app.api import (  # noqa: E402  # noqa: E402  # noqa: E402  # noqa: E402  # noqa: E402  # noqa: E402
+    autonomy,
+    batch,
+    categories,
+    cohorts,
+    collegial,
+    config,
+    corrections,
+    expert_reviews,
+    failures,
+    families,
+    leaderboard,
+    matches,
+    novelty,
+    outcomes,
+    papers,
+    provenance,
+    release,
+    reliability,
+    reviews,
+    rsi,
+    significance_memos,
+    sources,
+    stats,
+    throughput,
+    tournament,
+)
 
 app.include_router(leaderboard.router, prefix="/api/v1", tags=["leaderboard"])
 app.include_router(stats.router, prefix="/api/v1", tags=["stats"])

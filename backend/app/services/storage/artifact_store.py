@@ -62,9 +62,7 @@ class FilesystemArtifactStore(ArtifactStore):
         dest = self._hash_path(content_hash)
 
         if dest.exists():
-            logger.debug(
-                "Content already stored: %s (type=%s)", content_hash[:16], artifact_type
-            )
+            logger.debug("Content already stored: %s (type=%s)", content_hash[:16], artifact_type)
             return content_hash
 
         # Ensure parent directories exist.

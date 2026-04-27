@@ -32,9 +32,7 @@ async def record_role_autonomy(
     if level not in AUTONOMY_LEVELS:
         level = "full_auto"
 
-    result = await session.execute(
-        select(AutonomyCard).where(AutonomyCard.paper_id == paper_id)
-    )
+    result = await session.execute(select(AutonomyCard).where(AutonomyCard.paper_id == paper_id))
     card = result.scalar_one_or_none()
 
     if card is None:
@@ -57,17 +55,22 @@ async def record_role_autonomy(
     # Record intervention point if not full_auto
     if level != "full_auto" and description:
         interventions = safe_json_loads(card.human_intervention_points_json, [])
-        interventions.append({
-            "role": role,
-            "level": level,
-            "description": description,
-        })
+        interventions.append(
+            {
+                "role": role,
+                "level": level,
+                "description": description,
+            }
+        )
         card.human_intervention_points_json = json.dumps(interventions)
 
     await session.flush()
     logger.info(
         "Autonomy for paper %s, role %s: %s (overall: %.2f)",
-        paper_id, role, level, card.overall_autonomy_score,
+        paper_id,
+        role,
+        level,
+        card.overall_autonomy_score,
     )
     return card
 
@@ -80,9 +83,7 @@ def _compute_score(role_autonomy: dict) -> float:
     return round(full_auto_count / len(role_autonomy), 2)
 
 
-async def get_family_autonomy_stats(
-    session: AsyncSession, family_id: str
-) -> dict:
+async def get_family_autonomy_stats(session: AsyncSession, family_id: str) -> dict:
     """Aggregate autonomy stats across papers in a family."""
     result = await session.execute(
         select(AutonomyCard)
@@ -98,7 +99,9 @@ async def get_family_autonomy_stats(
     avg_score = sum(scores) / len(scores) if scores else 0.0
 
     # Aggregate per-role autonomy distribution
-    role_breakdown: dict[str, dict[str, int]] = {r: {"full_auto": 0, "supervised": 0, "human_driven": 0} for r in PIPELINE_ROLES}
+    role_breakdown: dict[str, dict[str, int]] = {
+        r: {"full_auto": 0, "supervised": 0, "human_driven": 0} for r in PIPELINE_ROLES
+    }
     for card in cards:
         ra = safe_json_loads(card.role_autonomy_json, {})
         for role, level in ra.items():

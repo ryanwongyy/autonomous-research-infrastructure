@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -95,29 +95,33 @@ async def get_paper_corrections(paper_id: str, db: AsyncSession = Depends(get_db
 @router.get("/corrections/dashboard")
 async def corrections_dashboard(db: AsyncSession = Depends(get_db)):
     """Get correction rates by family."""
-    families = (await db.execute(
-        select(PaperFamily).where(PaperFamily.active.is_(True))
-    )).scalars().all()
+    families = (
+        (await db.execute(select(PaperFamily).where(PaperFamily.active.is_(True)))).scalars().all()
+    )
     family_map = {f.id: f.short_name for f in families}
 
     # Batch: public paper counts per family (1 query instead of N)
     paper_counts = dict(
-        (await db.execute(
-            select(Paper.family_id, func.count())
-            .where(Paper.family_id.in_(family_map.keys()), Paper.release_status == "public")
-            .group_by(Paper.family_id)
-        )).all()
+        (
+            await db.execute(
+                select(Paper.family_id, func.count())
+                .where(Paper.family_id.in_(family_map.keys()), Paper.release_status == "public")
+                .group_by(Paper.family_id)
+            )
+        ).all()
     )
 
     # Batch: correction counts per family (1 query instead of N)
     correction_counts = dict(
-        (await db.execute(
-            select(Paper.family_id, func.count())
-            .select_from(CorrectionRecord)
-            .join(Paper, CorrectionRecord.paper_id == Paper.id)
-            .where(Paper.family_id.in_(family_map.keys()))
-            .group_by(Paper.family_id)
-        )).all()
+        (
+            await db.execute(
+                select(Paper.family_id, func.count())
+                .select_from(CorrectionRecord)
+                .join(Paper, CorrectionRecord.paper_id == Paper.id)
+                .where(Paper.family_id.in_(family_map.keys()))
+                .group_by(Paper.family_id)
+            )
+        ).all()
     )
 
     result = []
@@ -125,12 +129,14 @@ async def corrections_dashboard(db: AsyncSession = Depends(get_db)):
         total = paper_counts.get(fid, 0)
         if total > 0:
             corr = correction_counts.get(fid, 0)
-            result.append({
-                "family_id": fid,
-                "short_name": short_name,
-                "total_public_papers": total,
-                "total_corrections": corr,
-                "correction_rate": round(corr / total, 4),
-            })
+            result.append(
+                {
+                    "family_id": fid,
+                    "short_name": short_name,
+                    "total_public_papers": total,
+                    "total_corrections": corr,
+                    "correction_rate": round(corr / total, 4),
+                }
+            )
 
     return {"families": result}

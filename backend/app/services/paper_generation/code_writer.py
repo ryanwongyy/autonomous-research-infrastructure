@@ -2,9 +2,9 @@ import logging
 import os
 from dataclasses import dataclass
 
-from app.services.paper_generation.idea_generator import ResearchIdea
-from app.services.paper_generation.data_fetcher import DataResult
 from app.services.llm.router import get_generation_provider
+from app.services.paper_generation.data_fetcher import DataResult
+from app.services.paper_generation.idea_generator import ResearchIdea
 
 logger = logging.getLogger(__name__)
 

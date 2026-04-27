@@ -1,5 +1,6 @@
-import trueskill
 from dataclasses import dataclass
+
+import trueskill
 
 from app.config import settings
 

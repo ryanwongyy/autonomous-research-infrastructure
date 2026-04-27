@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,9 +30,7 @@ VERDICT_GRADES: dict[str, int] = {
 }
 
 
-async def check_escalation_needed(
-    session: AsyncSession, paper_id: str
-) -> bool:
+async def check_escalation_needed(session: AsyncSession, paper_id: str) -> bool:
     """Check if this paper needs human escalation based on review results.
 
     Escalation triggers:
@@ -79,8 +77,7 @@ async def check_escalation_needed(
     for r in reviews:
         if r.severity == "critical" and r.resolution_status == "open":
             triggers.append(
-                f"Unresolved critical issue in {r.stage} "
-                f"(review_id={r.id}): {r.content[:100]}"
+                f"Unresolved critical issue in {r.stage} (review_id={r.id}): {r.content[:100]}"
             )
             break  # One is enough to trigger.
 
@@ -92,7 +89,8 @@ async def check_escalation_needed(
             issues_data = safe_json_loads(r.issues_json, [])
             issues_list = (
                 issues_data.get("issues", issues_data)
-                if isinstance(issues_data, dict) else issues_data
+                if isinstance(issues_data, dict)
+                else issues_data
             )
             if isinstance(issues_list, list):
                 for issue in issues_list:
@@ -102,8 +100,12 @@ async def check_escalation_needed(
                         if any(
                             kw in msg or kw in check
                             for kw in [
-                                "legal", "doctrinal", "jurisdiction",
-                                "regulatory", "statute", "constitutional",
+                                "legal",
+                                "doctrinal",
+                                "jurisdiction",
+                                "regulatory",
+                                "statute",
+                                "constitutional",
                             ]
                         ):
                             triggers.append(
@@ -144,22 +146,20 @@ async def check_escalation_needed(
     verdicts = {stage: r.verdict for stage, r in by_stage.items()}
     unique_verdicts = set(verdicts.values())
     if len(unique_verdicts) >= 3:
-        triggers.append(
-            f"Three-way verdict split across layers: {verdicts}"
-        )
+        triggers.append(f"Three-way verdict split across layers: {verdicts}")
 
     if triggers:
         logger.info(
             "[%s] Escalation triggered (%d reasons): %s",
-            paper_id, len(triggers), "; ".join(triggers[:3]),
+            paper_id,
+            len(triggers),
+            "; ".join(triggers[:3]),
         )
 
     return len(triggers) > 0
 
 
-async def generate_escalation_report(
-    session: AsyncSession, paper_id: str
-) -> Review:
+async def generate_escalation_report(session: AsyncSession, paper_id: str) -> Review:
     """Generate a structured escalation report for human review.
 
     1. Aggregate all L1-L4 review results
@@ -184,8 +184,13 @@ async def generate_escalation_report(
             family_id=None,
             verdict="fail",
             severity="critical",
-            issues=[{"check": "paper_exists", "severity": "critical",
-                     "message": f"Paper '{paper_id}' not found."}],
+            issues=[
+                {
+                    "check": "paper_exists",
+                    "severity": "critical",
+                    "message": f"Paper '{paper_id}' not found.",
+                }
+            ],
             content="Escalation report aborted: paper not found.",
         )
 
@@ -204,13 +209,15 @@ async def generate_escalation_report(
     for stage_name in ["l1_structural", "l2_provenance", "l3_method", "l4_adversarial"]:
         review = by_stage.get(stage_name)
         if not review:
-            layer_summaries.append({
-                "stage": stage_name,
-                "verdict": "not_run",
-                "severity": "info",
-                "issues_count": 0,
-                "summary": "Layer not executed.",
-            })
+            layer_summaries.append(
+                {
+                    "stage": stage_name,
+                    "verdict": "not_run",
+                    "severity": "info",
+                    "issues_count": 0,
+                    "summary": "Layer not executed.",
+                }
+            )
             continue
 
         # Parse issues from the review.
@@ -218,16 +225,18 @@ async def generate_escalation_report(
         critical = [i for i in stage_issues if i.get("severity") == "critical"]
         warnings = [i for i in stage_issues if i.get("severity") == "warning"]
 
-        layer_summaries.append({
-            "stage": stage_name,
-            "verdict": review.verdict,
-            "severity": review.severity,
-            "model_used": review.model_used,
-            "issues_count": len(stage_issues),
-            "critical_count": len(critical),
-            "warning_count": len(warnings),
-            "summary": review.content[:300],
-        })
+        layer_summaries.append(
+            {
+                "stage": stage_name,
+                "verdict": review.verdict,
+                "severity": review.severity,
+                "model_used": review.model_used,
+                "issues_count": len(stage_issues),
+                "critical_count": len(critical),
+                "warning_count": len(warnings),
+                "summary": review.content[:300],
+            }
+        )
 
         all_critical_issues.extend(critical)
         all_warnings.extend(warnings)
@@ -255,7 +264,7 @@ async def generate_escalation_report(
         f"Paper: {paper.title[:100]}",
         f"Paper ID: {paper_id}",
         f"Family: {paper.family_id or 'N/A'}",
-        f"Generated: {datetime.now(timezone.utc).isoformat()}",
+        f"Generated: {datetime.now(UTC).isoformat()}",
         "=" * 60,
         "",
         "--- LAYER SUMMARIES ---",
@@ -268,45 +277,53 @@ async def generate_escalation_report(
         if ls.get("summary"):
             report_sections.append(f"    {ls['summary'][:200]}")
 
-    report_sections.extend([
-        "",
-        "--- ESCALATION TRIGGERS ---",
-    ])
+    report_sections.extend(
+        [
+            "",
+            "--- ESCALATION TRIGGERS ---",
+        ]
+    )
     for trigger in escalation_triggers:
         report_sections.append(f"  * {trigger}")
 
-    report_sections.extend([
-        "",
-        f"--- CRITICAL ISSUES ({len(all_critical_issues)}) ---",
-    ])
+    report_sections.extend(
+        [
+            "",
+            f"--- CRITICAL ISSUES ({len(all_critical_issues)}) ---",
+        ]
+    )
     for issue in all_critical_issues[:10]:
-        report_sections.append(
-            f"  [{issue.get('check', '?')}] {issue.get('message', '')[:150]}"
-        )
+        report_sections.append(f"  [{issue.get('check', '?')}] {issue.get('message', '')[:150]}")
     if len(all_critical_issues) > 10:
         report_sections.append(f"  ... and {len(all_critical_issues) - 10} more")
 
-    report_sections.extend([
-        "",
-        "--- QUESTIONS FOR HUMAN REVIEWER ---",
-    ])
+    report_sections.extend(
+        [
+            "",
+            "--- QUESTIONS FOR HUMAN REVIEWER ---",
+        ]
+    )
     for i, question in enumerate(questions_for_human, 1):
         report_sections.append(f"  {i}. {question}")
 
-    report_sections.extend([
-        "",
-        "--- RECOMMENDED ACTIONS ---",
-    ])
+    report_sections.extend(
+        [
+            "",
+            "--- RECOMMENDED ACTIONS ---",
+        ]
+    )
     for action in recommended_actions:
         report_sections.append(f"  - {action}")
 
-    report_sections.extend([
-        "",
-        "--- RISK ASSESSMENT ---",
-        f"  Overall risk: {risk_assessment['level']}",
-        f"  Confidence: {risk_assessment['confidence']}",
-        f"  Rationale: {risk_assessment['rationale']}",
-    ])
+    report_sections.extend(
+        [
+            "",
+            "--- RISK ASSESSMENT ---",
+            f"  Overall risk: {risk_assessment['level']}",
+            f"  Confidence: {risk_assessment['confidence']}",
+            f"  Rationale: {risk_assessment['rationale']}",
+        ]
+    )
 
     report_content = "\n".join(report_sections)
 
@@ -361,9 +378,7 @@ async def generate_escalation_report(
 # ---------------------------------------------------------------------------
 
 
-def _identify_triggers(
-    by_stage: dict[str, Review], paper: Paper | None
-) -> list[str]:
+def _identify_triggers(by_stage: dict[str, Review], paper: Paper | None) -> list[str]:
     """Identify all escalation triggers from review results."""
     triggers: list[str] = []
 
@@ -375,17 +390,12 @@ def _identify_triggers(
         l3_grade = VERDICT_GRADES.get(l3.verdict, 2)
         l4_grade = VERDICT_GRADES.get(l4.verdict, 2)
         if abs(l3_grade - l4_grade) > 1:
-            triggers.append(
-                f"L3/L4 disagree by >1 grade: "
-                f"L3={l3.verdict}, L4={l4.verdict}"
-            )
+            triggers.append(f"L3/L4 disagree by >1 grade: L3={l3.verdict}, L4={l4.verdict}")
 
     # Unresolved critical issues.
     for stage, review in by_stage.items():
         if review.severity == "critical" and review.resolution_status == "open":
-            triggers.append(
-                f"Unresolved critical issue in {stage}"
-            )
+            triggers.append(f"Unresolved critical issue in {stage}")
 
     # Legal/doctrinal uncertainty.
     for stage, review in by_stage.items():
@@ -443,12 +453,8 @@ def _generate_human_questions(
         )
 
     # Standard questions.
-    questions.append(
-        "Does this paper meet the minimum quality bar for the target venue?"
-    )
-    questions.append(
-        "Are there ethical or legal concerns that automated review cannot assess?"
-    )
+    questions.append("Does this paper meet the minimum quality bar for the target venue?")
+    questions.append("Are there ethical or legal concerns that automated review cannot assess?")
 
     # Legal/doctrinal questions.
     if any("legal" in t.lower() or "doctrinal" in t.lower() for t in triggers):
@@ -483,14 +489,10 @@ def _generate_recommended_actions(
         actions.append("BLOCK: Fix provenance violations before any release decision.")
 
     if critical_issues:
-        actions.append(
-            f"REVIEW: {len(critical_issues)} critical issue(s) require human judgment."
-        )
+        actions.append(f"REVIEW: {len(critical_issues)} critical issue(s) require human judgment.")
 
     if any("disagree" in t.lower() for t in triggers):
-        actions.append(
-            "ADJUDICATE: Resolve conflicting review verdicts before proceeding."
-        )
+        actions.append("ADJUDICATE: Resolve conflicting review verdicts before proceeding.")
 
     if any("legal" in t.lower() for t in triggers):
         actions.append("CONSULT: Obtain legal/domain expert opinion before release.")
@@ -518,10 +520,7 @@ def _assess_risk(
     if fail_count >= 2:
         level = "high"
         confidence = "high"
-        rationale = (
-            f"{fail_count} layers returned 'fail'. "
-            f"Paper likely has fundamental issues."
-        )
+        rationale = f"{fail_count} layers returned 'fail'. Paper likely has fundamental issues."
     elif fail_count == 1 and len(critical_issues) >= 3:
         level = "high"
         confidence = "medium"
@@ -532,9 +531,7 @@ def _assess_risk(
     elif fail_count == 1:
         level = "medium"
         confidence = "medium"
-        rationale = (
-            "One layer failed. May be recoverable with revision."
-        )
+        rationale = "One layer failed. May be recoverable with revision."
     elif revision_count >= 2:
         level = "medium"
         confidence = "medium"
@@ -573,9 +570,7 @@ def _assess_risk(
 async def _load_reviews(session: AsyncSession, paper_id: str) -> list[Review]:
     """Load all reviews for a paper, ordered by stage and creation time."""
     stmt = (
-        select(Review)
-        .where(Review.paper_id == paper_id)
-        .order_by(Review.stage, Review.created_at)
+        select(Review).where(Review.paper_id == paper_id).order_by(Review.stage, Review.created_at)
     )
     result = await session.execute(stmt)
     return list(result.scalars().all())
@@ -642,6 +637,8 @@ async def _create_review(
     await session.flush()
     logger.info(
         "[%s] L5 human escalation: verdict=%s, triggers=%d",
-        paper_id, verdict, len(issues),
+        paper_id,
+        verdict,
+        len(issues),
     )
     return review

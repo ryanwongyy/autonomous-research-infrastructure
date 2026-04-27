@@ -58,7 +58,9 @@ async def run_prose_review(paper_id: str) -> bool:
             messages=[
                 {
                     "role": "user",
-                    "content": PROSE_PROMPT.format(content=content, iteration_context=iteration_context),
+                    "content": PROSE_PROMPT.format(
+                        content=content, iteration_context=iteration_context
+                    ),
                 }
             ],
             model=model,

@@ -43,6 +43,16 @@ export default function FamiliesPage() {
         </p>
       </div>
 
+      {!loading && families.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          <span className="font-mono font-semibold text-foreground text-lg">{families.length}</span> families
+          <span className="text-muted-foreground/30">|</span>
+          <span className="font-mono font-semibold text-foreground text-lg">{families.reduce((s, f) => s + f.paper_count, 0)}</span> total papers
+          <span className="text-muted-foreground/30">|</span>
+          <span className="font-mono font-semibold text-foreground text-lg">{families.filter(f => f.active).length}</span> active
+        </div>
+      )}
+
       {error && (
         <Card className="mb-6 border-amber-200 dark:border-amber-900">
           <CardContent className="py-4 text-center text-sm text-amber-700 dark:text-amber-400">
