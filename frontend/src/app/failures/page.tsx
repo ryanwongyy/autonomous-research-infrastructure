@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
 export const metadata: Metadata = {
@@ -97,7 +96,15 @@ export default async function FailuresPage() {
                     <CardTitle className="text-sm text-muted-foreground capitalize">{sev}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{count}</div>
+                    <div className={`text-2xl font-bold ${
+                      sev === "critical"
+                        ? "text-red-600 dark:text-red-400"
+                        : sev === "high"
+                        ? "text-orange-600 dark:text-orange-400"
+                        : sev === "medium"
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-foreground"
+                    }`}>{count}</div>
                   </CardContent>
                 </Card>
               ))}
@@ -112,15 +119,26 @@ export default async function FailuresPage() {
                 <CardTitle className="text-base">By Failure Type</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {Object.entries(data.distribution.by_type)
                     .sort(([, a], [, b]) => b - a)
-                    .map(([type, count]) => (
-                      <div key={type} className="flex items-center justify-between">
-                        <span className="text-sm">{TYPE_LABELS[type] ?? type}</span>
-                        <Badge variant="secondary">{count}</Badge>
-                      </div>
-                    ))}
+                    .map(([type, count]) => {
+                      const maxCount = Math.max(...Object.values(data!.distribution.by_type));
+                      return (
+                        <div key={type}>
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-sm">{TYPE_LABELS[type] ?? type}</span>
+                            <span className="text-xs font-mono font-semibold">{count}</span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-red-500/70 dark:bg-red-400/70 transition-all"
+                              style={{ width: `${maxCount > 0 ? (count / maxCount) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                 </div>
               </CardContent>
             </Card>
@@ -131,15 +149,26 @@ export default async function FailuresPage() {
                 <CardTitle className="text-base">By Detection Stage</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {Object.entries(data.distribution.by_stage)
                     .sort(([, a], [, b]) => b - a)
-                    .map(([stage, count]) => (
-                      <div key={stage} className="flex items-center justify-between">
-                        <span className="text-sm">{stage}</span>
-                        <Badge variant="secondary">{count}</Badge>
-                      </div>
-                    ))}
+                    .map(([stage, count]) => {
+                      const maxCount = Math.max(...Object.values(data!.distribution.by_stage));
+                      return (
+                        <div key={stage}>
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-sm">{stage.replace(/_/g, " ")}</span>
+                            <span className="text-xs font-mono font-semibold">{count}</span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-amber-500/70 dark:bg-amber-400/70 transition-all"
+                              style={{ width: `${maxCount > 0 ? (count / maxCount) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                 </div>
               </CardContent>
             </Card>
@@ -150,12 +179,12 @@ export default async function FailuresPage() {
             <>
               <Separator className="my-6" />
               <h2 className="text-xl font-semibold mb-4">Recent Trends (90 days)</h2>
-              <div className="rounded-md border">
+              <div className="rounded-md border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead scope="col">Date</TableHead>
+                      <TableHead scope="col" className="text-right">Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

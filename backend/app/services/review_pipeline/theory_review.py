@@ -49,9 +49,7 @@ async def run_theory_review(paper_id: str) -> bool:
         temperature=0.3,
     )
 
-    if "NOT_APPLICABLE" in response.upper():
-        verdict = "pass"
-    elif "PASS" in response.upper()[-200:]:
+    if "NOT_APPLICABLE" in response.upper() or "PASS" in response.upper()[-200:]:
         verdict = "pass"
     else:
         verdict = "revision_needed"

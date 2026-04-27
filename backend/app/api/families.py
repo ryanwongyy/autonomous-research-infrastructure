@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
 from app.database import get_db
-from app.models.paper_family import PaperFamily
 from app.models.paper import Paper
+from app.models.paper_family import PaperFamily
 from app.utils import safe_json_loads
 
 router = APIRouter()
@@ -21,10 +21,7 @@ async def list_families(active_only: bool = True, db: AsyncSession = Depends(get
     families = result.scalars().all()
 
     # Get all paper counts in a single GROUP BY query (avoids N+1)
-    count_q = (
-        select(Paper.family_id, func.count())
-        .group_by(Paper.family_id)
-    )
+    count_q = select(Paper.family_id, func.count()).group_by(Paper.family_id)
     count_result = await db.execute(count_q)
     paper_counts = dict(count_result.all())
 
@@ -32,20 +29,22 @@ async def list_families(active_only: bool = True, db: AsyncSession = Depends(get
     for fam in families:
         paper_count = paper_counts.get(fam.id, 0)
 
-        output.append({
-            "id": fam.id,
-            "name": fam.name,
-            "short_name": fam.short_name,
-            "description": fam.description,
-            "lock_protocol_type": fam.lock_protocol_type,
-            "venue_ladder": safe_json_loads(fam.venue_ladder),
-            "mandatory_checks": safe_json_loads(fam.mandatory_checks, []),
-            "fatal_failures": safe_json_loads(fam.fatal_failures, []),
-            "elite_ceiling": fam.elite_ceiling,
-            "max_portfolio_share": fam.max_portfolio_share,
-            "paper_count": paper_count,
-            "active": fam.active,
-        })
+        output.append(
+            {
+                "id": fam.id,
+                "name": fam.name,
+                "short_name": fam.short_name,
+                "description": fam.description,
+                "lock_protocol_type": fam.lock_protocol_type,
+                "venue_ladder": safe_json_loads(fam.venue_ladder),
+                "mandatory_checks": safe_json_loads(fam.mandatory_checks, []),
+                "fatal_failures": safe_json_loads(fam.fatal_failures, []),
+                "elite_ceiling": fam.elite_ceiling,
+                "max_portfolio_share": fam.max_portfolio_share,
+                "paper_count": paper_count,
+                "active": fam.active,
+            }
+        )
 
     return {"families": output, "total": len(output)}
 

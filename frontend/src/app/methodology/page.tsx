@@ -21,10 +21,108 @@ export default function MethodologyPage() {
         How the autonomous research infrastructure for AI governance produces submission-ready papers.
       </p>
 
+      {/* Table of Contents */}
+      <nav className="mt-4 rounded-lg border bg-muted/30 p-4" aria-label="Table of contents">
+        <h2 className="text-sm font-semibold mb-2">On this page</h2>
+        <ol className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm list-decimal list-inside">
+          {[
+            { id: "mission", label: "Mission" },
+            { id: "families", label: "Paper Families" },
+            { id: "pipeline", label: "7-Role Pipeline" },
+            { id: "review", label: "5-Layer Review" },
+            { id: "tournament", label: "Tournament" },
+            { id: "sources", label: "Source Architecture" },
+            { id: "release", label: "Public Release" },
+            { id: "drift", label: "Manifest-Drift Detection" },
+            { id: "reliability", label: "Reliability Framework" },
+            { id: "failures", label: "Failure Taxonomy" },
+            { id: "novelty", label: "Novelty Detection" },
+            { id: "post-pipeline", label: "Post-Pipeline Tracking" },
+            { id: "governance", label: "Governance & Disclosure" },
+            { id: "collegial", label: "Collegial Review Loop" },
+            { id: "rsi", label: "Self-Improvement (RSI)" },
+          ].map((item) => (
+            <li key={item.id}>
+              <a href={`#${item.id}`} className="text-muted-foreground hover:text-foreground transition-colors">
+                {item.label}
+              </a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      {/* Visual pipeline overview — gestalt before the deep dive */}
+      <section aria-label="Pipeline overview" className="mt-6 mb-2 rounded-lg border bg-card p-4 sm:p-6">
+        <h2 className="text-lg font-semibold mb-3">At a glance</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          A paper flows left to right through three macro-stages. The
+          numbered details below explain each stage in depth.
+        </p>
+
+        {/* Stage 1: Generate */}
+        <div className="space-y-3 text-sm">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold text-xs shrink-0">1</span>
+            <span className="font-semibold">Generate</span>
+            <span className="text-muted-foreground text-xs">— 7-role pipeline produces a draft</span>
+          </div>
+          <div className="ml-9 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            {["Scout", "Designer", "Data Steward", "Analyst", "Drafter", "Verifier", "Packager"].map((r, i, arr) => (
+              <span key={r} className="contents">
+                <span className="rounded bg-muted px-2 py-0.5 font-mono">{r}</span>
+                {i < arr.length - 1 && <span className="text-muted-foreground/50" aria-hidden="true">→</span>}
+              </span>
+            ))}
+          </div>
+
+          {/* Stage 2: Review + Tournament */}
+          <div className="flex items-center gap-2 flex-wrap pt-2">
+            <span className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold text-xs shrink-0">2</span>
+            <span className="font-semibold">Evaluate</span>
+            <span className="text-muted-foreground text-xs">— independent review then tournament ranking</span>
+          </div>
+          <div className="ml-9 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            {["L1", "L2", "L3", "L4", "L5"].map((r, i, arr) => (
+              <span key={r} className="contents">
+                <span className="rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 font-mono">{r}</span>
+                {i < arr.length - 1 && <span className="text-muted-foreground/50" aria-hidden="true">·</span>}
+              </span>
+            ))}
+            <span className="text-muted-foreground/60 mx-2" aria-hidden="true">→</span>
+            <span className="rounded bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 px-2 py-0.5 font-mono">TrueSkill tournament</span>
+            <span className="text-muted-foreground/60 mx-2" aria-hidden="true">→</span>
+            <span className="rounded bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-mono">Collegial review</span>
+          </div>
+
+          {/* Stage 3: Release + Track */}
+          <div className="flex items-center gap-2 flex-wrap pt-2">
+            <span className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300 font-bold text-xs shrink-0">3</span>
+            <span className="font-semibold">Release &amp; Track</span>
+            <span className="text-muted-foreground text-xs">— human verdict gates publication; outcomes feed back</span>
+          </div>
+          <div className="ml-9 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            {["Internal", "Candidate", "Submitted", "Public"].map((r, i, arr) => (
+              <span key={r} className="contents">
+                <span className="rounded bg-muted px-2 py-0.5 font-mono">{r}</span>
+                {i < arr.length - 1 && <span className="text-muted-foreground/50" aria-hidden="true">→</span>}
+              </span>
+            ))}
+            <span className="text-muted-foreground/60 mx-2" aria-hidden="true">↻</span>
+            <span className="rounded bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-300 px-2 py-0.5 font-mono">RSI</span>
+          </div>
+        </div>
+
+        <p className="mt-4 text-xs text-muted-foreground">
+          Three structural-coherence gates (manifest-drift) and a Jaccard
+          novelty gate run between stages. Every step is logged, audited,
+          and surfaced on the paper detail page.
+        </p>
+      </section>
+
       <Separator className="my-6" />
 
       {/* 1. Mission */}
-      <section className="mb-10">
+      <section id="mission" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">Mission</h2>
         <Card>
           <CardContent className="py-6">
@@ -41,7 +139,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 2. Paper Families */}
-      <section className="mb-10">
+      <section id="families" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">Paper Families</h2>
         <p className="text-muted-foreground mb-4">
           Work is organized into 11 paper families. Each family specifies a lock protocol
@@ -52,7 +150,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Venue-Lock</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-purple-100 dark:bg-purple-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 dark:text-purple-300">
+                <span className="inline-flex items-center rounded-md bg-purple-100 dark:bg-purple-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-purple-700 dark:text-purple-300">
                   Protocol
                 </span>
               </div>
@@ -68,7 +166,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Method-Lock</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300">
+                <span className="inline-flex items-center rounded-md bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
                   Protocol
                 </span>
               </div>
@@ -84,7 +182,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Open</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:text-green-300">
+                <span className="inline-flex items-center rounded-md bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-green-700 dark:text-green-300">
                   Protocol
                 </span>
               </div>
@@ -104,7 +202,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 3. Pipeline */}
-      <section className="mb-10">
+      <section id="pipeline" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">7-Role Bounded Pipeline</h2>
         <p className="text-muted-foreground mb-4">
           Each paper is produced through seven bounded Claude roles. Each role has a
@@ -155,7 +253,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 4. Review Architecture */}
-      <section className="mb-10">
+      <section id="review" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">5-Layer Independent Review</h2>
         <p className="text-muted-foreground mb-4">
           Every paper passes through five independent review layers before entering the
@@ -164,29 +262,29 @@ export default function MethodologyPage() {
         <div className="space-y-3">
           {[
             {
-              layer: "Layer 1: Structural Review",
+              layer: "L1 Structural Review",
               desc: "Checks completeness, formatting, section structure, and basic academic standards. Automated gate.",
             },
             {
-              layer: "Layer 2: Provenance Review",
+              layer: "L2 Provenance Review",
               desc: "Verifies every data claim against source cards. Ensures no claim exceeds the source's permission profile.",
             },
             {
-              layer: "Layer 3: Method / Non-Claude Review",
+              layer: "L3 Method / Non-Claude Review",
               desc: "Independent methodological review by a non-Claude model or human expert. Checks identification strategy validity.",
             },
             {
-              layer: "Layer 4: Adversarial Review",
-              desc: "Deliberately attempts to break the paper -- find fatal flaws, p-hacking, specification errors, or unsupported claims.",
+              layer: "L4 Adversarial Review",
+              desc: "Deliberately attempts to break the paper — find fatal flaws, p-hacking, specification errors, or unsupported claims.",
             },
             {
-              layer: "Layer 5: Human Escalation",
+              layer: "L5 Human Escalation",
               desc: "Papers flagged by any prior layer are escalated for human review. Humans make final kill/revise/pass decisions.",
             },
           ].map((item, i) => (
             <div key={item.layer} className="flex gap-4 items-start">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground text-sm font-bold">
-                {i + 1}
+                L{i + 1}
               </span>
               <div>
                 <h3 className="font-semibold">{item.layer}</h3>
@@ -198,7 +296,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 5. Tournament */}
-      <section className="mb-10">
+      <section id="tournament" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">Family-Local Tournament</h2>
         <div className="space-y-4">
           <Card>
@@ -237,13 +335,22 @@ export default function MethodologyPage() {
             <CardHeader>
               <CardTitle className="text-base">TrueSkill Rating</CardTitle>
               <CardDescription>
-                Bayesian rating: conservative score = mu - 3*sigma.
+                Bayesian rating: conservative score = μ − 3σ.
               </CardDescription>
             </CardHeader>
             <CardContent>
+              <p className="text-sm text-muted-foreground mb-2">
+                <strong>TrueSkill</strong> is a Bayesian rating system originally developed
+                by Microsoft Research. Each paper has a skill estimate as a Gaussian
+                distribution: <strong>μ (mu)</strong> is the mean skill, <strong>σ (sigma)</strong>
+                is the uncertainty. The <strong>conservative rating</strong>{" "}
+                <code className="text-xs bg-muted px-1 py-0.5 rounded">μ − 3σ</code>{" "}
+                is the worst-case skill estimate at 99.7% confidence — it rewards
+                consistency over luck.
+              </p>
               <p className="text-sm text-muted-foreground">
                 Papers must demonstrate consistent performance across multiple matches.
-                High uncertainty (sigma) penalizes papers with few comparisons, preventing
+                High σ (few matches) penalizes the conservative rating, preventing
                 lucky single victories from dominating rankings.
               </p>
             </CardContent>
@@ -252,7 +359,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 6. Source Architecture */}
-      <section className="mb-10">
+      <section id="sources" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">Source Architecture</h2>
         <p className="text-muted-foreground mb-4">
           Every data source is registered as a source card with explicit claim-permission
@@ -263,7 +370,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Tier A</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                <span className="inline-flex items-center rounded-md bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
                   High Trust
                 </span>
               </div>
@@ -279,7 +386,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Tier B</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300">
+                <span className="inline-flex items-center rounded-md bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
                   Standard
                 </span>
               </div>
@@ -295,7 +402,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Tier C</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                <span className="inline-flex items-center rounded-md bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                   Restricted
                 </span>
               </div>
@@ -311,7 +418,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 7. Release Pipeline */}
-      <section className="mb-10">
+      <section id="release" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">Selective Public Release</h2>
         <p className="text-muted-foreground mb-4">
           Papers move through four release stages. Not all papers reach public status.
@@ -330,7 +437,7 @@ export default function MethodologyPage() {
             },
             {
               stage: "Submitted",
-              desc: "Requires a human-authored Significance Memo with 'submit' verdict before advancing. Submitted to a target venue under embargo.",
+              desc: "Requires a human-authored Significance Memo with one of three verdicts before advancing — Submit (paper is venue-fit, policy-relevant, evidence-strong; advances to peer review), Hold (revisions required before resubmission), or Reject (kill for publication). Once Submit is recorded, the paper is sent to a target venue under embargo.",
             },
             {
               stage: "Public",
@@ -351,11 +458,16 @@ export default function MethodologyPage() {
       </section>
 
       {/* 8. Manifest-Drift Detection */}
-      <section className="mb-10">
+      <section id="drift" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">Manifest-Drift Detection</h2>
         <p className="text-muted-foreground mb-4">
-          Three structural coherence gates prevent silent drift between pipeline stages.
-          Each gate verifies alignment before the downstream role can proceed.
+          <strong>Manifest drift</strong> occurs when a paper silently deviates from
+          its locked design — for example, the Analyst uses different methods than the
+          Designer specified, or the Drafter makes claims the analysis doesn&apos;t
+          support. Drift is the autonomous research equivalent of scope creep: small
+          local choices that compound into a paper that no longer matches its plan.
+          Three structural coherence gates prevent this by verifying alignment before
+          each downstream role can proceed.
         </p>
         <div className="space-y-4">
           <Card>
@@ -401,7 +513,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 9. Reliability Framework */}
-      <section className="mb-10">
+      <section id="reliability" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">Reliability Framework</h2>
         <p className="text-muted-foreground mb-4">
           Five quantitative metrics are tracked per paper and aggregated per family.
@@ -443,7 +555,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 10. Failure Taxonomy */}
-      <section className="mb-10">
+      <section id="failures" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">Failure Taxonomy</h2>
         <p className="text-muted-foreground mb-4">
           Every review failure is auto-classified into a systematic taxonomy to enable
@@ -474,7 +586,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 11. Novelty Detection */}
-      <section className="mb-10">
+      <section id="novelty" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">Novelty Detection</h2>
         <div className="space-y-4">
           <Card>
@@ -485,13 +597,27 @@ export default function MethodologyPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground mb-3">
                 After a paper&apos;s design is locked, a novelty check compares its research
                 questions, data sources, and methods against all same-family papers using
-                Jaccard similarity. Papers scoring above the derivative threshold (0.6)
-                are blocked from advancing. Marginal papers (0.3-0.6) proceed with a
-                warning. This ensures each paper makes a distinct contribution within
-                its family.
+                Jaccard similarity. Each paper receives one of three verdicts:
+              </p>
+              <ul className="text-sm text-muted-foreground space-y-1 ml-4 mb-3">
+                <li>
+                  <strong className="text-emerald-700 dark:text-emerald-400">Novel</strong>{" "}
+                  (similarity &lt; 0.3) — distinct contribution, proceeds freely.
+                </li>
+                <li>
+                  <strong className="text-amber-700 dark:text-amber-400">Marginal</strong>{" "}
+                  (0.3–0.6) — overlapping with prior work, proceeds with a warning label.
+                </li>
+                <li>
+                  <strong className="text-red-700 dark:text-red-400">Derivative</strong>{" "}
+                  (≥ 0.6) — too similar to existing papers, blocked from advancing.
+                </li>
+              </ul>
+              <p className="text-sm text-muted-foreground">
+                This ensures each paper makes a distinct contribution within its family.
               </p>
             </CardContent>
           </Card>
@@ -499,7 +625,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 12. Post-Pipeline Tracking */}
-      <section className="mb-10">
+      <section id="post-pipeline" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">Post-Pipeline Tracking</h2>
         <p className="text-muted-foreground mb-4">
           The system tracks what happens after papers leave the factory, feeding
@@ -546,7 +672,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 13. Governance */}
-      <section className="mb-10">
+      <section id="governance" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">Governance & Disclosure</h2>
         <div className="space-y-4">
           <Card>
@@ -555,10 +681,14 @@ export default function MethodologyPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Every paper carries an autonomy card tracking which of the 7 pipeline
-                roles were fully automated, supervised, or human-driven. The overall
-                autonomy score (fraction of full-auto roles) is published alongside
-                each paper for transparency. Family-level aggregates show automation
+                Every paper carries an <strong>autonomy card</strong> tracking which
+                of the 7 pipeline roles were <em>fully automated</em>,{" "}
+                <em>supervised</em> (human in the loop), or <em>human-driven</em>{" "}
+                (no AI). The <strong>autonomy score</strong> is the fraction of roles
+                that ran fully automated — a score of <code className="text-xs bg-muted px-1 py-0.5 rounded">0.71</code>{" "}
+                means 5 of 7 roles were AI-driven end-to-end. The score is published
+                alongside each paper so reviewers can calibrate trust against the
+                actual level of automation; family-level aggregates show automation
                 patterns across the portfolio.
               </p>
             </CardContent>
@@ -605,7 +735,7 @@ export default function MethodologyPage() {
       </section>
 
       {/* 14. Collegial Review Loop */}
-      <section className="mb-10">
+      <section id="collegial" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">
           Collegial Review Loop (Convergence-Based)
         </h2>
@@ -626,7 +756,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Dr. Methods</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300">
+                <span className="inline-flex items-center rounded-md bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
                   Methodology
                 </span>
               </div>
@@ -643,7 +773,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Prof. Domain</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                <span className="inline-flex items-center rounded-md bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
                   Domain Expertise
                 </span>
               </div>
@@ -660,7 +790,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Editor Chen</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-purple-100 dark:bg-purple-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 dark:text-purple-300">
+                <span className="inline-flex items-center rounded-md bg-purple-100 dark:bg-purple-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-purple-700 dark:text-purple-300">
                   Venue Strategy
                 </span>
               </div>
@@ -688,7 +818,7 @@ export default function MethodologyPage() {
             },
             {
               step: "Convergence Check",
-              desc: "The loop exits when: the manuscript is assessed as \"ready\" (all five quality dimensions score >= 7/10), the maximum round limit is reached (default 5 rounds), or quality scores plateau across consecutive rounds.",
+              desc: "The loop exits via one of three paths, each with different downstream consequences: Converged (all five dimensions score ≥ 7/10) — paper is submission-ready and advances; Plateaued (scores stop improving across consecutive rounds) — paper requires human edits before it can advance; Max Rounds (default 5) — paper escalates to a human reviewer for an explicit submit/hold decision.",
             },
           ].map((item, i) => (
             <div key={item.step} className="flex gap-4 items-start">
@@ -756,17 +886,37 @@ export default function MethodologyPage() {
       </section>
 
       {/* 15. Recursive Self-Improvement (RSI) */}
-      <section className="mb-10">
+      <section id="rsi" className="mb-10 scroll-mt-20">
         <h2 className="text-2xl font-semibold mb-4">
           Recursive Self-Improvement (RSI)
         </h2>
-        <p className="text-muted-foreground mb-6">
+        <p className="text-muted-foreground mb-4">
           The factory doesn&apos;t just produce papers — it improves itself.
           Every paper&apos;s outcomes, review failures, and tournament results
-          feed back into a four-tier improvement system. Each tier operates at
-          a different level of ambition, from fine-tuning individual prompts to
-          restructuring the pipeline architecture itself.
+          feed back into a four-tier improvement system. The tiers are{" "}
+          <strong>nested</strong>: each tier consumes signals from the tier
+          below it, escalating from prompt-level fixes up to pipeline
+          architecture, with safety guards at every level.
         </p>
+        <ul className="text-sm text-muted-foreground space-y-1 ml-4 mb-6 list-disc">
+          <li>
+            <strong>Tier 1 — Prompts:</strong> tunes individual role prompts
+            based on per-role failure patterns.
+          </li>
+          <li>
+            <strong>Tier 2 — Configs:</strong> when prompt fixes plateau,
+            adjusts family-level configs (thresholds, judge calibration).
+          </li>
+          <li>
+            <strong>Tier 3 — Architecture:</strong> when config tuning is
+            insufficient, restructures pipeline stages or adds new ones.
+          </li>
+          <li>
+            <strong>Tier 4 — Meta:</strong> reflects on whether the taxonomy
+            itself is fit for purpose; can propose new families or retire
+            stagnant ones.
+          </li>
+        </ul>
 
         <div className="grid gap-4 md:grid-cols-2 mb-6">
           <Card>
@@ -880,7 +1030,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Experiment Tracking</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300">
+                <span className="inline-flex items-center rounded-md bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
                   Guard
                 </span>
               </div>
@@ -897,7 +1047,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Shadow Mode</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                <span className="inline-flex items-center rounded-md bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
                   Guard
                 </span>
               </div>
@@ -914,7 +1064,7 @@ export default function MethodologyPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Auto-Rollback Gate</CardTitle>
-                <span className="inline-flex items-center rounded-md bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:text-red-300">
+                <span className="inline-flex items-center rounded-md bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-300">
                   Guard
                 </span>
               </div>

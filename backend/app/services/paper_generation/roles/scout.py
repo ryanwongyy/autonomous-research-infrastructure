@@ -132,6 +132,7 @@ SCREEN_WEIGHTS = {
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def generate_ideas(
     session: AsyncSession,
     family_id: str,
@@ -208,9 +209,7 @@ async def generate_ideas(
         card = _normalise_idea_card(raw, family_id)
         validated.append(card)
 
-    logger.info(
-        "Scout generated %d idea cards for family %s", len(validated), family_id
-    )
+    logger.info("Scout generated %d idea cards for family %s", len(validated), family_id)
     return validated
 
 
@@ -258,11 +257,7 @@ async def screen_idea(
     # Enforce minimum thresholds
     novelty_score = _extract_score(scores, "novelty")
     data_score = _extract_score(scores, "data_adequacy")
-    passed = (
-        weighted >= 4.0
-        and novelty_score >= 4
-        and data_score >= 4
-    )
+    passed = weighted >= 4.0 and novelty_score >= 4 and data_score >= 4
     screening["pass"] = passed
 
     logger.info(
@@ -278,6 +273,7 @@ async def screen_idea(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _load_family(session: AsyncSession, family_id: str) -> PaperFamily:
     stmt = select(PaperFamily).where(PaperFamily.id == family_id)

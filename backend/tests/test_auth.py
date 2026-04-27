@@ -18,9 +18,7 @@ async def auth_client(db_engine, monkeypatch):
 
     from app.main import app
 
-    session_factory = async_sessionmaker(
-        db_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def _test_db():
         async with session_factory() as session:
@@ -35,6 +33,7 @@ async def auth_client(db_engine, monkeypatch):
 
 # ── GET requests pass without auth ──────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_get_requests_need_no_auth(auth_client):
     resp = await auth_client.get("/health")
@@ -48,6 +47,7 @@ async def test_get_papers_no_auth(auth_client):
 
 
 # ── Mutations require API key ──────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_post_without_key_returns_401(auth_client):
@@ -91,6 +91,7 @@ async def test_bearer_token_works(auth_client):
 
 # ── Admin endpoints require admin key ──────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_tournament_needs_admin_key(auth_client):
     resp = await auth_client.post(
@@ -111,6 +112,7 @@ async def test_tournament_with_admin_key(auth_client):
 
 
 # ── Dev mode (no key configured) ──────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_dev_mode_allows_all(client):

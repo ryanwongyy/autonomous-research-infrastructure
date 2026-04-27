@@ -8,8 +8,8 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.significance_memo import SignificanceMemo
 from app.models.rating import Rating
+from app.models.significance_memo import SignificanceMemo
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +37,7 @@ async def create_memo(
         raise ValueError(f"Invalid verdict '{editorial_verdict}'. Must be submit/hold/kill.")
 
     # Snapshot current tournament state
-    result = await session.execute(
-        select(Rating).where(Rating.paper_id == paper_id)
-    )
+    result = await session.execute(select(Rating).where(Rating.paper_id == paper_id))
     rating = result.scalar_one_or_none()
 
     rank_at_time = None
@@ -47,16 +45,26 @@ async def create_memo(
 
     if rating:
         rank_at_time = rating.rank
-        ci_lower = rating.confidence_lower if rating.confidence_lower is not None else rating.mu - 1.96 * rating.sigma
-        ci_upper = rating.confidence_upper if rating.confidence_upper is not None else rating.mu + 1.96 * rating.sigma
-        confidence_json = json.dumps({
-            "mu": round(rating.mu, 2),
-            "sigma": round(rating.sigma, 2),
-            "conservative_rating": round(rating.conservative_rating, 2),
-            "lower": round(ci_lower, 2),
-            "upper": round(ci_upper, 2),
-            "matches_played": rating.matches_played,
-        })
+        ci_lower = (
+            rating.confidence_lower
+            if rating.confidence_lower is not None
+            else rating.mu - 1.96 * rating.sigma
+        )
+        ci_upper = (
+            rating.confidence_upper
+            if rating.confidence_upper is not None
+            else rating.mu + 1.96 * rating.sigma
+        )
+        confidence_json = json.dumps(
+            {
+                "mu": round(rating.mu, 2),
+                "sigma": round(rating.sigma, 2),
+                "conservative_rating": round(rating.conservative_rating, 2),
+                "lower": round(ci_lower, 2),
+                "upper": round(ci_upper, 2),
+                "matches_played": rating.matches_played,
+            }
+        )
 
     memo = SignificanceMemo(
         paper_id=paper_id,
@@ -71,14 +79,15 @@ async def create_memo(
 
     logger.info(
         "Created significance memo for paper %s: verdict=%s, author=%s, rank=%s",
-        paper_id, editorial_verdict, author, rank_at_time,
+        paper_id,
+        editorial_verdict,
+        author,
+        rank_at_time,
     )
     return memo
 
 
-async def get_memo_for_paper(
-    session: AsyncSession, paper_id: str
-) -> SignificanceMemo | None:
+async def get_memo_for_paper(session: AsyncSession, paper_id: str) -> SignificanceMemo | None:
     """Get the most recent significance memo for a paper."""
     result = await session.execute(
         select(SignificanceMemo)

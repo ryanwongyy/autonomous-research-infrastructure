@@ -1,7 +1,3 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,9 +12,26 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FunnelChart } from "@/components/throughput/funnel-chart";
-import { getFamily, getLeaderboard, getFunnel } from "@/lib/api";
-import type { PaperFamilyDetail, LeaderboardEntry, FunnelSnapshot } from "@/lib/types";
+import { serverFetch } from "@/lib/api";
+import type { PaperFamilyDetail, LeaderboardEntry, FunnelSnapshot, LeaderboardResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import type { Metadata } from "next";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ familyId: string }>;
+}): Promise<Metadata> {
+  const { familyId } = await params;
+  try {
+    const family = await serverFetch<PaperFamilyDetail>(`/families/${familyId}`);
+    return {
+      title: `${family.short_name} — Paper Family`,
+      description: family.description?.slice(0, 160) ?? `Details for paper family ${family.name}.`,
+    };
+  } catch { /* fallback */ }
+  return { title: `Family ${familyId}` };
+}
 
 const lockColors: Record<string, string> = {
   "venue-lock": "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
@@ -26,47 +39,30 @@ const lockColors: Record<string, string> = {
   open: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
 };
 
-export default function FamilyDetailPage() {
-  const params = useParams();
-  const familyId = params.familyId as string;
+export default async function FamilyDetailPage({
+  params,
+}: {
+  params: Promise<{ familyId: string }>;
+}) {
+  const { familyId } = await params;
 
-  const [family, setFamily] = useState<PaperFamilyDetail | null>(null);
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [funnel, setFunnel] = useState<FunnelSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [apiError, setApiError] = useState(false);
+  let family: PaperFamilyDetail | null = null;
+  let entries: LeaderboardEntry[] = [];
+  let funnel: FunnelSnapshot | null = null;
+  let apiError = false;
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [famRes, lbRes, funnelRes] = await Promise.allSettled([
-          getFamily(familyId),
-          getLeaderboard({ family_id: familyId, per_page: 50 }),
-          getFunnel(familyId),
-        ]);
-        if (famRes.status === "fulfilled") setFamily(famRes.value);
-        if (lbRes.status === "fulfilled") setEntries(lbRes.value.entries);
-        if (funnelRes.status === "fulfilled") setFunnel(funnelRes.value);
-        if (famRes.status === "rejected") setApiError(true);
-      } catch {
-        setApiError(true);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [familyId]);
-
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-7xl px-4 py-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 w-64 bg-muted rounded" />
-          <div className="h-4 w-96 bg-muted rounded" />
-          <div className="h-64 bg-muted rounded" />
-        </div>
-      </div>
-    );
+  try {
+    const [famRes, lbRes, funnelRes] = await Promise.allSettled([
+      serverFetch<PaperFamilyDetail>(`/families/${familyId}`),
+      serverFetch<LeaderboardResponse>(`/leaderboard?family_id=${familyId}&per_page=50`),
+      serverFetch<FunnelSnapshot>(`/throughput/funnel?family_id=${familyId}`),
+    ]);
+    if (famRes.status === "fulfilled") family = famRes.value;
+    if (lbRes.status === "fulfilled") entries = lbRes.value.entries;
+    if (funnelRes.status === "fulfilled") funnel = funnelRes.value;
+    if (famRes.status === "rejected") apiError = true;
+  } catch {
+    apiError = true;
   }
 
   if (!family) {
@@ -144,21 +140,21 @@ export default function FamilyDetailPage() {
               {entries.length === 0 ? (
                 <Card>
                   <CardContent className="py-12 text-center text-muted-foreground">
-                    No leaderboard entries for this family yet.
+                    Papers in this family are still being ranked. Rankings appear after papers complete the review pipeline and enter tournament evaluation.
                   </CardContent>
                 </Card>
               ) : (
-                <div className="rounded-md border">
+                <div className="rounded-md border overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-14">Rank</TableHead>
-                        <TableHead>Paper</TableHead>
-                        <TableHead className="w-16 text-right">mu</TableHead>
-                        <TableHead className="w-16 text-right">sigma</TableHead>
-                        <TableHead className="w-20 text-right">Cons.</TableHead>
-                        <TableHead className="w-14 text-right">MP</TableHead>
-                        <TableHead className="w-24">Status</TableHead>
+                        <TableHead scope="col" className="w-14">Rank</TableHead>
+                        <TableHead scope="col">Paper</TableHead>
+                        <TableHead scope="col" className="w-16 text-right">mu</TableHead>
+                        <TableHead scope="col" className="w-16 text-right">sigma</TableHead>
+                        <TableHead scope="col" className="w-20 text-right">Cons.</TableHead>
+                        <TableHead scope="col" className="w-14 text-right">MP</TableHead>
+                        <TableHead scope="col" className="w-24">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -168,7 +164,9 @@ export default function FamilyDetailPage() {
                             {entry.rank ?? "--"}
                           </TableCell>
                           <TableCell className="max-w-xs truncate font-medium">
-                            {entry.title}
+                            <Link href={`/papers/${entry.paper_id}`} className="hover:text-primary hover:underline transition-colors">
+                              {entry.title}
+                            </Link>
                           </TableCell>
                           <TableCell className="text-right font-mono text-sm">
                             {entry.mu.toFixed(1)}
@@ -183,7 +181,7 @@ export default function FamilyDetailPage() {
                             {entry.matches_played}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="secondary" className="text-[10px]">
+                            <Badge variant="secondary" className="text-[11px]">
                               {entry.review_status}
                             </Badge>
                           </TableCell>
@@ -245,9 +243,9 @@ export default function FamilyDetailPage() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Criterion</TableHead>
-                            <TableHead className="w-20 text-right">Weight</TableHead>
-                            <TableHead>Description</TableHead>
+                            <TableHead scope="col">Criterion</TableHead>
+                            <TableHead scope="col" className="w-20 text-right">Weight</TableHead>
+                            <TableHead scope="col">Description</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -432,7 +430,7 @@ export default function FamilyDetailPage() {
               <CardContent>
                 <div className="flex flex-wrap gap-1.5">
                   {family.public_data_sources.map((ds) => (
-                    <Badge key={ds} variant="outline" className="text-[10px]">
+                    <Badge key={ds} variant="outline" className="text-[11px]">
                       {ds}
                     </Badge>
                   ))}

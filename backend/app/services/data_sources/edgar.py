@@ -13,7 +13,12 @@ from pathlib import Path
 
 import httpx
 
-from app.services.data_sources.base import BaseDataSource, FetchParams, FetchResult
+from app.services.data_sources.base import (
+    BaseDataSource,
+    FetchParams,
+    FetchResult,
+    make_http_proof,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +42,7 @@ class EdgarSource(BaseDataSource):
         }
 
         try:
-            records = await self._search_filings(api_params, params.max_records)
+            records, proof = await self._search_filings(api_params, params.max_records)
         except Exception as e:
             logger.error("EDGAR fetch failed: %s", e)
             return FetchResult(success=False, error=str(e))
@@ -47,6 +52,7 @@ class EdgarSource(BaseDataSource):
                 success=True,
                 row_count=0,
                 description="No matching EDGAR filings found",
+                proof=proof,
             )
 
         output_path = output_dir / "edgar_filings.csv"
@@ -64,15 +70,17 @@ class EdgarSource(BaseDataSource):
             writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
             for filing in records:
-                writer.writerow({
-                    "accession_number": filing.get("accession_no", ""),
-                    "filing_date": filing.get("file_date", ""),
-                    "form_type": filing.get("form_type", ""),
-                    "company_name": filing.get("entity_name", ""),
-                    "cik": filing.get("cik", ""),
-                    "file_description": filing.get("file_description", ""),
-                    "filing_url": f"https://www.sec.gov/Archives/edgar/data/{filing.get('cik', '')}/{filing.get('accession_no', '').replace('-', '')}/",
-                })
+                writer.writerow(
+                    {
+                        "accession_number": filing.get("accession_no", ""),
+                        "filing_date": filing.get("file_date", ""),
+                        "form_type": filing.get("form_type", ""),
+                        "company_name": filing.get("entity_name", ""),
+                        "cik": filing.get("cik", ""),
+                        "file_description": filing.get("file_description", ""),
+                        "filing_url": f"https://www.sec.gov/Archives/edgar/data/{filing.get('cik', '')}/{filing.get('accession_no', '').replace('-', '')}/",
+                    }
+                )
 
         return FetchResult(
             success=True,
@@ -80,14 +88,17 @@ class EdgarSource(BaseDataSource):
             row_count=len(records),
             columns=columns,
             description=f"Fetched {len(records)} SEC EDGAR filings for: {query[:80]}",
+            proof=proof,
         )
 
     async def _search_filings(
         self, api_params: dict, max_records: int
-    ) -> list[dict]:
+    ) -> tuple[list[dict], dict | None]:
+        """Returns ``(records, proof)``; ``proof`` is built from the first page."""
         records: list[dict] = []
         start = 0
         per_page = min(max_records, 100)
+        proof: dict | None = None
 
         headers = {
             "User-Agent": "APE-Replica research@ape-replica.org",
@@ -100,6 +111,13 @@ class EdgarSource(BaseDataSource):
                 api_params["size"] = per_page
                 resp = await client.get(EFTS_BASE, params=api_params)
                 resp.raise_for_status()
+                if proof is None:
+                    proof = make_http_proof(
+                        request_url=str(resp.url),
+                        response_status=resp.status_code,
+                        response_body=resp.content,
+                        fetched_via="edgar_client_v1",
+                    )
                 data = resp.json()
 
                 hits = data.get("hits", {}).get("hits", [])
@@ -115,7 +133,7 @@ class EdgarSource(BaseDataSource):
                 if start >= total or start >= 500:  # Safety cap
                     break
 
-        return records[:max_records]
+        return records[:max_records], proof
 
     def supports_query(self, research_question: str) -> bool:
         rq = research_question.lower()
