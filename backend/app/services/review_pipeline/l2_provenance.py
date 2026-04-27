@@ -155,6 +155,12 @@ async def run_provenance_review(session: AsyncSession, paper_id: str) -> Review:
     issues.extend(drift_issues)
 
     # ------------------------------------------------------------------
+    # 7. Provenance proof — every cited snapshot must have an HTTP proof
+    # ------------------------------------------------------------------
+    proof_issues = await _check_provenance_proofs(session, paper_id)
+    issues.extend(proof_issues)
+
+    # ------------------------------------------------------------------
     # Coverage ratio check
     # ------------------------------------------------------------------
     coverage = claim_report.get("coverage_ratio", 0.0)
@@ -404,6 +410,105 @@ async def _check_source_hash_drift(session: AsyncSession, paper_id: str) -> list
                     "claim_id": claim.id,
                     "source_card_id": source_card.id,
                     "snapshot_id": snapshot.id,
+                }
+            )
+
+    return issues
+
+
+# Methods that count as a real fetch for the "real data, real claims" bar.
+# Anything else (placeholder, missing proof, unknown method) fails L2.
+_REAL_PROOF_METHODS = frozenset({"http", "vcr"})
+
+
+async def _check_provenance_proofs(session: AsyncSession, paper_id: str) -> list[dict]:
+    """Reject claims tied to snapshots that lack a real-fetch provenance proof.
+
+    A claim is acceptable only if its referenced ``SourceSnapshot`` has a
+    ``provenance_proof_json`` whose ``method`` is one of ``_REAL_PROOF_METHODS``
+    (currently "http" for live API calls and "vcr" for replayed-cassette tests).
+
+    Anything else — null proof, "placeholder" proof emitted in
+    ``DATA_MODE=permissive``, or an unknown method — produces a critical
+    issue. This is the L2 enforcement of Step 2: "claims must be traceable
+    to data that was actually fetched from a real source".
+    """
+    issues: list[dict] = []
+
+    stmt = select(ClaimMap).where(
+        ClaimMap.paper_id == paper_id,
+        ClaimMap.source_snapshot_id.isnot(None),
+    )
+    result = await session.execute(stmt)
+    claims: list[ClaimMap] = list(result.scalars().all())
+
+    snapshot_cache: dict[int, SourceSnapshot | None] = {}
+
+    for claim in claims:
+        if claim.source_snapshot_id not in snapshot_cache:
+            sn_stmt = select(SourceSnapshot).where(SourceSnapshot.id == claim.source_snapshot_id)
+            sn_result = await session.execute(sn_stmt)
+            snapshot_cache[claim.source_snapshot_id] = sn_result.scalar_one_or_none()
+
+        snapshot = snapshot_cache[claim.source_snapshot_id]
+        if snapshot is None:
+            # This is already covered by other checks; skip silently here.
+            continue
+
+        proof_json = snapshot.provenance_proof_json
+        if not proof_json:
+            issues.append(
+                {
+                    "check": "provenance_proof_missing",
+                    "severity": "critical",
+                    "message": (
+                        f"Claim {claim.id} cites snapshot {snapshot.id} which has "
+                        f"no provenance proof. The snapshot may predate Step-2 "
+                        f"enforcement, or the source client did not record an HTTP "
+                        f"proof. Refetch the source under DATA_MODE=real."
+                    ),
+                    "claim_id": claim.id,
+                    "snapshot_id": snapshot.id,
+                    "source_card_id": snapshot.source_card_id,
+                }
+            )
+            continue
+
+        try:
+            proof = json.loads(proof_json)
+        except (TypeError, ValueError):
+            issues.append(
+                {
+                    "check": "provenance_proof_malformed",
+                    "severity": "critical",
+                    "message": (
+                        f"Claim {claim.id} cites snapshot {snapshot.id} whose "
+                        f"provenance_proof_json is not valid JSON."
+                    ),
+                    "claim_id": claim.id,
+                    "snapshot_id": snapshot.id,
+                    "source_card_id": snapshot.source_card_id,
+                }
+            )
+            continue
+
+        method = (proof.get("method") if isinstance(proof, dict) else None) or "unknown"
+        if method not in _REAL_PROOF_METHODS:
+            issues.append(
+                {
+                    "check": "provenance_proof_synthetic",
+                    "severity": "critical",
+                    "message": (
+                        f"Claim {claim.id} cites snapshot {snapshot.id} whose "
+                        f"provenance method is '{method}' — not a real-fetch "
+                        f"method ({sorted(_REAL_PROOF_METHODS)}). Likely a "
+                        f"DATA_MODE=permissive placeholder. Papers built on "
+                        f"this snapshot are not grounded in real data."
+                    ),
+                    "claim_id": claim.id,
+                    "snapshot_id": snapshot.id,
+                    "source_card_id": snapshot.source_card_id,
+                    "proof_method": method,
                 }
             )
 

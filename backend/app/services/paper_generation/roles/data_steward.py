@@ -10,6 +10,7 @@ import csv
 import io
 import json
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -180,8 +181,9 @@ async def fetch_and_snapshot(
     if source_card is None:
         raise ValueError(f"Source card '{source_id}' not found.")
 
-    # Fetch data (dev mode: generate placeholder content)
-    content = await _fetch_source_data(source_card, fetch_params)
+    # Fetch data (real HTTP fetch, with provenance proof attached).
+    fetched = await _fetch_source_data(source_card, fetch_params)
+    content = fetched.content
 
     # Hash and store in content-addressed artifact store
     content_hash = hash_content(content)
@@ -191,7 +193,9 @@ async def fetch_and_snapshot(
     # Determine storage path
     store_path = store._hash_path(content_hash)
 
-    # Create the SourceSnapshot record
+    # Create the SourceSnapshot record. The provenance proof (request URL,
+    # response hash, timestamp) is persisted so L2 Provenance can verify
+    # this snapshot was produced by a real fetch, not a placeholder.
     snapshot = SourceSnapshot(
         source_card_id=source_id,
         snapshot_hash=content_hash,
@@ -200,6 +204,7 @@ async def fetch_and_snapshot(
         record_count=_estimate_record_count(content),
         fetch_parameters=json.dumps(fetch_params) if fetch_params else None,
         fetched_at=datetime.now(UTC),
+        provenance_proof_json=json.dumps(fetched.proof) if fetched.proof else None,
     )
     session.add(snapshot)
 
@@ -274,10 +279,28 @@ def _validate_tier_requirements(protocol_type: str, manifest: dict) -> None:
             )
 
 
+@dataclass
+class _FetchedData:
+    """Internal: the bytes of a fetched source plus its provenance proof.
+
+    ``proof`` is the dict returned by the source client (Step 2). It is
+    written verbatim into ``SourceSnapshot.provenance_proof_json`` and used
+    by L2 Provenance to verify that the snapshot was produced by a real HTTP
+    fetch rather than a synthetic placeholder.
+
+    For placeholder fallback (DATA_MODE=permissive), proof is set to a
+    sentinel dict ``{"method": "placeholder", ...}`` so L2 can recognise
+    and reject it.
+    """
+
+    content: bytes
+    proof: dict | None
+
+
 async def _fetch_source_data(
     source_card: SourceCard,
     fetch_params: dict[str, Any] | None,
-) -> bytes:
+) -> _FetchedData:
     """Fetch data from a source card via the data source registry.
 
     Tries the real API client first. Behaviour on failure depends on
@@ -286,6 +309,7 @@ async def _fetch_source_data(
       - "permissive" — fall back to synthetic placeholder data (dev only)
     """
     import tempfile
+    from datetime import UTC, datetime
     from pathlib import Path
 
     from app.config import settings
@@ -315,7 +339,7 @@ async def _fetch_source_data(
                 result.row_count,
                 len(content),
             )
-            return content
+            return _FetchedData(content=content, proof=result.proof)
 
         fetch_error = result.error or "no client returned data"
 
@@ -328,7 +352,8 @@ async def _fetch_source_data(
             f"DATA_MODE=permissive (NOT recommended in production)."
         )
 
-    # Permissive mode: fall back to placeholder.
+    # Permissive mode: fall back to placeholder. Mark the proof so L2 can
+    # see this snapshot is NOT grounded in real data.
     logger.error(
         "DATA_MODE=permissive: real fetch failed for '%s' (%s) — emitting "
         "SYNTHETIC placeholder data. Papers built on this are NOT grounded "
@@ -336,7 +361,16 @@ async def _fetch_source_data(
         source_card.id,
         fetch_error,
     )
-    return _generate_placeholder(source_card)
+    placeholder_proof = {
+        "method": "placeholder",
+        "source_id": source_card.id,
+        "fetch_error": fetch_error,
+        "fetched_at": datetime.now(UTC).isoformat(),
+    }
+    return _FetchedData(
+        content=_generate_placeholder(source_card),
+        proof=placeholder_proof,
+    )
 
 
 def _build_fetch_params(raw: dict[str, Any] | None):

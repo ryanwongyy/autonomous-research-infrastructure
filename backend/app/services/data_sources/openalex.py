@@ -13,7 +13,12 @@ from pathlib import Path
 
 import httpx
 
-from app.services.data_sources.base import BaseDataSource, FetchParams, FetchResult
+from app.services.data_sources.base import (
+    BaseDataSource,
+    FetchParams,
+    FetchResult,
+    make_http_proof,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +53,7 @@ class OpenAlexSource(BaseDataSource):
             api_params["mailto"] = self.api_key
 
         try:
-            records = await self._paginated_fetch(api_params, params.max_records)
+            records, proof = await self._paginated_fetch(api_params, params.max_records)
         except Exception as e:
             logger.error("OpenAlex fetch failed: %s", e)
             return FetchResult(success=False, error=str(e))
@@ -58,6 +63,7 @@ class OpenAlexSource(BaseDataSource):
                 success=True,
                 row_count=0,
                 description="No matching OpenAlex works found",
+                proof=proof,
             )
 
         output_path = output_dir / "openalex_works.csv"
@@ -114,17 +120,30 @@ class OpenAlexSource(BaseDataSource):
             row_count=len(records),
             columns=columns,
             description=f"Fetched {len(records)} academic works from OpenAlex for: {query[:80]}",
+            proof=proof,
         )
 
-    async def _paginated_fetch(self, api_params: dict, max_records: int) -> list[dict]:
+    async def _paginated_fetch(
+        self, api_params: dict, max_records: int
+    ) -> tuple[list[dict], dict | None]:
+        """Returns ``(records, proof)``; ``proof`` is built from the first page."""
         records: list[dict] = []
         cursor = "*"
+        proof: dict | None = None
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             while len(records) < max_records:
                 api_params["cursor"] = cursor
                 resp = await client.get(f"{API_BASE}/works", params=api_params)
                 resp.raise_for_status()
+                # Build a provenance proof from the FIRST successful page.
+                if proof is None:
+                    proof = make_http_proof(
+                        request_url=str(resp.url),
+                        response_status=resp.status_code,
+                        response_body=resp.content,
+                        fetched_via="openalex_client_v1",
+                    )
                 data = resp.json()
 
                 results = data.get("results", [])
@@ -142,7 +161,7 @@ class OpenAlexSource(BaseDataSource):
                 if len(records) >= min(max_records, 1000):
                     break
 
-        return records[:max_records]
+        return records[:max_records], proof
 
     def supports_query(self, research_question: str) -> bool:
         rq = research_question.lower()

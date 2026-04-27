@@ -30,9 +30,11 @@ Thumbs.db
 
 # Generated
 backend/papers/
+backend/artifacts/
 *.pdf
 # Lock files
 .~lock.*
+.claude/scheduled_tasks.lock
 *.xlsx
 
 # Playwright
