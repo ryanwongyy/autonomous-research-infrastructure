@@ -15,12 +15,15 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.claim_map import ClaimMap
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
 from app.models.source_card import SourceCard
+from app.models.source_snapshot import SourceSnapshot
 from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
+from app.services.storage.artifact_store import FilesystemArtifactStore
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +140,20 @@ async def verify_manuscript(
             },
         }
 
+    # ── Step 3: mechanical claim verification ────────────────────────────
+    # BEFORE the LLM is consulted, mechanically verify that claims with a
+    # quoted span actually appear in the cited snapshot bytes. Mechanical
+    # failures override any LLM verdict — a fabricated number doesn't get
+    # to be "pass" just because the LLM finds it plausible.
+    mechanical_failures = await _mechanical_verify_claims(session, claims)
+    if mechanical_failures:
+        logger.warning(
+            "Verifier: %d/%d claim(s) fail mechanical verification for paper %s",
+            len(mechanical_failures),
+            len(claims),
+            paper_id,
+        )
+
     # Build claims YAML for the LLM
     claims_data = []
     for c in claims:
@@ -186,6 +203,11 @@ async def verify_manuscript(
     )
 
     verification = _parse_json_object(response)
+
+    # ── Step 3: merge mechanical failures into LLM verification ─────────
+    # Mechanical failures hard-fail the claim, regardless of LLM verdict.
+    if mechanical_failures:
+        verification = _apply_mechanical_failures(verification, claims, mechanical_failures)
 
     # Update claim verification statuses in the database
     claim_results = verification.get("claim_verifications", [])
@@ -318,3 +340,175 @@ def _parse_json_object(response: str) -> dict:
                 "recommendation": "revise",
             },
         }
+
+
+# ---------------------------------------------------------------------------
+# Step 3: mechanical claim verification (source-bytes string match)
+# ---------------------------------------------------------------------------
+
+
+async def _mechanical_verify_claims(
+    session: AsyncSession,
+    claims: list[ClaimMap],
+) -> dict[int, str]:
+    """Verify each claim against the actual bytes of its cited snapshot.
+
+    For every claim that references a ``source_snapshot_id``:
+      1. Load the snapshot record.
+      2. Retrieve the snapshot bytes from the artifact store.
+      3. If the snapshot bytes can't be retrieved → mechanical failure.
+      4. If the claim's ``source_span_ref`` includes a ``quote`` field, the
+         quote string MUST appear (case-sensitive substring) in the snapshot
+         bytes. Otherwise → mechanical failure.
+
+    Returns a ``{claim_id: failure_reason}`` map. Claims with no
+    ``source_snapshot_id`` (e.g. claims grounded purely in result objects)
+    are skipped here and left to the LLM verifier; the per-paper review
+    pipeline still gates them via ClaimMap.verification_status.
+
+    Mechanical failures are hard fails: ``_apply_mechanical_failures``
+    overrides the LLM verdict for these claim IDs.
+    """
+    failures: dict[int, str] = {}
+    if not claims:
+        return failures
+
+    store = FilesystemArtifactStore(settings.artifact_store_path)
+    snapshot_cache: dict[int, SourceSnapshot | None] = {}
+    bytes_cache: dict[str, bytes | None] = {}
+
+    for claim in claims:
+        if not claim.source_snapshot_id:
+            continue  # skip — no snapshot to verify against
+
+        if claim.source_snapshot_id not in snapshot_cache:
+            stmt = select(SourceSnapshot).where(SourceSnapshot.id == claim.source_snapshot_id)
+            snapshot_cache[claim.source_snapshot_id] = (
+                await session.execute(stmt)
+            ).scalar_one_or_none()
+        snapshot = snapshot_cache[claim.source_snapshot_id]
+        if snapshot is None:
+            failures[claim.id] = f"Cited snapshot {claim.source_snapshot_id} not found in database"
+            continue
+
+        if snapshot.snapshot_hash not in bytes_cache:
+            bytes_cache[snapshot.snapshot_hash] = await store.retrieve(snapshot.snapshot_hash)
+        body = bytes_cache[snapshot.snapshot_hash]
+        if body is None:
+            failures[claim.id] = (
+                f"Snapshot bytes unretrievable for hash "
+                f"{snapshot.snapshot_hash[:12]}... — claim cannot be mechanically "
+                f"verified."
+            )
+            continue
+
+        # Optional quote check: if source_span_ref carries a `quote`, it must
+        # appear verbatim in the snapshot bytes.
+        if claim.source_span_ref:
+            try:
+                span = json.loads(claim.source_span_ref)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                failures[claim.id] = "source_span_ref is not valid JSON"
+                continue
+
+            quote = (span.get("quote") if isinstance(span, dict) else None) or ""
+            quote = quote.strip()
+            if quote:
+                # Decode permissively — the snapshot may be UTF-8 or a CSV
+                # generated locally; either way the quote should appear as
+                # literal characters.
+                text = body.decode("utf-8", errors="replace")
+                if quote not in text:
+                    excerpt = quote[:80] + ("..." if len(quote) > 80 else "")
+                    failures[claim.id] = (
+                        f"Quote {excerpt!r} not found in cited snapshot "
+                        f"(hash={snapshot.snapshot_hash[:12]}...). The claim "
+                        f"either misquotes the source or cites the wrong "
+                        f"snapshot."
+                    )
+                    continue
+
+    return failures
+
+
+def _apply_mechanical_failures(
+    verification: dict,
+    claims: list[ClaimMap],
+    mechanical_failures: dict[int, str],
+) -> dict:
+    """Override LLM verdicts for claims that failed mechanical verification.
+
+    For each claim ID in ``mechanical_failures``:
+      - Find the matching entry in ``verification["claim_verifications"]``
+        (by ``claim_text``). If absent, append a synthetic entry.
+      - Set ``overall = "fail"`` and ``evidence_link.status = "missing"``
+        with the mechanical failure reason as the note.
+      - Add the failure to ``summary.critical_violations``.
+      - Recompute summary counts and force ``recommendation = "reject"``.
+    """
+    if not mechanical_failures:
+        return verification
+
+    claim_by_id = {c.id: c for c in claims}
+
+    # Build a text → entry map for the LLM-produced list so we can update
+    # in place, and a separate list for synthetic entries we have to add.
+    claim_verifications = list(verification.get("claim_verifications", []))
+    text_to_entry: dict[str, dict] = {}
+    for entry in claim_verifications:
+        text = entry.get("claim_text", "")
+        text_to_entry[text] = entry
+
+    for claim_id, reason in mechanical_failures.items():
+        claim = claim_by_id.get(claim_id)
+        if claim is None:
+            continue
+
+        entry = text_to_entry.get(claim.claim_text)
+        if entry is None:
+            entry = {
+                "claim_text": claim.claim_text,
+                "evidence_link": {"status": "missing", "note": reason},
+                "citation_accuracy": {
+                    "status": "unsupported",
+                    "note": "Mechanical verification failed — see evidence_link.",
+                },
+                "causal_language": {"status": "not_applicable", "note": ""},
+                "tier_compliance": {"status": "not_applicable", "note": ""},
+                "scope_accuracy": {"status": "not_applicable", "note": ""},
+                "overall": "fail",
+            }
+            claim_verifications.append(entry)
+        else:
+            entry["overall"] = "fail"
+            entry["evidence_link"] = {
+                "status": "missing",
+                "note": (
+                    f"Mechanical verification failed: {reason} "
+                    f"(LLM said: {entry.get('evidence_link', {}).get('note', '—')})"
+                ),
+            }
+
+    # Recompute summary counts.
+    passed = sum(1 for v in claim_verifications if v.get("overall") == "pass")
+    failed = sum(1 for v in claim_verifications if v.get("overall") == "fail")
+    warnings = sum(1 for v in claim_verifications if v.get("overall") == "warning")
+
+    summary = dict(verification.get("summary", {}))
+    summary["total_claims"] = len(claim_verifications)
+    summary["passed"] = passed
+    summary["failed"] = failed
+    summary["warnings"] = warnings
+
+    critical = list(summary.get("critical_violations", []))
+    for reason in mechanical_failures.values():
+        critical.append(f"Mechanical verification: {reason}")
+    summary["critical_violations"] = critical
+
+    # Any mechanical failure forces reject — these are non-negotiable.
+    summary["recommendation"] = "reject"
+
+    return {
+        "claim_verifications": claim_verifications,
+        "summary": summary,
+    }
