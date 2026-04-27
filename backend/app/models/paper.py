@@ -10,6 +10,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.claim_map import ClaimMap
+    from app.models.llm_spend import LLMSpend
     from app.models.lock_artifact import LockArtifact
     from app.models.paper_family import PaperFamily
     from app.models.paper_package import PaperPackage
@@ -89,4 +90,7 @@ class Paper(Base):
     claim_maps: Mapped[list[ClaimMap]] = relationship(back_populates="paper", lazy="selectin")
     package: Mapped[PaperPackage | None] = relationship(
         back_populates="paper", uselist=False, lazy="joined"
+    )
+    llm_spend_entries: Mapped[list[LLMSpend]] = relationship(
+        back_populates="paper", lazy="selectin"
     )

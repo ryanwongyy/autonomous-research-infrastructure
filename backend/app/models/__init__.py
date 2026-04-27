@@ -12,6 +12,7 @@ from app.models.expert_review import ExpertReview
 from app.models.failure_record import FailureRecord
 from app.models.failure_type_proposal import FailureTypeProposal
 from app.models.family_proposal import FamilyProposal
+from app.models.llm_spend import LLMSpend
 from app.models.lock_artifact import LockArtifact
 from app.models.match import Match
 from app.models.meta_pipeline_run import MetaPipelineRun
@@ -49,6 +50,7 @@ __all__ = [
     "FailureRecord",
     "FailureTypeProposal",
     "FamilyProposal",
+    "LLMSpend",
     "LockArtifact",
     "Match",
     "MetaPipelineRun",

@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     # Source freshness
     source_stale_days: int = 90  # source considered stale after this many days
 
+    # ── Cost guardrails (Step 5) ────────────────────────────────────────
+    # Tracks per-call LLM token usage in the `llm_spend` table and enforces
+    # caps. Set caps to 0 to disable individual checks; set
+    # `cost_tracking_enabled=False` to disable the whole subsystem.
+    cost_tracking_enabled: bool = True
+    max_spend_per_paper_usd: float = 50.0
+    max_daily_spend_usd: float = 200.0
+
     # Data fetching mode for the paper-generation pipeline:
     #   "real"       — strict: hard-fail if any source can't return real data;
     #                  no synthetic placeholder is ever generated. This is the

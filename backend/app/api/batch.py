@@ -81,6 +81,10 @@ async def batch_generate(body: GenerateRequest, request: Request):
 
     Runs sequentially to respect LLM rate limits and memory constraints.
     """
+    from app.services.llm.spend import (
+        BudgetExceededError,
+        assert_daily_within_budget,
+    )
     from app.services.paper_generation.orchestrator import run_full_pipeline
     from app.services.review_pipeline.orchestrator import run_review_pipeline
 
@@ -88,6 +92,20 @@ async def batch_generate(body: GenerateRequest, request: Request):
     generated = 0
     reviewed = 0
     errors = 0
+
+    # ── Step 5: refuse to start if the daily LLM-spend cap is reached ──
+    # Checking ONCE up front is sufficient — within a single batch we may
+    # cross the line, but the next cron tick will be blocked here. This
+    # prevents runaway sessions from continuing for hours after the cap.
+    try:
+        async with async_session() as session:
+            await assert_daily_within_budget(session)
+    except BudgetExceededError as e:
+        return BatchResult(
+            action="generate",
+            results=[],
+            summary=f"Refused to start: {e}",
+        )
 
     # Decide which families to target
     if body.family_id:
