@@ -44,14 +44,14 @@ export default async function CategoriesPage() {
 
       <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {categories.map((cat) => (
-          <Link key={cat.slug} href={`/categories/${cat.slug}`}>
-            <Card className="h-full transition-colors hover:bg-muted/50">
-              <CardHeader>
+          <Link key={cat.slug} href={`/categories/${cat.slug}`} className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-lg">
+            <Card className="h-full transition-all hover:shadow-md group-hover:ring-2 group-hover:ring-primary/20">
+              <CardHeader className="pb-2">
                 <CardTitle className="text-lg">{cat.name}</CardTitle>
-                <CardDescription>{cat.domain_id}</CardDescription>
+                <CardDescription className="text-xs">{cat.domain_id}</CardDescription>
               </CardHeader>
               <CardContent>
-                <Badge variant="secondary">{cat.paper_count} papers</Badge>
+                <Badge variant="secondary" className="text-xs">{cat.paper_count} papers</Badge>
               </CardContent>
             </Card>
           </Link>

@@ -15,9 +15,7 @@ router = APIRouter()
 @router.get("/papers/{paper_id}/autonomy-card")
 async def get_autonomy_card(paper_id: str, db: AsyncSession = Depends(get_db)):
     """Get the autonomy card for a paper."""
-    result = await db.execute(
-        select(AutonomyCard).where(AutonomyCard.paper_id == paper_id)
-    )
+    result = await db.execute(select(AutonomyCard).where(AutonomyCard.paper_id == paper_id))
     card = result.scalar_one_or_none()
 
     if card is None:

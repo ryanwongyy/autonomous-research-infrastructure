@@ -27,6 +27,7 @@ router = APIRouter()
 # Schemas
 # ---------------------------------------------------------------------------
 
+
 class GenerateRequest(BaseModel):
     count: int = Field(default=2, ge=1, le=10, description="Papers to generate per run")
     family_id: str | None = Field(default=None, description="Target family (null = auto-select)")
@@ -42,14 +43,15 @@ class BatchResult(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _pick_underserved_families(count: int) -> list[str]:
     """Return family IDs with the fewest papers, up to *count*."""
     async with async_session() as session:
         families = (
-            await session.execute(
-                select(PaperFamily).where(PaperFamily.active.is_(True))
-            )
-        ).scalars().all()
+            (await session.execute(select(PaperFamily).where(PaperFamily.active.is_(True))))
+            .scalars()
+            .all()
+        )
 
         if not families:
             return []
@@ -58,9 +60,7 @@ async def _pick_underserved_families(count: int) -> list[str]:
         for fam in families:
             paper_count = (
                 await session.execute(
-                    select(func.count())
-                    .select_from(Paper)
-                    .where(Paper.family_id == fam.id)
+                    select(func.count()).select_from(Paper).where(Paper.family_id == fam.id)
                 )
             ).scalar() or 0
             counts.append((fam.id, paper_count))
@@ -74,12 +74,17 @@ async def _pick_underserved_families(count: int) -> list[str]:
 # POST /batch/generate
 # ---------------------------------------------------------------------------
 
+
 @router.post("/batch/generate", response_model=BatchResult)
 async def batch_generate(body: GenerateRequest, request: Request):
     """Generate papers and auto-trigger review for each.
 
     Runs sequentially to respect LLM rate limits and memory constraints.
     """
+    from app.services.llm.spend import (
+        BudgetExceededError,
+        assert_daily_within_budget,
+    )
     from app.services.paper_generation.orchestrator import run_full_pipeline
     from app.services.review_pipeline.orchestrator import run_review_pipeline
 
@@ -87,6 +92,20 @@ async def batch_generate(body: GenerateRequest, request: Request):
     generated = 0
     reviewed = 0
     errors = 0
+
+    # ── Step 5: refuse to start if the daily LLM-spend cap is reached ──
+    # Checking ONCE up front is sufficient — within a single batch we may
+    # cross the line, but the next cron tick will be blocked here. This
+    # prevents runaway sessions from continuing for hours after the cap.
+    try:
+        async with async_session() as session:
+            await assert_daily_within_budget(session)
+    except BudgetExceededError as e:
+        return BatchResult(
+            action="generate",
+            results=[],
+            summary=f"Refused to start: {e}",
+        )
 
     # Decide which families to target
     if body.family_id:
@@ -103,7 +122,7 @@ async def batch_generate(body: GenerateRequest, request: Request):
         while len(family_ids) < body.count:
             family_ids.append(family_ids[len(family_ids) % len(family_ids)])
 
-    for i, fid in enumerate(family_ids[:body.count]):
+    for i, fid in enumerate(family_ids[: body.count]):
         paper_id = f"apep_{uuid.uuid4().hex[:8]}"
         entry: dict[str, Any] = {"paper_id": paper_id, "family_id": fid, "index": i}
 
@@ -153,6 +172,7 @@ async def batch_generate(body: GenerateRequest, request: Request):
 # POST /batch/review-pending
 # ---------------------------------------------------------------------------
 
+
 @router.post("/batch/review-pending", response_model=BatchResult)
 async def batch_review_pending(request: Request):
     """Find papers awaiting review and run the review pipeline on each."""
@@ -162,23 +182,29 @@ async def batch_review_pending(request: Request):
 
     async with async_session() as session:
         pending = (
-            await session.execute(
-                select(Paper.id).where(
-                    Paper.review_status == "awaiting",
-                    Paper.funnel_stage.in_(["candidate", "reviewing", "benchmark"]),
-                    Paper.status != "killed",
+            (
+                await session.execute(
+                    select(Paper.id).where(
+                        Paper.review_status == "awaiting",
+                        Paper.funnel_stage.in_(["candidate", "reviewing", "benchmark"]),
+                        Paper.status != "killed",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     for paper_id in pending:
         try:
             async with async_session() as session:
                 report = await run_review_pipeline(session, paper_id)
-            results.append({
-                "paper_id": paper_id,
-                "decision": report.get("decision", "unknown"),
-            })
+            results.append(
+                {
+                    "paper_id": paper_id,
+                    "decision": report.get("decision", "unknown"),
+                }
+            )
         except Exception as e:
             logger.warning("Review failed for %s: %s", paper_id, e)
             results.append({"paper_id": paper_id, "error": str(e)})
@@ -193,6 +219,7 @@ async def batch_review_pending(request: Request):
 # ---------------------------------------------------------------------------
 # POST /batch/tournament
 # ---------------------------------------------------------------------------
+
 
 @router.post("/batch/tournament", response_model=BatchResult)
 async def batch_tournament(request: Request):
@@ -223,6 +250,7 @@ async def batch_tournament(request: Request):
 # POST /batch/promote
 # ---------------------------------------------------------------------------
 
+
 @router.post("/batch/promote", response_model=BatchResult)
 async def batch_promote(request: Request):
     """Auto-promote papers from internal -> candidate where preconditions are met."""
@@ -236,14 +264,18 @@ async def batch_promote(request: Request):
     async with async_session() as session:
         # Papers that are reviewed and still internal
         eligible = (
-            await session.execute(
-                select(Paper.id).where(
-                    Paper.release_status == "internal",
-                    Paper.review_status == "peer_reviewed",
-                    Paper.status != "killed",
+            (
+                await session.execute(
+                    select(Paper.id).where(
+                        Paper.release_status == "internal",
+                        Paper.review_status == "peer_reviewed",
+                        Paper.status != "killed",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     promoted = 0
     blocked = 0
@@ -253,18 +285,20 @@ async def batch_promote(request: Request):
             check = await check_transition_preconditions(session, paper_id, "candidate")
 
             if check["can_transition"]:
-                result = await transition_release_status(
+                await transition_release_status(
                     session, paper_id, "candidate", approved_by="batch_auto_promote"
                 )
                 await session.commit()
                 results.append({"paper_id": paper_id, "promoted": True})
                 promoted += 1
             else:
-                results.append({
-                    "paper_id": paper_id,
-                    "promoted": False,
-                    "blockers": check["blockers"],
-                })
+                results.append(
+                    {
+                        "paper_id": paper_id,
+                        "promoted": False,
+                        "blockers": check["blockers"],
+                    }
+                )
                 blocked += 1
 
     return BatchResult(
@@ -278,6 +312,7 @@ async def batch_promote(request: Request):
 # POST /batch/seed-families
 # ---------------------------------------------------------------------------
 
+
 @router.post("/batch/seed-families", response_model=BatchResult)
 async def batch_seed_families(request: Request):
     """Seed the 11 paper families if not already present."""
@@ -286,9 +321,7 @@ async def batch_seed_families(request: Request):
     results: list[dict[str, Any]] = []
 
     async with async_session() as session:
-        existing = (
-            await session.execute(select(PaperFamily.id))
-        ).scalars().all()
+        existing = (await session.execute(select(PaperFamily.id))).scalars().all()
         existing_ids = set(existing)
 
         inserted = 0

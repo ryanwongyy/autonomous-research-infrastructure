@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.match import Match
 from app.models.paper import Paper
-from app.schemas.match import MatchResponse, MatchDetail
+from app.schemas.match import MatchDetail, MatchResponse
 
 router = APIRouter()
 

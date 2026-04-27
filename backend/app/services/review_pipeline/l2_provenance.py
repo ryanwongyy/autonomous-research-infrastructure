@@ -49,8 +49,13 @@ async def run_provenance_review(session: AsyncSession, paper_id: str) -> Review:
             family_id=None,
             verdict="fail",
             severity="critical",
-            issues=[{"check": "paper_exists", "severity": "critical",
-                     "message": f"Paper '{paper_id}' not found."}],
+            issues=[
+                {
+                    "check": "paper_exists",
+                    "severity": "critical",
+                    "message": f"Paper '{paper_id}' not found.",
+                }
+            ],
             content="Provenance review aborted: paper not found.",
         )
 
@@ -63,65 +68,73 @@ async def run_provenance_review(session: AsyncSession, paper_id: str) -> Review:
 
     # Map claim_verifier results to issues.
     if claim_report["total_claims"] == 0:
-        issues.append({
-            "check": "no_claims",
-            "severity": "critical",
-            "message": "No claims found for this paper. Cannot verify provenance.",
-        })
+        issues.append(
+            {
+                "check": "no_claims",
+                "severity": "critical",
+                "message": "No claims found for this paper. Cannot verify provenance.",
+            }
+        )
 
     # 1. Unlinked claims (citations not backed by cached source).
     for unlinked in claim_report.get("unlinked_claims", []):
-        issues.append({
-            "check": "citation_unlinked",
-            "severity": "critical",
-            "message": f"Claim not linked to any source: {unlinked}",
-        })
+        issues.append(
+            {
+                "check": "citation_unlinked",
+                "severity": "critical",
+                "message": f"Claim not linked to any source: {unlinked}",
+            }
+        )
 
     # 4. Source tier violations (Tier C anchoring central claims).
     for violation in claim_report.get("tier_violations", []):
-        issues.append({
-            "check": "tier_violation",
-            "severity": "critical",
-            "message": violation.get("violation", "Source tier violation"),
-            "claim_id": violation.get("claim_id"),
-            "source_card_id": violation.get("source_card_id"),
-            "source_tier": violation.get("source_tier"),
-        })
+        issues.append(
+            {
+                "check": "tier_violation",
+                "severity": "critical",
+                "message": violation.get("violation", "Source tier violation"),
+                "claim_id": violation.get("claim_id"),
+                "source_card_id": violation.get("source_card_id"),
+                "source_tier": violation.get("source_tier"),
+            }
+        )
 
     # 5. Stale source snapshots.
     for stale in claim_report.get("stale_sources", []):
-        issues.append({
-            "check": "source_stale",
-            "severity": "warning",
-            "message": (
-                f"Source snapshot {stale.get('snapshot_id')} is "
-                f"{stale.get('days_stale')} days old "
-                f"(threshold: {SNAPSHOT_FRESHNESS_DAYS} days)."
-            ),
-            "claim_id": stale.get("claim_id"),
-            "source_card_id": stale.get("source_card_id"),
-            "days_stale": stale.get("days_stale"),
-        })
+        issues.append(
+            {
+                "check": "source_stale",
+                "severity": "warning",
+                "message": (
+                    f"Source snapshot {stale.get('snapshot_id')} is "
+                    f"{stale.get('days_stale')} days old "
+                    f"(threshold: {SNAPSHOT_FRESHNESS_DAYS} days)."
+                ),
+                "claim_id": stale.get("claim_id"),
+                "source_card_id": stale.get("source_card_id"),
+                "days_stale": stale.get("days_stale"),
+            }
+        )
 
     # Failed verifications.
     if claim_report.get("failed", 0) > 0:
-        issues.append({
-            "check": "verification_failures",
-            "severity": "critical",
-            "message": (
-                f"{claim_report['failed']} claim(s) failed verification."
-            ),
-        })
+        issues.append(
+            {
+                "check": "verification_failures",
+                "severity": "critical",
+                "message": (f"{claim_report['failed']} claim(s) failed verification."),
+            }
+        )
 
     # Pending verifications (not yet verified).
     if claim_report.get("pending", 0) > 0:
-        issues.append({
-            "check": "verification_pending",
-            "severity": "warning",
-            "message": (
-                f"{claim_report['pending']} claim(s) still pending verification."
-            ),
-        })
+        issues.append(
+            {
+                "check": "verification_pending",
+                "severity": "warning",
+                "message": (f"{claim_report['pending']} claim(s) still pending verification."),
+            }
+        )
 
     # ------------------------------------------------------------------
     # 2. Direct quote string-matching
@@ -142,19 +155,27 @@ async def run_provenance_review(session: AsyncSession, paper_id: str) -> Review:
     issues.extend(drift_issues)
 
     # ------------------------------------------------------------------
+    # 7. Provenance proof — every cited snapshot must have an HTTP proof
+    # ------------------------------------------------------------------
+    proof_issues = await _check_provenance_proofs(session, paper_id)
+    issues.extend(proof_issues)
+
+    # ------------------------------------------------------------------
     # Coverage ratio check
     # ------------------------------------------------------------------
     coverage = claim_report.get("coverage_ratio", 0.0)
     if coverage < 1.0 and claim_report["total_claims"] > 0:
-        issues.append({
-            "check": "coverage_incomplete",
-            "severity": "warning" if coverage >= 0.8 else "critical",
-            "message": (
-                f"Claim verification coverage is {coverage:.1%} "
-                f"({claim_report['verified']}/{claim_report['total_claims']}). "
-                f"Full coverage required."
-            ),
-        })
+        issues.append(
+            {
+                "check": "coverage_incomplete",
+                "severity": "warning" if coverage >= 0.8 else "critical",
+                "message": (
+                    f"Claim verification coverage is {coverage:.1%} "
+                    f"({claim_report['verified']}/{claim_report['total_claims']}). "
+                    f"Full coverage required."
+                ),
+            }
+        )
 
     # ------------------------------------------------------------------
     # Determine verdict
@@ -203,9 +224,7 @@ async def run_provenance_review(session: AsyncSession, paper_id: str) -> Review:
 # ---------------------------------------------------------------------------
 
 
-async def _check_direct_quotes(
-    session: AsyncSession, paper_id: str, paper: Paper
-) -> list[dict]:
+async def _check_direct_quotes(session: AsyncSession, paper_id: str, paper: Paper) -> list[dict]:
     """Check that direct quotes in claims can be string-matched against source text.
 
     For each claim that has a source_span_ref, verify that the claim text
@@ -213,51 +232,50 @@ async def _check_direct_quotes(
     """
     issues: list[dict] = []
 
-    stmt = (
-        select(ClaimMap)
-        .where(
-            ClaimMap.paper_id == paper_id,
-            ClaimMap.source_span_ref.isnot(None),
-            ClaimMap.source_snapshot_id.isnot(None),
-        )
+    stmt = select(ClaimMap).where(
+        ClaimMap.paper_id == paper_id,
+        ClaimMap.source_span_ref.isnot(None),
+        ClaimMap.source_snapshot_id.isnot(None),
     )
     result = await session.execute(stmt)
     claims_with_spans: list[ClaimMap] = list(result.scalars().all())
 
     for claim in claims_with_spans:
         # Extract quoted text from the claim (text between quotation marks).
-        quoted_fragments = re.findall(
-            r'["\u201c]([^"\u201d]+)["\u201d]', claim.claim_text
-        )
+        quoted_fragments = re.findall(r'["\u201c]([^"\u201d]+)["\u201d]', claim.claim_text)
         if not quoted_fragments:
             continue  # No direct quotes to check.
 
         # Load the source snapshot content for string matching.
         snapshot = await _load_snapshot(session, claim.source_snapshot_id)
         if snapshot is None:
-            issues.append({
-                "check": "quote_snapshot_missing",
-                "severity": "warning",
-                "message": (
-                    f"Cannot verify quotes in claim {claim.id}: "
-                    f"snapshot {claim.source_snapshot_id} not found."
-                ),
-                "claim_id": claim.id,
-            })
+            issues.append(
+                {
+                    "check": "quote_snapshot_missing",
+                    "severity": "warning",
+                    "message": (
+                        f"Cannot verify quotes in claim {claim.id}: "
+                        f"snapshot {claim.source_snapshot_id} not found."
+                    ),
+                    "claim_id": claim.id,
+                }
+            )
             continue
 
         # Try to load snapshot content from artifact store.
         snapshot_text = await _load_snapshot_text(snapshot)
         if snapshot_text is None:
-            issues.append({
-                "check": "quote_snapshot_unreadable",
-                "severity": "warning",
-                "message": (
-                    f"Cannot read snapshot content for claim {claim.id}: "
-                    f"snapshot path '{snapshot.snapshot_path}' not accessible."
-                ),
-                "claim_id": claim.id,
-            })
+            issues.append(
+                {
+                    "check": "quote_snapshot_unreadable",
+                    "severity": "warning",
+                    "message": (
+                        f"Cannot read snapshot content for claim {claim.id}: "
+                        f"snapshot path '{snapshot.snapshot_path}' not accessible."
+                    ),
+                    "claim_id": claim.id,
+                }
+            )
             continue
 
         # Check each quoted fragment.
@@ -267,23 +285,23 @@ async def _check_direct_quotes(
             normalized_source = " ".join(snapshot_text.split())
 
             if normalized_fragment.lower() not in normalized_source.lower():
-                issues.append({
-                    "check": "quote_mismatch",
-                    "severity": "critical",
-                    "message": (
-                        f"Direct quote in claim {claim.id} not found in source: "
-                        f"'{fragment[:80]}...'"
-                    ),
-                    "claim_id": claim.id,
-                    "quote_fragment": fragment[:200],
-                })
+                issues.append(
+                    {
+                        "check": "quote_mismatch",
+                        "severity": "critical",
+                        "message": (
+                            f"Direct quote in claim {claim.id} not found in source: "
+                            f"'{fragment[:80]}...'"
+                        ),
+                        "claim_id": claim.id,
+                        "quote_fragment": fragment[:200],
+                    }
+                )
 
     return issues
 
 
-async def _check_data_object_resolution(
-    session: AsyncSession, paper_id: str
-) -> list[dict]:
+async def _check_data_object_resolution(session: AsyncSession, paper_id: str) -> list[dict]:
     """Check that every claim with a result_object_ref actually resolves.
 
     Verifies that the referenced result object has a valid structure and
@@ -291,12 +309,9 @@ async def _check_data_object_resolution(
     """
     issues: list[dict] = []
 
-    stmt = (
-        select(ClaimMap)
-        .where(
-            ClaimMap.paper_id == paper_id,
-            ClaimMap.result_object_ref.isnot(None),
-        )
+    stmt = select(ClaimMap).where(
+        ClaimMap.paper_id == paper_id,
+        ClaimMap.result_object_ref.isnot(None),
     )
     result = await session.execute(stmt)
     claims_with_results: list[ClaimMap] = list(result.scalars().all())
@@ -305,37 +320,37 @@ async def _check_data_object_resolution(
         try:
             ref = json.loads(claim.result_object_ref)
         except (json.JSONDecodeError, TypeError):
-            issues.append({
-                "check": "result_ref_invalid_json",
-                "severity": "critical",
-                "message": (
-                    f"Claim {claim.id} has malformed result_object_ref JSON."
-                ),
-                "claim_id": claim.id,
-            })
+            issues.append(
+                {
+                    "check": "result_ref_invalid_json",
+                    "severity": "critical",
+                    "message": (f"Claim {claim.id} has malformed result_object_ref JSON."),
+                    "claim_id": claim.id,
+                }
+            )
             continue
 
         # Check that the reference has the expected structure.
         required_fields = {"analysis_run_id", "table"}
         missing_fields = required_fields - set(ref.keys())
         if missing_fields:
-            issues.append({
-                "check": "result_ref_incomplete",
-                "severity": "warning",
-                "message": (
-                    f"Claim {claim.id} result_object_ref missing fields: "
-                    f"{sorted(missing_fields)}"
-                ),
-                "claim_id": claim.id,
-                "missing_fields": sorted(missing_fields),
-            })
+            issues.append(
+                {
+                    "check": "result_ref_incomplete",
+                    "severity": "warning",
+                    "message": (
+                        f"Claim {claim.id} result_object_ref missing fields: "
+                        f"{sorted(missing_fields)}"
+                    ),
+                    "claim_id": claim.id,
+                    "missing_fields": sorted(missing_fields),
+                }
+            )
 
     return issues
 
 
-async def _check_source_hash_drift(
-    session: AsyncSession, paper_id: str
-) -> list[dict]:
+async def _check_source_hash_drift(session: AsyncSession, paper_id: str) -> list[dict]:
     """Flag claims where the source content hash has changed since the snapshot.
 
     Compares SourceCard.content_hash (latest) against the SourceSnapshot.snapshot_hash
@@ -343,13 +358,10 @@ async def _check_source_hash_drift(
     """
     issues: list[dict] = []
 
-    stmt = (
-        select(ClaimMap)
-        .where(
-            ClaimMap.paper_id == paper_id,
-            ClaimMap.source_card_id.isnot(None),
-            ClaimMap.source_snapshot_id.isnot(None),
-        )
+    stmt = select(ClaimMap).where(
+        ClaimMap.paper_id == paper_id,
+        ClaimMap.source_card_id.isnot(None),
+        ClaimMap.source_snapshot_id.isnot(None),
     )
     result = await session.execute(stmt)
     claims: list[ClaimMap] = list(result.scalars().all())
@@ -361,9 +373,7 @@ async def _check_source_hash_drift(
     for claim in claims:
         # Load source card.
         if claim.source_card_id not in source_cache:
-            sc_stmt = select(SourceCard).where(
-                SourceCard.id == claim.source_card_id
-            )
+            sc_stmt = select(SourceCard).where(SourceCard.id == claim.source_card_id)
             sc_result = await session.execute(sc_stmt)
             source_cache[claim.source_card_id] = sc_result.scalar_one_or_none()
 
@@ -373,9 +383,7 @@ async def _check_source_hash_drift(
 
         # Load snapshot.
         if claim.source_snapshot_id not in snapshot_cache:
-            sn_stmt = select(SourceSnapshot).where(
-                SourceSnapshot.id == claim.source_snapshot_id
-            )
+            sn_stmt = select(SourceSnapshot).where(SourceSnapshot.id == claim.source_snapshot_id)
             sn_result = await session.execute(sn_stmt)
             snapshot_cache[claim.source_snapshot_id] = sn_result.scalar_one_or_none()
 
@@ -389,19 +397,120 @@ async def _check_source_hash_drift(
             and snapshot.snapshot_hash
             and source_card.content_hash != snapshot.snapshot_hash
         ):
-            issues.append({
-                "check": "source_hash_drift",
-                "severity": "warning",
-                "message": (
-                    f"Source '{source_card.name}' content has changed since "
-                    f"snapshot {snapshot.id} was taken. "
-                    f"Snapshot hash: {snapshot.snapshot_hash[:16]}..., "
-                    f"current hash: {source_card.content_hash[:16]}..."
-                ),
-                "claim_id": claim.id,
-                "source_card_id": source_card.id,
-                "snapshot_id": snapshot.id,
-            })
+            issues.append(
+                {
+                    "check": "source_hash_drift",
+                    "severity": "warning",
+                    "message": (
+                        f"Source '{source_card.name}' content has changed since "
+                        f"snapshot {snapshot.id} was taken. "
+                        f"Snapshot hash: {snapshot.snapshot_hash[:16]}..., "
+                        f"current hash: {source_card.content_hash[:16]}..."
+                    ),
+                    "claim_id": claim.id,
+                    "source_card_id": source_card.id,
+                    "snapshot_id": snapshot.id,
+                }
+            )
+
+    return issues
+
+
+# Methods that count as a real fetch for the "real data, real claims" bar.
+# Anything else (placeholder, missing proof, unknown method) fails L2.
+_REAL_PROOF_METHODS = frozenset({"http", "vcr"})
+
+
+async def _check_provenance_proofs(session: AsyncSession, paper_id: str) -> list[dict]:
+    """Reject claims tied to snapshots that lack a real-fetch provenance proof.
+
+    A claim is acceptable only if its referenced ``SourceSnapshot`` has a
+    ``provenance_proof_json`` whose ``method`` is one of ``_REAL_PROOF_METHODS``
+    (currently "http" for live API calls and "vcr" for replayed-cassette tests).
+
+    Anything else — null proof, "placeholder" proof emitted in
+    ``DATA_MODE=permissive``, or an unknown method — produces a critical
+    issue. This is the L2 enforcement of Step 2: "claims must be traceable
+    to data that was actually fetched from a real source".
+    """
+    issues: list[dict] = []
+
+    stmt = select(ClaimMap).where(
+        ClaimMap.paper_id == paper_id,
+        ClaimMap.source_snapshot_id.isnot(None),
+    )
+    result = await session.execute(stmt)
+    claims: list[ClaimMap] = list(result.scalars().all())
+
+    snapshot_cache: dict[int, SourceSnapshot | None] = {}
+
+    for claim in claims:
+        if claim.source_snapshot_id not in snapshot_cache:
+            sn_stmt = select(SourceSnapshot).where(SourceSnapshot.id == claim.source_snapshot_id)
+            sn_result = await session.execute(sn_stmt)
+            snapshot_cache[claim.source_snapshot_id] = sn_result.scalar_one_or_none()
+
+        snapshot = snapshot_cache[claim.source_snapshot_id]
+        if snapshot is None:
+            # This is already covered by other checks; skip silently here.
+            continue
+
+        proof_json = snapshot.provenance_proof_json
+        if not proof_json:
+            issues.append(
+                {
+                    "check": "provenance_proof_missing",
+                    "severity": "critical",
+                    "message": (
+                        f"Claim {claim.id} cites snapshot {snapshot.id} which has "
+                        f"no provenance proof. The snapshot may predate Step-2 "
+                        f"enforcement, or the source client did not record an HTTP "
+                        f"proof. Refetch the source under DATA_MODE=real."
+                    ),
+                    "claim_id": claim.id,
+                    "snapshot_id": snapshot.id,
+                    "source_card_id": snapshot.source_card_id,
+                }
+            )
+            continue
+
+        try:
+            proof = json.loads(proof_json)
+        except (TypeError, ValueError):
+            issues.append(
+                {
+                    "check": "provenance_proof_malformed",
+                    "severity": "critical",
+                    "message": (
+                        f"Claim {claim.id} cites snapshot {snapshot.id} whose "
+                        f"provenance_proof_json is not valid JSON."
+                    ),
+                    "claim_id": claim.id,
+                    "snapshot_id": snapshot.id,
+                    "source_card_id": snapshot.source_card_id,
+                }
+            )
+            continue
+
+        method = (proof.get("method") if isinstance(proof, dict) else None) or "unknown"
+        if method not in _REAL_PROOF_METHODS:
+            issues.append(
+                {
+                    "check": "provenance_proof_synthetic",
+                    "severity": "critical",
+                    "message": (
+                        f"Claim {claim.id} cites snapshot {snapshot.id} whose "
+                        f"provenance method is '{method}' — not a real-fetch "
+                        f"method ({sorted(_REAL_PROOF_METHODS)}). Likely a "
+                        f"DATA_MODE=permissive placeholder. Papers built on "
+                        f"this snapshot are not grounded in real data."
+                    ),
+                    "claim_id": claim.id,
+                    "snapshot_id": snapshot.id,
+                    "source_card_id": snapshot.source_card_id,
+                    "proof_method": method,
+                }
+            )
 
     return issues
 
@@ -417,9 +526,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper | None:
     return result.scalar_one_or_none()
 
 
-async def _load_snapshot(
-    session: AsyncSession, snapshot_id: int | None
-) -> SourceSnapshot | None:
+async def _load_snapshot(session: AsyncSession, snapshot_id: int | None) -> SourceSnapshot | None:
     if snapshot_id is None:
         return None
     stmt = select(SourceSnapshot).where(SourceSnapshot.id == snapshot_id)
@@ -433,7 +540,8 @@ async def _load_snapshot_text(snapshot: SourceSnapshot) -> str | None:
         return None
     try:
         import aiofiles
-        async with aiofiles.open(snapshot.snapshot_path, "r") as f:
+
+        async with aiofiles.open(snapshot.snapshot_path) as f:
             return await f.read()
     except (FileNotFoundError, ImportError, UnicodeDecodeError):
         return None
@@ -466,6 +574,8 @@ async def _create_review(
     await session.flush()
     logger.info(
         "[%s] L2 provenance review: verdict=%s, issues=%d",
-        paper_id, verdict, len(issues),
+        paper_id,
+        verdict,
+        len(issues),
     )
     return review

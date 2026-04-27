@@ -58,7 +58,15 @@ async def get_acceptance_rates(
 
     total = len(outcomes)
     if total == 0:
-        return {"total": 0, "accepted": 0, "rejected": 0, "desk_reject": 0, "r_and_r": 0, "pending": 0, "acceptance_rate": 0.0}
+        return {
+            "total": 0,
+            "accepted": 0,
+            "rejected": 0,
+            "desk_reject": 0,
+            "r_and_r": 0,
+            "pending": 0,
+            "acceptance_rate": 0.0,
+        }
 
     accepted = sum(1 for o in outcomes if o.decision == "accepted")
     rejected = sum(1 for o in outcomes if o.decision == "rejected")
@@ -84,19 +92,19 @@ async def get_outcomes_dashboard(session: AsyncSession) -> dict:
     """Aggregated outcomes dashboard data."""
     overall = await get_acceptance_rates(session)
 
-    families_result = await session.execute(
-        select(PaperFamily).where(PaperFamily.active.is_(True))
-    )
+    families_result = await session.execute(select(PaperFamily).where(PaperFamily.active.is_(True)))
     families = families_result.scalars().all()
 
     per_family = []
     for f in families:
         rates = await get_acceptance_rates(session, family_id=f.id)
         if rates["total"] > 0:
-            per_family.append({
-                "family_id": f.id,
-                "short_name": f.short_name,
-                **rates,
-            })
+            per_family.append(
+                {
+                    "family_id": f.id,
+                    "short_name": f.short_name,
+                    **rates,
+                }
+            )
 
     return {"overall": overall, "per_family": per_family}

@@ -12,7 +12,12 @@ from pathlib import Path
 
 import httpx
 
-from app.services.data_sources.base import BaseDataSource, FetchParams, FetchResult
+from app.services.data_sources.base import (
+    BaseDataSource,
+    FetchParams,
+    FetchResult,
+    make_http_proof,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,18 +59,22 @@ class USASpendingSource(BaseDataSource):
         }
 
         if params.date_range_start and params.date_range_end:
-            body["filters"]["time_period"].append({
-                "start_date": params.date_range_start,
-                "end_date": params.date_range_end,
-            })
+            body["filters"]["time_period"].append(
+                {
+                    "start_date": params.date_range_start,
+                    "end_date": params.date_range_end,
+                }
+            )
         elif params.date_range_start:
-            body["filters"]["time_period"].append({
-                "start_date": params.date_range_start,
-                "end_date": "2026-12-31",
-            })
+            body["filters"]["time_period"].append(
+                {
+                    "start_date": params.date_range_start,
+                    "end_date": "2026-12-31",
+                }
+            )
 
         try:
-            records = await self._paginated_fetch(body, params.max_records)
+            records, proof = await self._paginated_fetch(body, params.max_records)
         except Exception as e:
             logger.error("USAspending fetch failed: %s", e)
             return FetchResult(success=False, error=str(e))
@@ -75,6 +84,7 @@ class USASpendingSource(BaseDataSource):
                 success=True,
                 row_count=0,
                 description="No matching USAspending awards found",
+                proof=proof,
             )
 
         output_path = output_dir / "usaspending_awards.csv"
@@ -96,18 +106,20 @@ class USASpendingSource(BaseDataSource):
             writer.writeheader()
             for award in records:
                 desc = award.get("Description") or ""
-                writer.writerow({
-                    "award_id": award.get("Award ID", ""),
-                    "recipient_name": award.get("Recipient Name", ""),
-                    "award_amount": award.get("Award Amount", 0),
-                    "total_outlays": award.get("Total Outlays", 0),
-                    "description": desc[:500] if desc else "",
-                    "start_date": award.get("Start Date", ""),
-                    "end_date": award.get("End Date", ""),
-                    "awarding_agency": award.get("Awarding Agency", ""),
-                    "awarding_sub_agency": award.get("Awarding Sub Agency", ""),
-                    "award_type": award.get("Contract Award Type", ""),
-                })
+                writer.writerow(
+                    {
+                        "award_id": award.get("Award ID", ""),
+                        "recipient_name": award.get("Recipient Name", ""),
+                        "award_amount": award.get("Award Amount", 0),
+                        "total_outlays": award.get("Total Outlays", 0),
+                        "description": desc[:500] if desc else "",
+                        "start_date": award.get("Start Date", ""),
+                        "end_date": award.get("End Date", ""),
+                        "awarding_agency": award.get("Awarding Agency", ""),
+                        "awarding_sub_agency": award.get("Awarding Sub Agency", ""),
+                        "award_type": award.get("Contract Award Type", ""),
+                    }
+                )
 
         return FetchResult(
             success=True,
@@ -115,10 +127,15 @@ class USASpendingSource(BaseDataSource):
             row_count=len(records),
             columns=columns,
             description=f"Fetched {len(records)} USAspending awards for: {query[:80]}",
+            proof=proof,
         )
 
-    async def _paginated_fetch(self, body: dict, max_records: int) -> list[dict]:
+    async def _paginated_fetch(
+        self, body: dict, max_records: int
+    ) -> tuple[list[dict], dict | None]:
+        """Returns ``(records, proof)``; ``proof`` is built from the first page."""
         records: list[dict] = []
+        proof: dict | None = None
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             while len(records) < max_records:
@@ -127,6 +144,13 @@ class USASpendingSource(BaseDataSource):
                     json=body,
                 )
                 resp.raise_for_status()
+                if proof is None:
+                    proof = make_http_proof(
+                        request_url=str(resp.url),
+                        response_status=resp.status_code,
+                        response_body=resp.content,
+                        fetched_via="usaspending_client_v1",
+                    )
                 data = resp.json()
 
                 results = data.get("results", [])
@@ -141,7 +165,7 @@ class USASpendingSource(BaseDataSource):
                 if body["page"] > 10:  # Safety cap
                     break
 
-        return records[:max_records]
+        return records[:max_records], proof
 
     def supports_query(self, research_question: str) -> bool:
         rq = research_question.lower()

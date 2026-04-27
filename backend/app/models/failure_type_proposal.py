@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Integer, String, Text, Float, DateTime, ForeignKey, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -21,6 +21,8 @@ class FailureTypeProposal(Base):
     cluster_size: Mapped[int] = mapped_column(Integer, default=0)
     confidence: Mapped[float | None] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(16))
-    experiment_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rsi_experiments.id"), index=True)
+    experiment_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("rsi_experiments.id"), index=True
+    )
     approved_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now())
