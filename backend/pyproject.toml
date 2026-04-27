@@ -29,13 +29,51 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
     "httpx>=0.28.0",
+    "ruff>=0.6.0",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "alembic/versions", "__pycache__"]
+
+[tool.ruff.lint]
+# Selected rule families:
+#   E,W   pycodestyle (style)
+#   F     pyflakes (unused imports/vars)
+#   I     isort (import order)
+#   B     flake8-bugbear (likely bugs)
+#   UP    pyupgrade (modern syntax)
+#   SIM   simplify
+#   RUF   ruff-specific
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "E501",   # line length handled by formatter
+    "B008",   # FastAPI Depends() in defaults is idiomatic
+    "RUF012", # mutable class attrs are common in SQLAlchemy declarative
+    "SIM108", # ternary not always clearer than if/else
+    # ── TODO: enable these as legacy code is cleaned up ──
+    "B904",   # raise ... from err — 66 callsites need migration
+    "SIM102", # collapsible if — minor; readability sometimes preferred
+    "B007",   # unused loop var — fix incrementally
+    "B905",   # zip without strict= — needs case-by-case review
+    "E741",   # ambiguous var name (l, I, O) — fix when next touched
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["B011"]      # `assert False` is fine in tests
+"alembic/env.py" = ["E402"]     # alembic boilerplate imports late
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

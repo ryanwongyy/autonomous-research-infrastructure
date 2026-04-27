@@ -35,6 +35,13 @@ const severityColors: Record<string, string> = {
   low: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
 };
 
+const severityBorders: Record<string, string> = {
+  critical: "border-l-4 border-l-red-500 dark:border-l-red-400",
+  high: "border-l-4 border-l-orange-500 dark:border-l-orange-400",
+  medium: "border-l-4 border-l-amber-500 dark:border-l-amber-400",
+  low: "border-l-4 border-l-blue-500 dark:border-l-blue-400",
+};
+
 export default function ThroughputPage() {
   const [funnel, setFunnel] = useState<FunnelSnapshot | null>(null);
   const [conversions, setConversions] = useState<ConversionRate[]>([]);
@@ -181,14 +188,14 @@ export default function ThroughputPage() {
                 No conversion data available.
               </p>
             ) : (
-              <div className="rounded-md border">
+              <div className="rounded-md border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>From</TableHead>
-                      <TableHead>To</TableHead>
-                      <TableHead className="text-right">Rate</TableHead>
-                      <TableHead className="text-right">Count</TableHead>
+                      <TableHead scope="col">From</TableHead>
+                      <TableHead scope="col">To</TableHead>
+                      <TableHead scope="col" className="text-right">Rate</TableHead>
+                      <TableHead scope="col" className="text-right">Count</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -225,6 +232,11 @@ export default function ThroughputPage() {
               <div className="h-32 animate-pulse bg-muted rounded" />
             ) : bottlenecks.length === 0 ? (
               <div className="py-8 text-center">
+                <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600 dark:text-emerald-400" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
                 <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">No bottlenecks detected</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   All stages are flowing normally.
@@ -235,11 +247,14 @@ export default function ThroughputPage() {
                 {bottlenecks.map((b, i) => (
                   <div
                     key={i}
-                    className="flex items-start gap-3 rounded-lg border p-3"
+                    className={cn(
+                      "flex items-start gap-3 rounded-lg border p-3",
+                      severityBorders[b.severity] ?? severityBorders.low
+                    )}
                   >
                     <span
                       className={cn(
-                        "mt-0.5 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold shrink-0",
+                        "mt-0.5 inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-semibold shrink-0",
                         severityColors[b.severity] ?? severityColors.low
                       )}
                     >
@@ -282,22 +297,22 @@ export default function ThroughputPage() {
                   </Badge>
                 </div>
 
-                {Object.keys(projections.projected_annual).length > 0 && (
+                {projections.projected_annual && Object.keys(projections.projected_annual).length > 0 && (
                   <div className="rounded-md border">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Metric</TableHead>
-                          <TableHead className="text-right">Projected</TableHead>
-                          <TableHead className="text-right">Target</TableHead>
-                          <TableHead className="text-right">Gap</TableHead>
+                          <TableHead scope="col">Metric</TableHead>
+                          <TableHead scope="col" className="text-right">Projected</TableHead>
+                          <TableHead scope="col" className="text-right">Target</TableHead>
+                          <TableHead scope="col" className="text-right">Gap</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {Object.entries(projections.projected_annual).map(
                           ([metric, projected]) => {
                             const target =
-                              projections.targets[metric] ?? 0;
+                              (projections.targets ?? {})[metric] ?? 0;
                             const gap = projected - target;
                             return (
                               <TableRow key={metric}>
@@ -349,15 +364,15 @@ export default function ThroughputPage() {
               <CardTitle>Work Queue</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="rounded-md border">
+              <div className="rounded-md border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-12">Priority</TableHead>
-                      <TableHead>Paper</TableHead>
-                      <TableHead>Family</TableHead>
-                      <TableHead>Stage</TableHead>
-                      <TableHead>Reason</TableHead>
+                      <TableHead scope="col" className="w-12">Priority</TableHead>
+                      <TableHead scope="col">Paper</TableHead>
+                      <TableHead scope="col">Family</TableHead>
+                      <TableHead scope="col">Stage</TableHead>
+                      <TableHead scope="col">Reason</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -366,19 +381,21 @@ export default function ThroughputPage() {
                         <TableCell className="font-mono text-sm font-semibold">
                           {item.priority}
                         </TableCell>
-                        <TableCell className="max-w-xs truncate text-sm font-medium">
+                        <TableCell className="max-w-xs truncate text-sm font-semibold">
                           {item.title}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="text-[10px]">
+                          <Badge variant="outline" className="text-[11px] text-muted-foreground">
                             {item.family_id}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="text-sm text-muted-foreground/70">
                           {item.funnel_stage.replace(/_/g, " ")}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
-                          {item.reason}
+                        <TableCell className="text-sm max-w-xs truncate">
+                          <Badge variant="secondary" className="text-[11px] font-normal">
+                            {item.reason}
+                          </Badge>
                         </TableCell>
                       </TableRow>
                     ))}

@@ -54,15 +54,19 @@ class USASpendingSource(BaseDataSource):
         }
 
         if params.date_range_start and params.date_range_end:
-            body["filters"]["time_period"].append({
-                "start_date": params.date_range_start,
-                "end_date": params.date_range_end,
-            })
+            body["filters"]["time_period"].append(
+                {
+                    "start_date": params.date_range_start,
+                    "end_date": params.date_range_end,
+                }
+            )
         elif params.date_range_start:
-            body["filters"]["time_period"].append({
-                "start_date": params.date_range_start,
-                "end_date": "2026-12-31",
-            })
+            body["filters"]["time_period"].append(
+                {
+                    "start_date": params.date_range_start,
+                    "end_date": "2026-12-31",
+                }
+            )
 
         try:
             records = await self._paginated_fetch(body, params.max_records)
@@ -96,18 +100,20 @@ class USASpendingSource(BaseDataSource):
             writer.writeheader()
             for award in records:
                 desc = award.get("Description") or ""
-                writer.writerow({
-                    "award_id": award.get("Award ID", ""),
-                    "recipient_name": award.get("Recipient Name", ""),
-                    "award_amount": award.get("Award Amount", 0),
-                    "total_outlays": award.get("Total Outlays", 0),
-                    "description": desc[:500] if desc else "",
-                    "start_date": award.get("Start Date", ""),
-                    "end_date": award.get("End Date", ""),
-                    "awarding_agency": award.get("Awarding Agency", ""),
-                    "awarding_sub_agency": award.get("Awarding Sub Agency", ""),
-                    "award_type": award.get("Contract Award Type", ""),
-                })
+                writer.writerow(
+                    {
+                        "award_id": award.get("Award ID", ""),
+                        "recipient_name": award.get("Recipient Name", ""),
+                        "award_amount": award.get("Award Amount", 0),
+                        "total_outlays": award.get("Total Outlays", 0),
+                        "description": desc[:500] if desc else "",
+                        "start_date": award.get("Start Date", ""),
+                        "end_date": award.get("End Date", ""),
+                        "awarding_agency": award.get("Awarding Agency", ""),
+                        "awarding_sub_agency": award.get("Awarding Sub Agency", ""),
+                        "award_type": award.get("Contract Award Type", ""),
+                    }
+                )
 
         return FetchResult(
             success=True,

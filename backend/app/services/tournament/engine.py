@@ -1,21 +1,21 @@
 import logging
-from datetime import datetime, date
+from datetime import date, datetime
 
-from sqlalchemy import select, update, func
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import async_session
+from app.models.match import Match
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
 from app.models.rating import Rating
-from app.models.match import Match
-from app.models.tournament_run import TournamentRun
 from app.models.rating_snapshot import RatingSnapshot
-from app.services.tournament.matcher import PaperInfo, generate_batches
-from app.services.tournament.judge import judge_match, resolve_match, get_family_judge_prompt
-from app.services.tournament.rating_system import rating_system
+from app.models.tournament_run import TournamentRun
 from app.services.llm.router import get_judge_provider
-from app.config import settings
+from app.services.tournament.judge import get_family_judge_prompt, judge_match, resolve_match
+from app.services.tournament.matcher import PaperInfo, generate_batches
+from app.services.tournament.rating_system import rating_system
 from app.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
@@ -33,10 +33,10 @@ async def execute_all_family_tournaments():
     """
     async with async_session() as db:
         families = (
-            await db.execute(
-                select(PaperFamily).where(PaperFamily.active.is_(True))
-            )
-        ).scalars().all()
+            (await db.execute(select(PaperFamily).where(PaperFamily.active.is_(True))))
+            .scalars()
+            .all()
+        )
 
     results: list[dict] = []
     for family in families:
@@ -46,11 +46,13 @@ async def execute_all_family_tournaments():
                 f"Skipping family {family.id} ({family.short_name}): "
                 f"only {paper_count} eligible papers (need {MIN_PAPERS_FOR_TOURNAMENT})"
             )
-            results.append({
-                "family_id": family.id,
-                "status": "skipped",
-                "reason": f"only {paper_count} papers",
-            })
+            results.append(
+                {
+                    "family_id": family.id,
+                    "status": "skipped",
+                    "reason": f"only {paper_count} papers",
+                }
+            )
             continue
 
         # Create a run record for this family
@@ -66,19 +68,23 @@ async def execute_all_family_tournaments():
         )
         try:
             await execute_tournament_run(run.id, family_id=family.id)
-            results.append({
-                "family_id": family.id,
-                "run_id": run.id,
-                "status": "completed",
-            })
+            results.append(
+                {
+                    "family_id": family.id,
+                    "run_id": run.id,
+                    "status": "completed",
+                }
+            )
         except Exception as e:
             logger.error("Tournament for family %s failed: %s", family.id, e)
-            results.append({
-                "family_id": family.id,
-                "run_id": run.id,
-                "status": "failed",
-                "error": str(e),
-            })
+            results.append(
+                {
+                    "family_id": family.id,
+                    "run_id": run.id,
+                    "status": "failed",
+                    "error": str(e),
+                }
+            )
 
     logger.info("All-family tournament sweep finished: %s", results)
     return results
@@ -137,7 +143,11 @@ async def execute_tournament_run(run_id: int, family_id: str | None = None):
                     f"(family={family_id}, pool={len(papers)}, need >= 2)"
                 )
                 await _update_run_status(
-                    db, run_id, "failed", 0, 0,
+                    db,
+                    run_id,
+                    "failed",
+                    0,
+                    0,
                     papers_in_pool=len(papers),
                     benchmark_papers=benchmark_count,
                     ai_papers=ai_count,
@@ -148,9 +158,7 @@ async def execute_tournament_run(run_id: int, family_id: str | None = None):
             family_obj: PaperFamily | None = None
             if family_id:
                 family_obj = (
-                    await db.execute(
-                        select(PaperFamily).where(PaperFamily.id == family_id)
-                    )
+                    await db.execute(select(PaperFamily).where(PaperFamily.id == family_id))
                 ).scalar_one_or_none()
 
             # ----- generate batches (within-family) -----
@@ -186,9 +194,7 @@ async def execute_tournament_run(run_id: int, family_id: str | None = None):
                         )
                         total_matches += 1
                     except Exception as e:
-                        logger.error(
-                            "Match failed (%s vs %s): %s", paper_a_id, paper_b_id, e
-                        )
+                        logger.error("Match failed (%s vs %s): %s", paper_a_id, paper_b_id, e)
 
             # ----- recompute ranks WITHIN the family -----
             await _recompute_ranks(db, family_id=family_id)
@@ -201,6 +207,7 @@ async def execute_tournament_run(run_id: int, family_id: str | None = None):
             if family_id:
                 try:
                     from app.services.tournament.judge_calibrator import run_calibration_check
+
                     cal_report = await run_calibration_check(db, family_id, judge_model=model)
                     calibration_score = cal_report.get("discrimination_score")
                 except Exception as e:
@@ -208,7 +215,11 @@ async def execute_tournament_run(run_id: int, family_id: str | None = None):
 
             # ----- update run status -----
             await _update_run_status(
-                db, run_id, "completed", total_matches, len(batches),
+                db,
+                run_id,
+                "completed",
+                total_matches,
+                len(batches),
                 papers_in_pool=len(papers),
                 benchmark_papers=benchmark_count,
                 ai_papers=ai_count,
@@ -427,9 +438,5 @@ async def _update_run_status(
     if judge_calibration_score is not None:
         values["judge_calibration_score"] = judge_calibration_score
 
-    await db.execute(
-        update(TournamentRun)
-        .where(TournamentRun.id == run_id)
-        .values(**values)
-    )
+    await db.execute(update(TournamentRun).where(TournamentRun.id == run_id).values(**values))
     await db.commit()

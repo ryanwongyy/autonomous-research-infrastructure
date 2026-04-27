@@ -25,7 +25,7 @@ function lockLabel(protocol: string): string {
 
 export const FamilyCard = memo(function FamilyCard({ family }: FamilyCardProps) {
   return (
-    <Link href={`/families/${family.id}`} className="block group" aria-label={`View family: ${family.name} (${family.paper_count} papers)`}>
+    <Link href={`/families/${family.id}`} className="block group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-lg" aria-label={`View family: ${family.name} (${family.paper_count} papers)`}>
       <Card className="h-full transition-shadow hover:shadow-md group-hover:ring-2 group-hover:ring-primary/20 group-focus-within:ring-2 group-focus-within:ring-primary/20">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
@@ -37,30 +37,29 @@ export const FamilyCard = memo(function FamilyCard({ family }: FamilyCardProps) 
                 {family.short_name}
               </span>
             </div>
-            <span
-              className={cn(
-                "inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold shrink-0",
-                lockProtocolColors[family.lock_protocol_type] ?? "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
-              )}
-            >
-              {lockLabel(family.lock_protocol_type)}
-            </span>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-semibold",
+                  lockProtocolColors[family.lock_protocol_type] ?? "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                )}
+              >
+                {lockLabel(family.lock_protocol_type)}
+              </span>
+              <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                {family.paper_count} papers
+              </span>
+            </div>
           </div>
           <CardDescription className="line-clamp-2 text-xs mt-1">
             {family.description}
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-0">
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground text-sm">
-              {family.paper_count}
-            </span>
-            <span>papers</span>
-          </div>
           {family.venue_ladder && (
             <div className="mt-2 flex flex-wrap gap-1">
               {family.venue_ladder.flagship.slice(0, 2).map((v) => (
-                <Badge key={v} variant="secondary" className="text-[10px] px-1.5 py-0">
+                <Badge key={v} variant="secondary" className="text-[11px] px-1.5 py-0">
                   {v}
                 </Badge>
               ))}

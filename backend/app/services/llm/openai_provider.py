@@ -5,8 +5,8 @@ import logging
 import openai
 from openai import AsyncOpenAI
 
-from app.services.llm.provider import LLMProvider, _llm_retry, _RETRYABLE_EXCEPTIONS
 from app.config import settings
+from app.services.llm.provider import _RETRYABLE_EXCEPTIONS, LLMProvider, _llm_retry
 
 logger = logging.getLogger(__name__)
 
@@ -55,19 +55,21 @@ class OpenAIProvider(LLMProvider):
         adapted_messages = []
         for msg in messages:
             if msg["role"] == "user":
-                adapted_messages.append({
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "file",
-                            "file": {
-                                "filename": "paper.pdf",
-                                "file_data": f"data:application/pdf;base64,{pdf_data}",
+                adapted_messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "file",
+                                "file": {
+                                    "filename": "paper.pdf",
+                                    "file_data": f"data:application/pdf;base64,{pdf_data}",
+                                },
                             },
-                        },
-                        {"type": "text", "text": msg["content"]},
-                    ],
-                })
+                            {"type": "text", "text": msg["content"]},
+                        ],
+                    }
+                )
             else:
                 adapted_messages.append(msg)
 

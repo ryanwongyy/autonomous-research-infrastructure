@@ -45,18 +45,24 @@ async def run_revision(paper_id: str) -> bool:
 
         # Gather all reviews for this paper
         reviews = (
-            await db.execute(
-                select(Review)
-                .where(Review.paper_id == paper_id)
-                .order_by(Review.stage, Review.iteration)
+            (
+                await db.execute(
+                    select(Review)
+                    .where(Review.paper_id == paper_id)
+                    .order_by(Review.stage, Review.iteration)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     # Build feedback summary
     feedback_parts = []
     for review in reviews:
         if review.verdict in ("revision_needed", "fail"):
-            feedback_parts.append(f"[{review.stage.upper()} - {review.model_used}]:\n{review.content[:500]}\n")
+            feedback_parts.append(
+                f"[{review.stage.upper()} - {review.model_used}]:\n{review.content[:500]}\n"
+            )
 
     if not feedback_parts:
         logger.info("[%s] No revision feedback to address", paper_id)

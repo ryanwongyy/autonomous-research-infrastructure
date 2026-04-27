@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC
 from typing import Any
 
 import yaml
@@ -92,6 +93,7 @@ No markdown, no commentary outside the JSON."""
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def verify_manuscript(
     session: AsyncSession,
     paper_id: str,
@@ -113,8 +115,7 @@ async def verify_manuscript(
     lock = await _load_active_lock(session, paper_id)
     if lock is None:
         raise ValueError(
-            f"No active lock for paper '{paper_id}'. "
-            "Cannot verify without a locked design."
+            f"No active lock for paper '{paper_id}'. Cannot verify without a locked design."
         )
 
     # Load all claim map entries
@@ -139,13 +140,15 @@ async def verify_manuscript(
     # Build claims YAML for the LLM
     claims_data = []
     for c in claims:
-        claims_data.append({
-            "claim_text": c.claim_text,
-            "claim_type": c.claim_type,
-            "source_card_id": c.source_card_id,
-            "source_span_ref": c.source_span_ref,
-            "result_object_ref": c.result_object_ref,
-        })
+        claims_data.append(
+            {
+                "claim_text": c.claim_text,
+                "claim_type": c.claim_type,
+                "source_card_id": c.source_card_id,
+                "source_span_ref": c.source_span_ref,
+                "result_object_ref": c.result_object_ref,
+            }
+        )
 
     claims_yaml = yaml.dump(claims_data, default_flow_style=False, sort_keys=False)
 
@@ -212,6 +215,7 @@ async def verify_manuscript(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
@@ -221,9 +225,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -245,10 +247,7 @@ async def _build_source_tier_map(session: AsyncSession) -> str:
     if not cards:
         return "(no source cards registered)"
 
-    lines = [
-        f"- {sc.id}: Tier {sc.tier} ({sc.name})"
-        for sc in cards
-    ]
+    lines = [f"- {sc.id}: Tier {sc.tier} ({sc.name})" for sc in cards]
     return "\n".join(lines)
 
 
@@ -259,7 +258,7 @@ async def _update_claim_statuses(
     verifications: list[dict[str, Any]],
 ) -> None:
     """Update ClaimMap verification statuses based on verifier output."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     # Build a lookup by claim_text (best-effort matching)
     verify_map: dict[str, dict] = {}
@@ -281,7 +280,7 @@ async def _update_claim_statuses(
             claim.verification_status = "pending"
 
         claim.verified_by = "verifier_role"
-        claim.verified_at = datetime.now(timezone.utc)
+        claim.verified_at = datetime.now(UTC)
         session.add(claim)
 
     await session.flush()

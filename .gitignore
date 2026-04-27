@@ -34,3 +34,22 @@ backend/papers/
 # Lock files
 .~lock.*
 *.xlsx
+
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
+
+# Session state (autodevelop / improve loops)
+.claude/autodevelop-state.json
+.claude/autodevelop-journal.jsonl
+.claude/autodevelop-checkpoints.jsonl
+.claude/autodevelop-lessons.jsonl
+.claude/improve-*.json
+.claude/improve-*.jsonl
+frontend/.claude/autodevelop-state.json
+frontend/.claude/autodevelop-journal.jsonl
+frontend/.claude/autodevelop-checkpoints.jsonl
+frontend/.claude/autodevelop-lessons.jsonl
+
+# Ruff cache
+.ruff_cache/

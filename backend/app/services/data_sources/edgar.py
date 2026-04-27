@@ -64,15 +64,17 @@ class EdgarSource(BaseDataSource):
             writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
             for filing in records:
-                writer.writerow({
-                    "accession_number": filing.get("accession_no", ""),
-                    "filing_date": filing.get("file_date", ""),
-                    "form_type": filing.get("form_type", ""),
-                    "company_name": filing.get("entity_name", ""),
-                    "cik": filing.get("cik", ""),
-                    "file_description": filing.get("file_description", ""),
-                    "filing_url": f"https://www.sec.gov/Archives/edgar/data/{filing.get('cik', '')}/{filing.get('accession_no', '').replace('-', '')}/",
-                })
+                writer.writerow(
+                    {
+                        "accession_number": filing.get("accession_no", ""),
+                        "filing_date": filing.get("file_date", ""),
+                        "form_type": filing.get("form_type", ""),
+                        "company_name": filing.get("entity_name", ""),
+                        "cik": filing.get("cik", ""),
+                        "file_description": filing.get("file_description", ""),
+                        "filing_url": f"https://www.sec.gov/Archives/edgar/data/{filing.get('cik', '')}/{filing.get('accession_no', '').replace('-', '')}/",
+                    }
+                )
 
         return FetchResult(
             success=True,
@@ -82,9 +84,7 @@ class EdgarSource(BaseDataSource):
             description=f"Fetched {len(records)} SEC EDGAR filings for: {query[:80]}",
         )
 
-    async def _search_filings(
-        self, api_params: dict, max_records: int
-    ) -> list[dict]:
+    async def _search_filings(self, api_params: dict, max_records: int) -> list[dict]:
         records: list[dict] = []
         start = 0
         per_page = min(max_records, 100)

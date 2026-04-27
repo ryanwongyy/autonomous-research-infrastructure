@@ -9,15 +9,14 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.paper import Paper
-from sqlalchemy import select
-
-from app.models.lock_artifact import LockArtifact
-from app.models.claim_map import ClaimMap
-from app.services.storage.lock_manager import verify_lock, extract_design_fields
 from app.config import settings
+from app.models.claim_map import ClaimMap
+from app.models.lock_artifact import LockArtifact
+from app.models.paper import Paper
+from app.services.storage.lock_manager import extract_design_fields, verify_lock
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +74,8 @@ STAGE_PREREQUISITES: dict[str, set[str]] = {
 # Public verification functions
 # ---------------------------------------------------------------------------
 
-async def verify_lock_integrity(
-    session: AsyncSession, paper: Paper
-) -> bool:
+
+async def verify_lock_integrity(session: AsyncSession, paper: Paper) -> bool:
     """Verify the paper's lock hash matches the active lock artifact.
 
     Returns True if valid, False otherwise.
@@ -89,10 +87,7 @@ async def verify_lock_integrity(
         return True
 
     violations = result.get("violations", [])
-    msg = (
-        f"Lock integrity check failed for paper '{paper.id}': "
-        f"{'; '.join(violations)}"
-    )
+    msg = f"Lock integrity check failed for paper '{paper.id}': {'; '.join(violations)}"
 
     if settings.lock_enforcement == "hard":
         logger.error(msg)
@@ -102,9 +97,7 @@ async def verify_lock_integrity(
         return False
 
 
-def verify_funnel_stage(
-    paper: Paper, required_stages: set[str] | str
-) -> bool:
+def verify_funnel_stage(paper: Paper, required_stages: set[str] | str) -> bool:
     """Verify the paper is at one of the required funnel stages.
 
     Args:
@@ -134,9 +127,7 @@ def verify_funnel_stage(
         return False
 
 
-def verify_stage_transition(
-    paper: Paper, target_stage: str
-) -> bool:
+def verify_stage_transition(paper: Paper, target_stage: str) -> bool:
     """Verify that transitioning to the target stage is valid.
 
     Returns True if the transition is valid.
@@ -162,9 +153,7 @@ def verify_stage_transition(
         return False
 
 
-def enforce_tier_requirement(
-    claim_type: str, source_tier: str
-) -> bool:
+def enforce_tier_requirement(claim_type: str, source_tier: str) -> bool:
     """Enforce that Tier C sources cannot anchor central claims.
 
     Central claim types: 'empirical', 'doctrinal', 'historical'.
@@ -195,9 +184,7 @@ def enforce_tier_requirement(
         return False
 
 
-async def verify_design_data_coherence(
-    session: AsyncSession, paper: Paper
-) -> bool:
+async def verify_design_data_coherence(session: AsyncSession, paper: Paper) -> bool:
     """Pre-analysis check: locked design questions still align with data manifest sources.
 
     Compares the data_sources field in the lock YAML against source snapshots
@@ -226,14 +213,13 @@ async def verify_design_data_coherence(
 
     logger.info(
         "[%s] Design-data coherence check passed: %d design sources specified",
-        paper.id, len(design_sources),
+        paper.id,
+        len(design_sources),
     )
     return True
 
 
-async def verify_analysis_design_alignment(
-    session: AsyncSession, paper: Paper
-) -> bool:
+async def verify_analysis_design_alignment(session: AsyncSession, paper: Paper) -> bool:
     """Pre-drafting check: analysis outputs align with design expected_outputs.
 
     Ensures the design's expected_outputs list is non-empty and that the paper
@@ -255,7 +241,15 @@ async def verify_analysis_design_alignment(
         return True
 
     # Verify the paper has actually reached or passed the analysis stage
-    analysis_stages = {"analyzing", "drafting", "reviewing", "revision", "candidate", "submitted", "public"}
+    analysis_stages = {
+        "analyzing",
+        "drafting",
+        "reviewing",
+        "revision",
+        "candidate",
+        "submitted",
+        "public",
+    }
     if paper.funnel_stage not in analysis_stages:
         msg = (
             f"Analysis-design alignment: paper '{paper.id}' has not completed analysis "
@@ -269,22 +263,19 @@ async def verify_analysis_design_alignment(
 
     logger.info(
         "[%s] Analysis-design alignment check passed: %d expected outputs in design",
-        paper.id, len(expected_outputs),
+        paper.id,
+        len(expected_outputs),
     )
     return True
 
 
-async def verify_claims_analysis_alignment(
-    session: AsyncSession, paper: Paper
-) -> bool:
+async def verify_claims_analysis_alignment(session: AsyncSession, paper: Paper) -> bool:
     """Pre-packaging check: claim_map entries link to actual analysis results or sources.
 
     Ensures all claims in the claim_map have either a source_card_id or
     result_object_ref populated (not orphaned claims).
     """
-    result = await session.execute(
-        select(ClaimMap).where(ClaimMap.paper_id == paper.id)
-    )
+    result = await session.execute(select(ClaimMap).where(ClaimMap.paper_id == paper.id))
     claims = result.scalars().all()
 
     if not claims:
@@ -317,7 +308,9 @@ async def verify_claims_analysis_alignment(
 
     logger.info(
         "[%s] Claims-analysis alignment check passed: %d/%d claims linked",
-        paper.id, len(claims) - len(orphan_claims), len(claims),
+        paper.id,
+        len(claims) - len(orphan_claims),
+        len(claims),
     )
     return True
 
@@ -325,10 +318,12 @@ async def verify_claims_analysis_alignment(
 async def _get_active_lock(session: AsyncSession, paper_id: str):
     """Fetch the active lock artifact for a paper."""
     result = await session.execute(
-        select(LockArtifact).where(
+        select(LockArtifact)
+        .where(
             LockArtifact.paper_id == paper_id,
             LockArtifact.is_active.is_(True),
-        ).limit(1)
+        )
+        .limit(1)
     )
     return result.scalar_one_or_none()
 
@@ -368,24 +363,30 @@ async def enforce_preconditions(
     return True
 
 
-def enforce_causal_language(
-    protocol_type: str, claim_text: str
-) -> bool:
+def enforce_causal_language(protocol_type: str, claim_text: str) -> bool:
     """Check if a claim uses causal language and whether the protocol permits it.
 
     Returns True if compliant.
     Raises PipelineViolationError in hard-enforcement mode on violation.
     """
     causal_markers = [
-        " causes ", " caused ", " causing ",
-        " effect of ", " effects of ",
-        " impact of ", " impacts of ",
-        " leads to ", " led to ",
-        " results in ", " resulted in ",
+        " causes ",
+        " caused ",
+        " causing ",
+        " effect of ",
+        " effects of ",
+        " impact of ",
+        " impacts of ",
+        " leads to ",
+        " led to ",
+        " results in ",
+        " resulted in ",
         " due to ",
         " because of ",
-        " increases ", " decreases ",
-        " reduces ", " improves ",
+        " increases ",
+        " decreases ",
+        " reduces ",
+        " improves ",
     ]
 
     # Protocols that permit causal language

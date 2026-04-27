@@ -10,12 +10,13 @@ import csv
 import io
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
 from app.models.source_card import SourceCard
@@ -24,7 +25,6 @@ from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
 from app.services.provenance.hasher import hash_content
 from app.services.storage.artifact_store import FilesystemArtifactStore
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,7 @@ No markdown, no commentary outside the JSON."""
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 async def build_source_manifest(
     session: AsyncSession,
@@ -147,9 +148,7 @@ async def build_source_manifest(
     for source_entry in manifest.get("sources", []):
         sc_id = source_entry.get("source_card_id", "")
         if sc_id not in known_ids:
-            logger.warning(
-                "Source manifest references unknown source card '%s'", sc_id
-            )
+            logger.warning("Source manifest references unknown source card '%s'", sc_id)
 
     logger.info(
         "Data Steward built manifest for paper %s (%d sources, %d Tier A)",
@@ -200,7 +199,7 @@ async def fetch_and_snapshot(
         file_size_bytes=len(content),
         record_count=_estimate_record_count(content),
         fetch_parameters=json.dumps(fetch_params) if fetch_params else None,
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=datetime.now(UTC),
     )
     session.add(snapshot)
 
@@ -225,6 +224,7 @@ async def fetch_and_snapshot(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
@@ -234,9 +234,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -282,13 +280,17 @@ async def _fetch_source_data(
 ) -> bytes:
     """Fetch data from a source card via the data source registry.
 
-    Tries the real API client first. Falls back to placeholder data only if
-    no client exists for this source or the real fetch fails.
+    Tries the real API client first. Behaviour on failure depends on
+    `settings.data_mode`:
+      - "real"       — raise `DataFetchError` (no placeholder fallback)
+      - "permissive" — fall back to synthetic placeholder data (dev only)
     """
     import tempfile
     from pathlib import Path
 
+    from app.config import settings
     from app.services.data_sources.registry import fetch_from_source
+    from app.services.paper_generation.data_fetcher import DataFetchError
 
     # Build FetchParams from the LLM-generated fetch_params dict
     params = _build_fetch_params(fetch_params)
@@ -296,9 +298,13 @@ async def _fetch_source_data(
     # Resolve API key for sources that need one
     api_key = _api_key_for_source(source_card.id)
 
+    fetch_error: str | None = None
     with tempfile.TemporaryDirectory() as tmp_dir:
         result = await fetch_from_source(
-            source_card.id, params, Path(tmp_dir), api_key=api_key,
+            source_card.id,
+            params,
+            Path(tmp_dir),
+            api_key=api_key,
         )
 
         if result.success and result.file_path:
@@ -311,14 +317,25 @@ async def _fetch_source_data(
             )
             return content
 
-        if result.error:
-            logger.warning(
-                "Real fetch failed for '%s': %s — falling back to placeholder",
-                source_card.id,
-                result.error,
-            )
+        fetch_error = result.error or "no client returned data"
 
-    # Fallback: generate placeholder data
+    # Real fetch failed.
+    if settings.data_mode == "real":
+        raise DataFetchError(
+            f"Real fetch failed for source '{source_card.id}': {fetch_error}. "
+            f"DATA_MODE=real disallows placeholder fallback. "
+            f"Either provide a working client/API key for this source, or set "
+            f"DATA_MODE=permissive (NOT recommended in production)."
+        )
+
+    # Permissive mode: fall back to placeholder.
+    logger.error(
+        "DATA_MODE=permissive: real fetch failed for '%s' (%s) — emitting "
+        "SYNTHETIC placeholder data. Papers built on this are NOT grounded "
+        "in real sources and MUST NOT be released to the public.",
+        source_card.id,
+        fetch_error,
+    )
     return _generate_placeholder(source_card)
 
 
@@ -370,13 +387,15 @@ def _generate_placeholder(source_card: SourceCard) -> bytes:
 
     for i in range(200):
         year = 2015 + (i % 10)
-        writer.writerow([
-            f"{source_card.id}_{i:04d}",
-            year,
-            f"{unit}_{i}",
-            round(10.0 + i * 0.5 + (i % 7) * 0.3, 2),
-            json.dumps({"source": source_card.id, "fetched": True}),
-        ])
+        writer.writerow(
+            [
+                f"{source_card.id}_{i:04d}",
+                year,
+                f"{unit}_{i}",
+                round(10.0 + i * 0.5 + (i % 7) * 0.3, 2),
+                json.dumps({"source": source_card.id, "fetched": True}),
+            ]
+        )
 
     content = buf.getvalue().encode("utf-8")
     logger.warning(

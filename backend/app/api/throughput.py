@@ -2,15 +2,15 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.services.throughput.batch_scheduler import (
+    compute_daily_targets,
+    get_work_queue,
+)
 from app.services.throughput.funnel_tracker import (
     detect_bottlenecks,
     get_conversion_rates,
     get_funnel_snapshot,
     project_annual_output,
-)
-from app.services.throughput.batch_scheduler import (
-    compute_daily_targets,
-    get_work_queue,
 )
 
 router = APIRouter()

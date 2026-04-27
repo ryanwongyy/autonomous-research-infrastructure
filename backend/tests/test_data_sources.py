@@ -75,6 +75,7 @@ async def test_courtlistener_needs_key(tmp_path):
 
 # ── supports_query keyword matching ────────────────────────────────────────
 
+
 def test_federal_register_supports_regulation():
     client = get_source("federal_register")
     assert client.supports_query("federal regulation of AI systems")
@@ -100,6 +101,7 @@ def test_usaspending_supports_procurement():
 
 
 # ── FetchParams / FetchResult dataclass tests ──────────────────────────────
+
 
 def test_fetch_params_defaults():
     p = FetchParams()

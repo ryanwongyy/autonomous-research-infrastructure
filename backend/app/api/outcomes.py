@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.submission_outcome import SubmissionOutcome
 from app.services.outcomes.outcome_tracker import (
-    record_outcome,
     get_outcomes_dashboard,
+    record_outcome,
 )
 
 router = APIRouter()
