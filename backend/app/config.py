@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings
 
@@ -48,6 +49,17 @@ class Settings(BaseSettings):
 
     # Source freshness
     source_stale_days: int = 90  # source considered stale after this many days
+
+    # Data fetching mode for the paper-generation pipeline:
+    #   "real"       — strict: hard-fail if any source can't return real data;
+    #                  no synthetic placeholder is ever generated. This is the
+    #                  default for production deployments and ensures every
+    #                  paper's claims are grounded in actual fetched sources.
+    #   "permissive" — allow a synthetic placeholder CSV when no source returns
+    #                  data. Useful for local development without API keys, but
+    #                  papers produced this way are NOT grounded in real data
+    #                  and must NOT be released to the public.
+    data_mode: Literal["real", "permissive"] = "real"
 
     # Manifest drift threshold (0.0-1.0): minimum coherence between design and downstream artifacts
     drift_threshold: float = 0.8

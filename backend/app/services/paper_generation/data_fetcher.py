@@ -1,7 +1,13 @@
 """Data fetcher for paper generation.
 
 Dispatches to real API clients via the data source registry.
-Falls back to a minimal placeholder only if *no* source returns data.
+
+Behaviour depends on `settings.data_mode`:
+  - "real"       — strict: raise `DataFetchError` if no source returns real
+                   data. No synthetic placeholder is ever produced.
+  - "permissive" — allow a synthetic placeholder CSV when no source returns
+                   data. Useful for local dev; produces papers that are NOT
+                   grounded in real data.
 """
 
 import logging
@@ -15,6 +21,15 @@ from app.services.data_sources.registry import fetch_from_source
 from app.services.paper_generation.idea_generator import ResearchIdea
 
 logger = logging.getLogger(__name__)
+
+
+class DataFetchError(RuntimeError):
+    """Raised in DATA_MODE=real when no source returns real data.
+
+    The pipeline orchestrator catches this and records a stage failure
+    rather than producing a paper grounded in synthetic data.
+    """
+
 
 # Maps source_card IDs to Settings attribute names that hold the API key.
 _API_KEY_MAP: dict[str, str] = {
@@ -77,7 +92,22 @@ async def fetch_data(idea: ResearchIdea, paper_dir: str) -> DataResult:
             logger.warning("Failed to fetch from %s: %s", source_name, e)
 
     if not fetched_files:
-        # Last-resort placeholder so the pipeline can still run in dev
+        if settings.data_mode == "real":
+            raise DataFetchError(
+                f"No real data fetched for idea '{idea.title}'. "
+                f"Tried sources: {idea.data_sources!r}. "
+                f"DATA_MODE=real disallows synthetic placeholder data; "
+                f"set DATA_MODE=permissive (NOT recommended in production) "
+                f"to allow placeholder CSV in local development."
+            )
+
+        # ── permissive mode: emit synthetic placeholder, but log loudly ──
+        logger.error(
+            "DATA_MODE=permissive: emitting SYNTHETIC placeholder CSV for "
+            "idea '%s'. Papers built on this data are NOT grounded in real "
+            "sources and MUST NOT be released to the public.",
+            idea.title,
+        )
         placeholder_path = os.path.join(data_dir, "placeholder.csv")
         with open(placeholder_path, "w") as f:
             f.write("id,year,treatment,outcome,control_var1,control_var2\n")
@@ -96,7 +126,6 @@ async def fetch_data(idea: ResearchIdea, paper_dir: str) -> DataResult:
             "control_var1",
             "control_var2",
         ]
-        logger.warning("No sources returned data — using placeholder CSV")
 
     return DataResult(
         success=True,
