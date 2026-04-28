@@ -140,12 +140,16 @@ async def verify_manuscript(
             },
         }
 
-    # ── Step 3: mechanical claim verification ────────────────────────────
+    # ── Step 3 + numeric-claim follow-up: mechanical claim verification ──
     # BEFORE the LLM is consulted, mechanically verify that claims with a
-    # quoted span actually appear in the cited snapshot bytes. Mechanical
-    # failures override any LLM verdict — a fabricated number doesn't get
-    # to be "pass" just because the LLM finds it plausible.
-    mechanical_failures = await _mechanical_verify_claims(session, claims)
+    # quoted span actually appear in the cited snapshot bytes, AND that
+    # claims with a result_object_ref resolve to entries in the analyst's
+    # result manifest. Mechanical failures override any LLM verdict —
+    # a fabricated number doesn't get to be "pass" just because the LLM
+    # finds it plausible.
+    mechanical_failures = await _mechanical_verify_claims(
+        session, claims, result_manifest=result_manifest
+    )
     if mechanical_failures:
         logger.warning(
             "Verifier: %d/%d claim(s) fail mechanical verification for paper %s",
@@ -350,8 +354,10 @@ def _parse_json_object(response: str) -> dict:
 async def _mechanical_verify_claims(
     session: AsyncSession,
     claims: list[ClaimMap],
+    result_manifest: dict[str, Any] | None = None,
 ) -> dict[int, str]:
-    """Verify each claim against the actual bytes of its cited snapshot.
+    """Verify each claim against the bytes of its cited snapshot AND/OR
+    against the analyst's result manifest.
 
     For every claim that references a ``source_snapshot_id``:
       1. Load the snapshot record.
@@ -361,10 +367,20 @@ async def _mechanical_verify_claims(
          quote string MUST appear (case-sensitive substring) in the snapshot
          bytes. Otherwise → mechanical failure.
 
-    Returns a ``{claim_id: failure_reason}`` map. Claims with no
-    ``source_snapshot_id`` (e.g. claims grounded purely in result objects)
-    are skipped here and left to the LLM verifier; the per-paper review
-    pipeline still gates them via ClaimMap.verification_status.
+    For every claim that references a ``result_object_ref`` AND when a
+    ``result_manifest`` was provided:
+      5. Parse the JSON. If malformed → mechanical failure.
+      6. If it has a ``path`` (dot-notation), traverse the manifest. A
+         path that doesn't resolve → mechanical failure.
+      7. If it has a ``value`` AND a ``path``, the value at ``path`` must
+         match (string equality, or numeric tolerance ≤ 1e-6).
+      8. If it has only a ``value`` (no path), the stringified manifest
+         must contain that value as a substring — i.e. *some* result
+         object reports it. Otherwise → mechanical failure.
+
+    Returns a ``{claim_id: failure_reason}`` map. Claims with neither a
+    snapshot reference nor a result-object reference are skipped here and
+    left to the LLM verifier.
 
     Mechanical failures are hard fails: ``_apply_mechanical_failures``
     overrides the LLM verdict for these claim IDs.
@@ -378,6 +394,13 @@ async def _mechanical_verify_claims(
     bytes_cache: dict[str, bytes | None] = {}
 
     for claim in claims:
+        # ── Numeric / result-object check (independent of snapshot ref) ──
+        if claim.result_object_ref and result_manifest is not None:
+            ref_failure = _check_result_object_ref(claim, result_manifest)
+            if ref_failure:
+                failures[claim.id] = ref_failure
+                continue
+
         if not claim.source_snapshot_id:
             continue  # skip — no snapshot to verify against
 
@@ -512,3 +535,124 @@ def _apply_mechanical_failures(
         "claim_verifications": claim_verifications,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Numeric claim verification (result_object_ref → result_manifest)
+# ---------------------------------------------------------------------------
+
+# Tolerance for numeric equality. Floats stored differently in JSON vs the
+# manifest may differ in their trailing decimals, so 1e-6 absolute is the
+# practical bound that catches "the manifest says 0.42, the claim says 0.43"
+# without flagging "the manifest says 0.5000001, the claim says 0.5".
+_NUMERIC_ABS_TOLERANCE = 1e-6
+
+
+def _check_result_object_ref(claim: ClaimMap, result_manifest: dict[str, Any]) -> str | None:
+    """Validate a single claim's ``result_object_ref`` against the manifest.
+
+    Accepted ref shapes (any one is sufficient; missing fields are skipped):
+      - ``{"path": "regression.beta_1.estimate", "value": 0.42}``
+            Traverse manifest by the dotted path; the leaf must equal value.
+      - ``{"path": "..."}`` (no value)
+            Path must resolve to *something*. Used when the value is a
+            non-scalar object the LLM is allowed to summarise.
+      - ``{"value": 0.42}`` (no path)
+            The stringified manifest must contain ``"0.42"`` somewhere.
+            Catches obviously-fabricated numbers but doesn't pin them.
+
+    Returns ``None`` on success, or a human-readable failure reason on fail.
+    """
+    raw = claim.result_object_ref
+    if not raw:
+        return None
+
+    try:
+        ref = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return "result_object_ref is not valid JSON"
+
+    if not isinstance(ref, dict):
+        return "result_object_ref must be a JSON object (got non-dict)"
+
+    path = ref.get("path")
+    expected_value = ref.get("value")
+
+    # Manifest may be wrapped as {"result_objects": {...}} or be the bare
+    # results dict — accept either shape.
+    root = result_manifest.get("result_objects", result_manifest)
+
+    # Case 1: ref has a path.
+    if isinstance(path, str) and path:
+        leaf, found = _traverse_path(root, path)
+        if not found:
+            return (
+                f"result_object_ref path {path!r} does not resolve in the "
+                f"analyst's result manifest. The cited result object does "
+                f"not exist."
+            )
+        if expected_value is not None and not _values_match(leaf, expected_value):
+            return (
+                f"result_object_ref value mismatch at {path!r}: manifest "
+                f"reports {leaf!r}, claim asserts {expected_value!r}."
+            )
+        return None
+
+    # Case 2: ref has only a value.
+    if expected_value is not None:
+        haystack = json.dumps(result_manifest, default=str)
+        if str(expected_value) not in haystack:
+            return (
+                f"result_object_ref value {expected_value!r} not found in the "
+                f"analyst's result manifest. The cited number does not appear "
+                f"in any result object."
+            )
+        return None
+
+    # Ref has neither path nor value — the LLM still inspects, but mechanically
+    # we have nothing to verify. Pass-through.
+    return None
+
+
+def _traverse_path(root: Any, dotted_path: str) -> tuple[Any, bool]:
+    """Walk ``dotted_path`` (e.g. ``"a.b.0.c"``) into a nested dict / list.
+
+    Returns ``(leaf_value, True)`` on success; ``(None, False)`` if any step
+    is missing. Numeric tokens index into lists; everything else is treated
+    as a dict key.
+    """
+    cur = root
+    for token in dotted_path.split("."):
+        if isinstance(cur, dict):
+            if token not in cur:
+                return (None, False)
+            cur = cur[token]
+        elif isinstance(cur, list):
+            try:
+                idx = int(token)
+            except ValueError:
+                return (None, False)
+            if idx < 0 or idx >= len(cur):
+                return (None, False)
+            cur = cur[idx]
+        else:
+            return (None, False)
+    return (cur, True)
+
+
+def _values_match(manifest_value: Any, expected: Any) -> bool:
+    """Equality with numeric tolerance for floats.
+
+    Strings and bools fall back to ``==``. Numbers are compared with an
+    absolute tolerance of ``_NUMERIC_ABS_TOLERANCE``. Mixed-type comparisons
+    (``"0.5"`` vs ``0.5``) try numeric coercion first.
+    """
+    if isinstance(manifest_value, bool) or isinstance(expected, bool):
+        return manifest_value == expected
+    if isinstance(manifest_value, int | float) and isinstance(expected, int | float):
+        return abs(float(manifest_value) - float(expected)) <= _NUMERIC_ABS_TOLERANCE
+    # Try numeric coercion if one side is a stringified number.
+    try:
+        return abs(float(manifest_value) - float(expected)) <= _NUMERIC_ABS_TOLERANCE
+    except (TypeError, ValueError):
+        return manifest_value == expected
