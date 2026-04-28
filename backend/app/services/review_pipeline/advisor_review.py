@@ -25,9 +25,13 @@ logger = logging.getLogger(__name__)
 
 def _get_advisor_models() -> list[str]:
     """Return available advisor models based on configured API keys."""
-    models = ["gpt-4o", "claude-sonnet-4-6", "gpt-4o-mini"]
+    models = [
+        settings.openai_main_model,
+        settings.claude_sonnet_model,
+        settings.openai_fast_model,
+    ]
     if settings.google_api_key:
-        models.insert(2, "gemini-2.0-flash")
+        models.insert(2, settings.google_main_model)
     return models
 
 
