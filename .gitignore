@@ -53,3 +53,7 @@ frontend/.claude/autodevelop-lessons.jsonl
 
 # Ruff cache
 .ruff_cache/
+
+# Claude Code transient lock + content-addressed artefact store
+.claude/scheduled_tasks.lock
+backend/artifacts/
