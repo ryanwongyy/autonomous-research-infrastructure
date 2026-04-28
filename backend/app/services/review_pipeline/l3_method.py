@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
@@ -24,9 +25,11 @@ from app.utils import safe_json_loads
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Model selection: NEVER Claude. Prefer GPT-4o, fall back to Gemini.
+# Model selection: NEVER Claude (per the methodology — L3 must be from a
+# different family than the generation model to avoid self-preference bias).
+# Centralised in settings so deploys can flip between gpt-4o, gemini, etc.
 # ---------------------------------------------------------------------------
-METHOD_MODEL = "gpt-4o"
+METHOD_MODEL = settings.judge_non_claude_model
 
 # ---------------------------------------------------------------------------
 # Protocol-specific review prompts

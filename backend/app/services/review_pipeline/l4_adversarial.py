@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.claim_map import ClaimMap
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
@@ -29,8 +30,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Adversarial model assignments
 # ---------------------------------------------------------------------------
-ADVERSARIAL_CLAUDE_MODEL = "claude-sonnet-4-6"
-ADVERSARIAL_GPT_MODEL = "gpt-4o"
+ADVERSARIAL_CLAUDE_MODEL = settings.claude_sonnet_model
+ADVERSARIAL_GPT_MODEL = settings.openai_main_model
 
 # ---------------------------------------------------------------------------
 # Adversarial prompt templates

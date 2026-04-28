@@ -18,8 +18,13 @@ class DomainConfig(Base):
         Text
     )  # JSON: {rewards: [], penalties: []}
     review_models: Mapped[str | None] = mapped_column(Text)  # JSON: {stage: model_id}
-    judge_model: Mapped[str] = mapped_column(String(128), default="gemini-2.0-flash")
-    generation_model: Mapped[str] = mapped_column(String(128), default="claude-opus-4-6")
+    # Defaults are sensible-on-fresh-install ids; runtime calls go via
+    # `app.services.llm.router` which reads `settings.<>_model` and can be
+    # overridden per-deployment via env vars. `claude-opus-4-5` replaces
+    # the previous `claude-opus-4-6` literal — that name was never a real
+    # public Anthropic model id and caused 400 fast-fails in production.
+    judge_model: Mapped[str] = mapped_column(String(128), default="gpt-4o")
+    generation_model: Mapped[str] = mapped_column(String(128), default="claude-opus-4-5")
     categories: Mapped[str | None] = mapped_column(Text)  # JSON array of {slug, name}
     countries: Mapped[str | None] = mapped_column(Text)  # JSON array or null
     methods: Mapped[str | None] = mapped_column(Text)  # JSON array of method names

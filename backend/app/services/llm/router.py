@@ -45,21 +45,22 @@ async def get_judge_provider() -> tuple[LLMProvider, str]:
     Prefers a non-Anthropic model to avoid self-preference bias when judging
     Claude-generated papers. Falls back through providers based on available keys.
     """
-    # Prefer OpenAI for judging (avoids self-preference bias with Claude-generated papers)
-    # When Google API key is added, switch to "gemini-2.0-flash" for native PDF support
+    # Prefer Google → OpenAI → Anthropic for judging (the first two avoid
+    # self-preference bias against Claude-generated papers; Anthropic is
+    # the last-resort fallback when only that key is configured).
     if settings.google_api_key:
-        model = "gemini-2.0-flash"
+        model = settings.google_main_model
     elif settings.openai_api_key:
-        model = "gpt-4o"
+        model = settings.openai_main_model
     else:
-        model = "claude-sonnet-4-6"
+        model = settings.claude_sonnet_model
     provider = get_provider_for_model(model)
     return provider, model
 
 
 async def get_generation_provider() -> tuple[LLMProvider, str]:
     """Get the provider and model for paper generation."""
-    model = "claude-opus-4-6"
+    model = settings.claude_opus_model
     provider = get_provider_for_model(model)
     return provider, model
 
@@ -72,20 +73,20 @@ async def get_review_provider(stage: str) -> tuple[LLMProvider, str]:
     """
     stage_models = {
         # Legacy 6-stage pipeline (deprecated)
-        "advisor": "gpt-4o",
-        "theory": "o1",
-        "exhibit": "claude-sonnet-4-6",
-        "prose": "claude-sonnet-4-6",
-        "referee": "gpt-4o",
-        "revision": "claude-opus-4-6",
+        "advisor": settings.openai_main_model,
+        "theory": settings.openai_reasoning_model,
+        "exhibit": settings.claude_sonnet_model,
+        "prose": settings.claude_sonnet_model,
+        "referee": settings.openai_main_model,
+        "revision": settings.claude_opus_model,
         # 5-layer pipeline
         "l1_structural": "system",  # No LLM needed
         "l2_provenance": "system",  # No LLM needed
-        "l3_method": "gpt-4o",  # MUST be non-Claude
-        "l4_adversarial_claude": "claude-sonnet-4-6",
-        "l4_adversarial_gpt": "gpt-4o",
+        "l3_method": settings.judge_non_claude_model,  # MUST be non-Claude
+        "l4_adversarial_claude": settings.claude_sonnet_model,
+        "l4_adversarial_gpt": settings.openai_main_model,
         "l5_human": "system",  # No LLM needed
     }
-    model = stage_models.get(stage, "gpt-4o")
+    model = stage_models.get(stage, settings.openai_main_model)
     provider = get_provider_for_model(model)
     return provider, model

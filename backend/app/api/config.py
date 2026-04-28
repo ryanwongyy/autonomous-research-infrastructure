@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.domain_config import DomainConfig
 from app.schemas.config import CategoryInfo, DomainConfigResponse, DomainConfigUpdate
@@ -100,16 +101,30 @@ async def update_domain(
 
 @router.get("/config/models")
 async def list_models():
+    """Return the model IDs the deployment is currently configured to use.
+
+    Reads from `settings`, so a deploy can update via env vars without
+    code changes. Useful for the frontend to show "currently routing
+    Opus calls to claude-opus-4-5" without reading source.
+    """
     return {
         "providers": {
             "anthropic": {
-                "models": ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+                "models": [
+                    settings.claude_opus_model,
+                    settings.claude_sonnet_model,
+                    settings.claude_haiku_model,
+                ],
             },
             "openai": {
-                "models": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
+                "models": [
+                    settings.openai_main_model,
+                    settings.openai_fast_model,
+                    settings.openai_reasoning_model,
+                ],
             },
             "google": {
-                "models": ["gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-lite"],
+                "models": [settings.google_main_model],
             },
         }
     }

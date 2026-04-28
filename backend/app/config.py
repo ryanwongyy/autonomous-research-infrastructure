@@ -52,6 +52,27 @@ class Settings(BaseSettings):
     # Manifest drift threshold (0.0-1.0): minimum coherence between design and downstream artifacts
     drift_threshold: float = 0.8
 
+    # ── LLM model IDs ──────────────────────────────────────────────────
+    # Centralised so a deploy can flip to a new model id (e.g. when
+    # Anthropic releases a new dated suffix) without code changes. Each
+    # of these is overridable via env var with the same name in caps.
+    #
+    # Defaults match the publicly documented latest ids as of 2026-04.
+    # Anthropic's *-4-5 aliases auto-resolve to the latest dated
+    # snapshot, so they don't need updating each model release.
+    #
+    # NOTE: prior versions of this codebase hardcoded `claude-opus-4-6`
+    # and `claude-sonnet-4-6` — those names did not exist publicly and
+    # caused every cron-triggered Scout call to fail with HTTP 400.
+    claude_opus_model: str = "claude-opus-4-5"
+    claude_sonnet_model: str = "claude-sonnet-4-5"
+    claude_haiku_model: str = "claude-haiku-4-5"
+    openai_main_model: str = "gpt-4o"
+    openai_reasoning_model: str = "o1"
+    openai_fast_model: str = "gpt-4o-mini"
+    judge_non_claude_model: str = "gpt-4o"  # L3 explicitly non-Claude
+    google_main_model: str = "gemini-1.5-pro"
+
     # Authentication (leave blank to disable auth in dev)
     ape_api_key: str = ""  # Required for all mutation endpoints when set
     ape_admin_key: str = ""  # Required for expensive ops (RSI, tournament, import)

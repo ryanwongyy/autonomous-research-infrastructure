@@ -85,9 +85,10 @@ async def batch_generate(body: GenerateRequest, request: Request):
     from app.services.review_pipeline.orchestrator import run_review_pipeline
 
     results: list[dict[str, Any]] = []
-    generated = 0
+    generated = 0  # final_status == "completed"
+    killed: dict[str, int] = {}  # final_status starts with "killed_at_<stage>"
     reviewed = 0
-    errors = 0
+    errors = 0  # uncaught exceptions
 
     # Decide which families to target
     if body.family_id:
@@ -116,20 +117,36 @@ async def batch_generate(body: GenerateRequest, request: Request):
                     family_id=fid,
                     paper_id=paper_id,
                 )
+            final_status = report.get("final_status", "unknown")
+            stage_errors = _extract_stage_errors(report)
             entry["generation"] = {
-                "status": report.get("final_status", "unknown"),
+                "status": final_status,
                 "duration_sec": report.get("total_duration_sec", 0),
+                # Surface the underlying exception(s) so cron / GitHub Actions
+                # logs are self-diagnosing. Without this, killed_at_* status
+                # values look identical to one another in the response payload.
+                "error_message": _primary_error_message(stage_errors, final_status),
+                "stage_errors": stage_errors,
             }
-            generated += 1
+            if final_status == "completed":
+                generated += 1
+            elif final_status.startswith("killed_at_"):
+                killed[final_status] = killed.get(final_status, 0) + 1
+            # Anything else (e.g. "unknown") falls through to the success path
+            # but is not counted as generated.
         except Exception as e:
             logger.error("Generation failed for paper %s: %s", paper_id, e, exc_info=True)
-            entry["generation"] = {"status": f"error: {e}"}
+            entry["generation"] = {
+                "status": "error",
+                "error_message": str(e),
+                "error_class": type(e).__name__,
+            }
             errors += 1
             results.append(entry)
             continue
 
-        # --- Review (only if generation succeeded) ---
-        if report.get("final_status", "").startswith("completed"):
+        # --- Review (only if generation truly completed) ---
+        if entry["generation"]["status"] == "completed":
             try:
                 async with async_session() as session:
                     review_report = await run_review_pipeline(session, paper_id)
@@ -139,15 +156,63 @@ async def batch_generate(body: GenerateRequest, request: Request):
                 reviewed += 1
             except Exception as e:
                 logger.warning("Review failed for paper %s: %s", paper_id, e)
-                entry["review"] = {"status": f"error: {e}"}
+                entry["review"] = {
+                    "status": "error",
+                    "error_message": str(e),
+                    "error_class": type(e).__name__,
+                }
 
         results.append(entry)
+
+    # Build summary that distinguishes generated / killed / errors so a cron
+    # showing "0 generated" is unmistakable, no matter how the failures were
+    # shaped.
+    summary_parts = [f"Generated {generated}", f"reviewed {reviewed}"]
+    if killed:
+        for stage, n in sorted(killed.items()):
+            summary_parts.append(f"{stage} {n}")
+    if errors:
+        summary_parts.append(f"errors {errors}")
+    summary = ", ".join(summary_parts)
 
     return BatchResult(
         action="generate",
         results=results,
-        summary=f"Generated {generated}, reviewed {reviewed}, errors {errors}",
+        summary=summary,
     )
+
+
+def _extract_stage_errors(report: dict[str, Any]) -> dict[str, str]:
+    """Pull per-stage error strings out of a pipeline report.
+
+    The orchestrator's ``_run_stage`` records ``{"status": "failed",
+    "error": str(e)}`` for any stage that raised. Surface those exception
+    texts in the batch response so the operator can see WHICH stage failed
+    and WHY without owning the backend's runtime logs.
+    """
+    out: dict[str, str] = {}
+    for stage_name, stage_report in (report.get("stages") or {}).items():
+        if not isinstance(stage_report, dict):
+            continue
+        if stage_report.get("status") == "failed":
+            err = stage_report.get("error") or stage_report.get("reason") or "(no error message)"
+            out[stage_name] = str(err)
+    return out
+
+
+def _primary_error_message(stage_errors: dict[str, str], final_status: str) -> str | None:
+    """Pick the most relevant single error string for the response.
+
+    For ``killed_at_<stage>`` final statuses, prefer that stage's error.
+    Otherwise return the first failed stage's error, or None.
+    """
+    if not stage_errors:
+        return None
+    if final_status.startswith("killed_at_"):
+        stage_name = final_status[len("killed_at_") :]
+        if stage_name in stage_errors:
+            return stage_errors[stage_name]
+    return next(iter(stage_errors.values()))
 
 
 # ---------------------------------------------------------------------------

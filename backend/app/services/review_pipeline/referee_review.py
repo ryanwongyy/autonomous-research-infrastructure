@@ -25,11 +25,11 @@ logger = logging.getLogger(__name__)
 
 def _get_referee_models() -> list[str]:
     """Return available referee models based on configured API keys."""
-    models = ["gpt-4o", "claude-sonnet-4-6"]
+    models = [settings.openai_main_model, settings.claude_sonnet_model]
     if settings.google_api_key:
-        models.append("gemini-2.0-flash")
+        models.append(settings.google_main_model)
     else:
-        models.append("gpt-4o-mini")  # Third reviewer fallback
+        models.append(settings.openai_fast_model)  # Third reviewer fallback
     return models
 
 
