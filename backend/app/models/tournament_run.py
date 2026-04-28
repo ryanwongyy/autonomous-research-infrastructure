@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -21,10 +21,16 @@ class TournamentRun(Base):
     total_matches: Mapped[int] = mapped_column(Integer, default=0)
     total_batches: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(32), default="running")  # running, completed, failed
-    family_id: Mapped[str | None] = mapped_column(String(8), ForeignKey("paper_families.id"), index=True)  # tournament runs are now family-scoped
+    family_id: Mapped[str | None] = mapped_column(
+        String(8), ForeignKey("paper_families.id"), index=True
+    )  # tournament runs are now family-scoped
     papers_in_pool: Mapped[int] = mapped_column(Integer, default=0)  # how many papers were eligible
-    benchmark_papers: Mapped[int] = mapped_column(Integer, default=0)  # how many were benchmark papers
+    benchmark_papers: Mapped[int] = mapped_column(
+        Integer, default=0
+    )  # how many were benchmark papers
     ai_papers: Mapped[int] = mapped_column(Integer, default=0)  # how many were AI-generated
     judge_calibration_score: Mapped[float | None] = mapped_column(Float)  # calibration check result
 
-    family: Mapped["PaperFamily | None"] = relationship(back_populates="tournament_runs", lazy="joined")
+    family: Mapped[PaperFamily | None] = relationship(
+        back_populates="tournament_runs", lazy="joined"
+    )

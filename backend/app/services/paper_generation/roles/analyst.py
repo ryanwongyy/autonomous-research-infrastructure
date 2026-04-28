@@ -81,6 +81,7 @@ No markdown, no commentary outside the JSON."""
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def generate_analysis_code(
     session: AsyncSession,
     paper_id: str,
@@ -130,7 +131,9 @@ async def generate_analysis_code(
 
     parsed = _parse_json_object(response)
     code_content = parsed.get("code", "")
-    requirements = parsed.get("requirements", "numpy>=1.24.0\npandas>=2.0.0\nstatsmodels>=0.14.0\nscipy>=1.11.0\n")
+    requirements = parsed.get(
+        "requirements", "numpy>=1.24.0\npandas>=2.0.0\nstatsmodels>=0.14.0\nscipy>=1.11.0\n"
+    )
     expected_outputs = parsed.get("expected_outputs", [])
 
     # Hash the generated code for provenance
@@ -227,6 +230,7 @@ async def execute_analysis(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
@@ -236,9 +240,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -254,11 +256,7 @@ async def _load_active_lock(
 async def _build_source_schemas(session: AsyncSession, paper_id: str) -> str:
     """Build a text summary of available source data schemas for the LLM."""
     # Get recent snapshots (across all sources) for context
-    stmt = (
-        select(SourceSnapshot)
-        .order_by(SourceSnapshot.fetched_at.desc())
-        .limit(20)
-    )
+    stmt = select(SourceSnapshot).order_by(SourceSnapshot.fetched_at.desc()).limit(20)
     result = await session.execute(stmt)
     snapshots = result.scalars().all()
 
@@ -333,20 +331,19 @@ except Exception as e:
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                "python3", runner_path,
+                "python3",
+                runner_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=tmpdir,
             )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=120
-            )
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=120)
             return {
                 "stdout": stdout_bytes.decode("utf-8", errors="replace"),
                 "stderr": stderr_bytes.decode("utf-8", errors="replace"),
                 "exit_code": proc.returncode or 0,
             }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if proc:
                 proc.kill()
             return {
@@ -386,29 +383,35 @@ async def _execute_in_container(code_content: str) -> dict[str, Any]:
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                "docker", "run",
+                "docker",
+                "run",
                 "--rm",
-                "--network", "none",
-                "--memory", "512m",
-                "--cpus", "1",
+                "--network",
+                "none",
+                "--memory",
+                "512m",
+                "--cpus",
+                "1",
                 "--read-only",
-                "--tmpfs", "/tmp:size=64m",
-                "-v", f"{tmpdir}:/work:rw",
-                "-w", "/work",
+                "--tmpfs",
+                "/tmp:size=64m",
+                "-v",
+                f"{tmpdir}:/work:rw",
+                "-w",
+                "/work",
                 "python:3.11-slim",
-                "python3", "/work/analysis.py",
+                "python3",
+                "/work/analysis.py",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=120
-            )
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=120)
             return {
                 "stdout": stdout_bytes.decode("utf-8", errors="replace"),
                 "stderr": stderr_bytes.decode("utf-8", errors="replace"),
                 "exit_code": proc.returncode or 0,
             }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if proc:
                 proc.kill()
             # Force-remove the container if stuck

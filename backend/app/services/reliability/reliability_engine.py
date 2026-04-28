@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.correction_record import CorrectionRecord
@@ -38,9 +38,7 @@ DEFAULT_THRESHOLDS = {
 }
 
 
-async def compute_paper_reliability(
-    session: AsyncSession, paper_id: str
-) -> dict:
+async def compute_paper_reliability(session: AsyncSession, paper_id: str) -> dict:
     """Compute all five reliability metrics for a single paper.
 
     Returns dict with metric_type -> {value, threshold, passes, details}.
@@ -85,9 +83,7 @@ async def compute_paper_reliability(
 
     # 3. Expert score: average ExpertReview.overall_score
     expert_result = await session.execute(
-        select(func.avg(ExpertReview.overall_score)).where(
-            ExpertReview.paper_id == paper_id
-        )
+        select(func.avg(ExpertReview.overall_score)).where(ExpertReview.paper_id == paper_id)
     )
     avg_expert = expert_result.scalar()
     expert_val = float(avg_expert) if avg_expert is not None else 0.0
@@ -98,13 +94,13 @@ async def compute_paper_reliability(
         "value": round(expert_val, 2),
         "threshold": threshold,
         "passes": expert_val >= threshold if has_expert_reviews else True,
-        "details": f"Average expert score: {expert_val:.1f}" if has_expert_reviews else "No external expert reviews yet",
+        "details": f"Average expert score: {expert_val:.1f}"
+        if has_expert_reviews
+        else "No external expert reviews yet",
     }
 
     # 4. Benchmark percentile: rank / total papers in family
-    rating_result = await session.execute(
-        select(Rating).where(Rating.paper_id == paper_id)
-    )
+    rating_result = await session.execute(select(Rating).where(Rating.paper_id == paper_id))
     rating = rating_result.scalar_one_or_none()
 
     if rating and rating.rank and rating.family_id:
@@ -127,9 +123,9 @@ async def compute_paper_reliability(
 
     # 5. Correction rate: post-publication corrections
     correction_count_result = await session.execute(
-        select(func.count()).select_from(CorrectionRecord).where(
-            CorrectionRecord.paper_id == paper_id
-        )
+        select(func.count())
+        .select_from(CorrectionRecord)
+        .where(CorrectionRecord.paper_id == paper_id)
     )
     correction_count = correction_count_result.scalar() or 0
     # Rate is corrections per paper (0 or more); threshold is max acceptable rate
@@ -144,7 +140,7 @@ async def compute_paper_reliability(
     }
 
     # Persist metrics
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     paper_result = await session.execute(select(Paper).where(Paper.id == paper_id))
     paper = paper_result.scalar_one_or_none()
     family_id = paper.family_id if paper else None
@@ -167,17 +163,13 @@ async def compute_paper_reliability(
     return metrics
 
 
-async def compute_family_reliability(
-    session: AsyncSession, family_id: str
-) -> dict:
+async def compute_family_reliability(session: AsyncSession, family_id: str) -> dict:
     """Aggregate reliability metrics across all papers in a family.
 
     Returns dict with metric_type -> {avg_value, min_value, max_value, papers_passing, total_papers}.
     """
     # Get latest metrics for each paper in family, grouped by type
-    papers_result = await session.execute(
-        select(Paper.id).where(Paper.family_id == family_id)
-    )
+    papers_result = await session.execute(select(Paper.id).where(Paper.family_id == family_id))
     paper_ids = [row[0] for row in papers_result.all()]
 
     if not paper_ids:
@@ -221,9 +213,7 @@ async def compute_family_reliability(
 
 async def get_reliability_overview(session: AsyncSession) -> dict:
     """System-wide reliability overview across all families."""
-    families_result = await session.execute(
-        select(PaperFamily).where(PaperFamily.active.is_(True))
-    )
+    families_result = await session.execute(select(PaperFamily).where(PaperFamily.active.is_(True)))
     families = families_result.scalars().all()
 
     overview = {
@@ -234,10 +224,12 @@ async def get_reliability_overview(session: AsyncSession) -> dict:
     for family in families:
         family_metrics = await compute_family_reliability(session, family.id)
         if family_metrics:
-            overview["families"].append({
-                "family_id": family.id,
-                "short_name": family.short_name,
-                "metrics": family_metrics,
-            })
+            overview["families"].append(
+                {
+                    "family_id": family.id,
+                    "short_name": family.short_name,
+                    "metrics": family_metrics,
+                }
+            )
 
     return overview

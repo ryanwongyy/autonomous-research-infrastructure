@@ -7,7 +7,6 @@ reviews on papers, and retrieving session/acknowledgment records.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -35,6 +34,7 @@ router = APIRouter()
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 
+
 class ColleagueProfileCreate(BaseModel):
     name: str = Field(..., max_length=200)
     expertise_area: str = Field(..., max_length=500)
@@ -43,14 +43,15 @@ class ColleagueProfileCreate(BaseModel):
 
 
 class CollegialReviewBody(BaseModel):
-    manuscript_latex: Optional[str] = Field(None, max_length=500000)
-    target_venue: Optional[str] = Field(None, max_length=300)
+    manuscript_latex: str | None = Field(None, max_length=500000)
+    target_venue: str | None = Field(None, max_length=300)
     max_rounds: int = Field(5, ge=1, le=20)
 
 
 # ---------------------------------------------------------------------------
 # GET /collegial/profiles — list all colleague profiles
 # ---------------------------------------------------------------------------
+
 
 @router.get("/collegial/profiles")
 async def list_profiles(db: AsyncSession = Depends(get_db)):
@@ -66,6 +67,7 @@ async def list_profiles(db: AsyncSession = Depends(get_db)):
 # ---------------------------------------------------------------------------
 # GET /papers/{paper_id}/collegial-session — latest collegial session
 # ---------------------------------------------------------------------------
+
 
 @router.get("/papers/{paper_id}/collegial-session")
 async def get_collegial_session(
@@ -83,6 +85,7 @@ async def get_collegial_session(
 # GET /papers/{paper_id}/acknowledgments — acknowledgment records
 # ---------------------------------------------------------------------------
 
+
 @router.get("/papers/{paper_id}/acknowledgments")
 async def get_acknowledgments(
     paper_id: str,
@@ -90,9 +93,7 @@ async def get_acknowledgments(
 ):
     """Return all acknowledgment records for a paper."""
     result = await db.execute(
-        select(AcknowledgmentRecord).where(
-            AcknowledgmentRecord.paper_id == paper_id
-        )
+        select(AcknowledgmentRecord).where(AcknowledgmentRecord.paper_id == paper_id)
     )
     records = result.scalars().all()
     return {
@@ -116,6 +117,7 @@ async def get_acknowledgments(
 # ---------------------------------------------------------------------------
 # POST /papers/{paper_id}/collegial-review — trigger full collegial review
 # ---------------------------------------------------------------------------
+
 
 @router.post("/papers/{paper_id}/collegial-review")
 @limiter.limit("5/hour")
@@ -153,6 +155,7 @@ async def trigger_collegial_review(
 # ---------------------------------------------------------------------------
 # POST /collegial/profiles — create a new colleague profile
 # ---------------------------------------------------------------------------
+
 
 @router.post("/collegial/profiles", status_code=201)
 @limiter.limit("30/hour")

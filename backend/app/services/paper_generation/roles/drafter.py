@@ -102,6 +102,7 @@ No markdown wrapper, no commentary outside the JSON."""
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def compose_manuscript(
     session: AsyncSession,
     paper_id: str,
@@ -125,8 +126,7 @@ async def compose_manuscript(
     lock = await _load_active_lock(session, paper_id)
     if lock is None:
         raise ValueError(
-            f"No active lock for paper '{paper_id}'. "
-            "Design must be locked before drafting."
+            f"No active lock for paper '{paper_id}'. Design must be locked before drafting."
         )
 
     # Load family for venue targeting
@@ -158,13 +158,23 @@ async def compose_manuscript(
         lock_yaml=lock.lock_yaml,
         protocol_type=lock.lock_protocol_type,
         inference_level=inference_level,
-        result_manifest=json.dumps(result_manifest, indent=2) if result_manifest else "(no results yet)",
-        source_manifest=json.dumps(source_manifest, indent=2) if source_manifest else "(no manifest)",
+        result_manifest=json.dumps(result_manifest, indent=2)
+        if result_manifest
+        else "(no results yet)",
+        source_manifest=json.dumps(source_manifest, indent=2)
+        if source_manifest
+        else "(no manifest)",
         venue_style=venue_style,
         family_description=family_description,
     )
 
-    response = await provider.complete(
+    from app.services.llm.spend import tracked_complete
+
+    response = await tracked_complete(
+        provider,
+        session=session,
+        paper_id=paper_id,
+        role="drafter",
         messages=[
             {"role": "user", "content": prompt},
         ],
@@ -199,13 +209,15 @@ async def compose_manuscript(
             verification_status="pending",
         )
         session.add(claim_map)
-        claim_map_entries.append({
-            "claim_text": claim_data.get("claim_text", ""),
-            "claim_type": claim_data.get("claim_type", "descriptive"),
-            "source_type": claim_data.get("source_type", ""),
-            "source_ref": claim_data.get("source_ref", ""),
-            "section": claim_data.get("section", ""),
-        })
+        claim_map_entries.append(
+            {
+                "claim_text": claim_data.get("claim_text", ""),
+                "claim_type": claim_data.get("claim_type", "descriptive"),
+                "source_type": claim_data.get("source_type", ""),
+                "source_ref": claim_data.get("source_ref", ""),
+                "section": claim_data.get("section", ""),
+            }
+        )
 
     # Update funnel stage
     paper.funnel_stage = "drafting"
@@ -231,6 +243,7 @@ async def compose_manuscript(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
@@ -240,9 +253,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -255,9 +266,7 @@ async def _load_active_lock(
     return result.scalar_one_or_none()
 
 
-async def _load_family(
-    session: AsyncSession, family_id: str
-) -> PaperFamily | None:
+async def _load_family(session: AsyncSession, family_id: str) -> PaperFamily | None:
     stmt = select(PaperFamily).where(PaperFamily.id == family_id)
     result = await session.execute(stmt)
     return result.scalar_one_or_none()

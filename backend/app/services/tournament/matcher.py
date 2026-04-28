@@ -82,11 +82,7 @@ def _generate_single_batch(
         remaining = [(p, w) for p, w in available if p.id != paper_a.id]
 
         # Exclude pairs already seen in this run
-        remaining = [
-            (p, w)
-            for p, w in remaining
-            if _pair_key(paper_a.id, p.id) not in seen_pairs
-        ]
+        remaining = [(p, w) for p, w in remaining if _pair_key(paper_a.id, p.id) not in seen_pairs]
 
         diff_source = [(p, w) for p, w in remaining if p.source != paper_a.source]
 

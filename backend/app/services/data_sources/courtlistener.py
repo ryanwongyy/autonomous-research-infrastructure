@@ -14,7 +14,12 @@ from pathlib import Path
 
 import httpx
 
-from app.services.data_sources.base import BaseDataSource, FetchParams, FetchResult
+from app.services.data_sources.base import (
+    BaseDataSource,
+    FetchParams,
+    FetchResult,
+    make_http_proof,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +56,7 @@ class CourtListenerSource(BaseDataSource):
         }
 
         try:
-            records = await self._paginated_fetch(
-                api_params, headers, params.max_records
-            )
+            records, proof = await self._paginated_fetch(api_params, headers, params.max_records)
         except Exception as e:
             logger.error("CourtListener fetch failed: %s", e)
             return FetchResult(success=False, error=str(e))
@@ -63,6 +66,7 @@ class CourtListenerSource(BaseDataSource):
                 success=True,
                 row_count=0,
                 description="No matching CourtListener opinions found",
+                proof=proof,
             )
 
         output_path = output_dir / "courtlistener_opinions.csv"
@@ -84,19 +88,19 @@ class CourtListenerSource(BaseDataSource):
             for opinion in records:
                 cluster = opinion.get("cluster", {}) or {}
                 snippet = opinion.get("snippet") or opinion.get("plain_text", "") or ""
-                writer.writerow({
-                    "opinion_id": opinion.get("id", ""),
-                    "case_name": cluster.get("case_name", opinion.get("case_name", "")),
-                    "court": opinion.get("court", ""),
-                    "date_filed": cluster.get(
-                        "date_filed", opinion.get("date_filed", "")
-                    ),
-                    "citation": cluster.get("citation_string", ""),
-                    "type": opinion.get("type", ""),
-                    "status": cluster.get("precedential_status", ""),
-                    "url": f"https://www.courtlistener.com{opinion.get('absolute_url', '')}",
-                    "snippet": snippet[:500] if snippet else "",
-                })
+                writer.writerow(
+                    {
+                        "opinion_id": opinion.get("id", ""),
+                        "case_name": cluster.get("case_name", opinion.get("case_name", "")),
+                        "court": opinion.get("court", ""),
+                        "date_filed": cluster.get("date_filed", opinion.get("date_filed", "")),
+                        "citation": cluster.get("citation_string", ""),
+                        "type": opinion.get("type", ""),
+                        "status": cluster.get("precedential_status", ""),
+                        "url": f"https://www.courtlistener.com{opinion.get('absolute_url', '')}",
+                        "snippet": snippet[:500] if snippet else "",
+                    }
+                )
 
         return FetchResult(
             success=True,
@@ -104,13 +108,16 @@ class CourtListenerSource(BaseDataSource):
             row_count=len(records),
             columns=columns,
             description=f"Fetched {len(records)} court opinions for: {query[:80]}",
+            proof=proof,
         )
 
     async def _paginated_fetch(
         self, api_params: dict, headers: dict, max_records: int
-    ) -> list[dict]:
+    ) -> tuple[list[dict], dict | None]:
+        """Returns ``(records, proof)``; ``proof`` is built from the first page."""
         records: list[dict] = []
         next_url: str | None = f"{API_BASE}/search/"
+        proof: dict | None = None
 
         async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
             page = 0
@@ -120,6 +127,13 @@ class CourtListenerSource(BaseDataSource):
                 else:
                     resp = await client.get(next_url)
                 resp.raise_for_status()
+                if proof is None:
+                    proof = make_http_proof(
+                        request_url=str(resp.url),
+                        response_status=resp.status_code,
+                        response_body=resp.content,
+                        fetched_via="courtlistener_client_v1",
+                    )
                 data = resp.json()
 
                 results = data.get("results", [])
@@ -133,7 +147,7 @@ class CourtListenerSource(BaseDataSource):
                 if page >= 10:  # Safety cap
                     break
 
-        return records[:max_records]
+        return records[:max_records], proof
 
     def supports_query(self, research_question: str) -> bool:
         rq = research_question.lower()

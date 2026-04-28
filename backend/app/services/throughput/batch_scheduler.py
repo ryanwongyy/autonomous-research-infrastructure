@@ -1,14 +1,14 @@
 """Manages daily batch sizes to hit annual throughput targets."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
-from app.services.throughput.funnel_tracker import FUNNEL_STAGES_ORDERED, ANNUAL_TARGETS
+from app.services.throughput.funnel_tracker import ANNUAL_TARGETS, FUNNEL_STAGES_ORDERED
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,8 @@ async def compute_daily_targets(
 
     Returns daily target counts per pipeline stage.
     """
-    now = datetime.now(timezone.utc)
-    year_start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+    now = datetime.now(UTC)
+    year_start = datetime(now.year, 1, 1, tzinfo=UTC)
     days_elapsed = max((now - year_start).days, 1)
     days_remaining = max(365 - days_elapsed, 1)
 
@@ -101,9 +101,7 @@ async def get_work_queue(
     Groups papers by their current stage and what work they need next.
     """
     # Get all active families and their current paper counts
-    families_result = await session.execute(
-        select(PaperFamily).where(PaperFamily.active.is_(True))
-    )
+    families_result = await session.execute(select(PaperFamily).where(PaperFamily.active.is_(True)))
     families = families_result.scalars().all()
 
     family_paper_counts = {}
@@ -174,17 +172,21 @@ async def get_work_queue(
             age_days = 0
             ref_time = p.updated_at or p.created_at
             if ref_time:
-                ref_aware = ref_time.replace(tzinfo=timezone.utc) if ref_time.tzinfo is None else ref_time
-                age_days = (datetime.now(timezone.utc) - ref_aware).days
+                ref_aware = ref_time.replace(tzinfo=UTC) if ref_time.tzinfo is None else ref_time
+                age_days = (datetime.now(UTC) - ref_aware).days
 
-            items.append({
-                "paper_id": p.id,
-                "title": p.title,
-                "family_id": p.family_id,
-                "days_in_stage": age_days,
-                "screening_score": p.overall_screening_score,
-                "family_priority": round(family_priority.get(p.family_id, 0.0), 3) if p.family_id else None,
-            })
+            items.append(
+                {
+                    "paper_id": p.id,
+                    "title": p.title,
+                    "family_id": p.family_id,
+                    "days_in_stage": age_days,
+                    "screening_score": p.overall_screening_score,
+                    "family_priority": round(family_priority.get(p.family_id, 0.0), 3)
+                    if p.family_id
+                    else None,
+                }
+            )
 
         work_queue[stage] = {
             "description": description,
@@ -202,7 +204,9 @@ async def get_work_queue(
             fam_id: {
                 "name": info["name"],
                 "paper_count": info["count"],
-                "current_share": round(info["count"] / total_papers, 3) if total_papers > 0 else 0.0,
+                "current_share": round(info["count"] / total_papers, 3)
+                if total_papers > 0
+                else 0.0,
                 "max_share": info["max_share"],
                 "priority_score": round(family_priority.get(fam_id, 0.0), 3),
             }

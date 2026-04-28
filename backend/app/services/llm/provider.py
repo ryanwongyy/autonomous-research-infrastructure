@@ -1,12 +1,12 @@
-from abc import ABC, abstractmethod
 import logging
+from abc import ABC, abstractmethod
 
 from tenacity import (
+    before_sleep_log,
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,16 @@ class LLMProvider(ABC):
     """Abstract base class for LLM provider adapters."""
 
     timeout_seconds: int = 120  # 2-minute default for LLM API calls
+
+    # Set by each ``complete()`` / ``complete_with_pdf()`` call; read by the
+    # ``tracked_complete()`` helper in app.services.llm.spend to insert one
+    # ``LLMSpend`` row per call. Shape:
+    #   {"input_tokens": int, "output_tokens": int, "model": str}
+    # Concurrency note: providers stash this on the instance, so a single
+    # LLMProvider instance must NOT be shared across concurrent calls if
+    # spend tracking is enabled. The roles already construct their own
+    # provider via ``get_generation_provider()``.
+    last_usage: dict | None = None
 
     @abstractmethod
     async def complete(

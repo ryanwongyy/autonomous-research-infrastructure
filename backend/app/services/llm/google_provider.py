@@ -4,8 +4,8 @@ import logging
 from google import genai
 from google.genai import types
 
-from app.services.llm.provider import LLMProvider, _llm_retry
 from app.config import settings
+from app.services.llm.provider import LLMProvider, _llm_retry
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +31,13 @@ class GoogleProvider(LLMProvider):
             if msg["role"] == "system":
                 system_instruction = msg["content"]
             elif msg["role"] == "user":
-                contents.append(types.Content(role="user", parts=[types.Part.from_text(msg["content"])]))
+                contents.append(
+                    types.Content(role="user", parts=[types.Part.from_text(msg["content"])])
+                )
             elif msg["role"] == "assistant":
-                contents.append(types.Content(role="model", parts=[types.Part.from_text(msg["content"])]))
+                contents.append(
+                    types.Content(role="model", parts=[types.Part.from_text(msg["content"])])
+                )
 
         config = types.GenerateContentConfig(
             temperature=temperature,
@@ -47,6 +51,14 @@ class GoogleProvider(LLMProvider):
                 contents=contents,
                 config=config,
             )
+        # Stash usage so tracked_complete() can record it. Gemini exposes
+        # `usage_metadata.prompt_token_count` / `candidates_token_count`.
+        usage = getattr(response, "usage_metadata", None)
+        self.last_usage = {
+            "input_tokens": getattr(usage, "prompt_token_count", 0) if usage else 0,
+            "output_tokens": getattr(usage, "candidates_token_count", 0) if usage else 0,
+            "model": model,
+        }
         return response.text
 
     @_llm_retry()
@@ -92,4 +104,12 @@ class GoogleProvider(LLMProvider):
                 contents=contents,
                 config=config,
             )
+        # Stash usage so tracked_complete() can record it. Gemini exposes
+        # `usage_metadata.prompt_token_count` / `candidates_token_count`.
+        usage = getattr(response, "usage_metadata", None)
+        self.last_usage = {
+            "input_tokens": getattr(usage, "prompt_token_count", 0) if usage else 0,
+            "output_tokens": getattr(usage, "candidates_token_count", 0) if usage else 0,
+            "model": model,
+        }
         return response.text

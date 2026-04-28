@@ -32,10 +32,10 @@ export const EloBySource = memo(function EloBySource({ avgEloAi, avgEloBenchmark
         <div role="img" aria-label={`Bar chart: Average Elo by Source. AI Papers: ${avgEloAi?.toFixed(0) ?? "N/A"}, Benchmark: ${avgEloBenchmark?.toFixed(0) ?? "N/A"}.`}>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted-foreground) / 0.2)" />
               <XAxis dataKey="name" />
               <YAxis domain={[1200, 1800]} />
-              <Tooltip />
+              <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: "0.5rem", color: "hsl(var(--popover-foreground))", fontSize: "0.75rem" }} />
               <Bar dataKey="elo" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

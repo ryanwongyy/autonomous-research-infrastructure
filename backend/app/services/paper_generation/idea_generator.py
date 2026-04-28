@@ -73,9 +73,13 @@ async def generate_research_idea(domain_config_id: str) -> ResearchIdea:
     prompt = IDEA_PROMPT.format(
         domain_name=config.name,
         domain_description=config.description or "",
-        data_sources="\n".join(f"- {ds.get('name', ds)}" for ds in data_sources) if data_sources else "None configured",
+        data_sources="\n".join(f"- {ds.get('name', ds)}" for ds in data_sources)
+        if data_sources
+        else "None configured",
         methods=", ".join(methods) if methods else "Any causal inference method",
-        categories="\n".join(f"- {c.get('name', c)}" for c in categories) if categories else "General",
+        categories="\n".join(f"- {c.get('name', c)}" for c in categories)
+        if categories
+        else "General",
     )
 
     response = await provider.complete(

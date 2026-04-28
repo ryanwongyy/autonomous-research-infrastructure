@@ -4,8 +4,8 @@ import logging
 
 import anthropic
 
-from app.services.llm.provider import LLMProvider, _llm_retry, _RETRYABLE_EXCEPTIONS
 from app.config import settings
+from app.services.llm.provider import _RETRYABLE_EXCEPTIONS, LLMProvider, _llm_retry
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,13 @@ class AnthropicProvider(LLMProvider):
 
         async with asyncio.timeout(self.timeout_seconds):
             response = await self.client.messages.create(**kwargs)
+        # Stash usage so tracked_complete() can record it. Anthropic returns
+        # `usage.input_tokens` / `usage.output_tokens` on every call.
+        self.last_usage = {
+            "input_tokens": getattr(response.usage, "input_tokens", 0),
+            "output_tokens": getattr(response.usage, "output_tokens", 0),
+            "model": model,
+        }
         return response.content[0].text
 
     @_llm_retry()
@@ -93,4 +100,9 @@ class AnthropicProvider(LLMProvider):
 
         async with asyncio.timeout(self.timeout_seconds):
             response = await self.client.messages.create(**kwargs)
+        self.last_usage = {
+            "input_tokens": getattr(response.usage, "input_tokens", 0),
+            "output_tokens": getattr(response.usage, "output_tokens", 0),
+            "model": model,
+        }
         return response.content[0].text

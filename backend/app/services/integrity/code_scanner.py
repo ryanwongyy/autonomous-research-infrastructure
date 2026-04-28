@@ -1,5 +1,5 @@
-import re
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +26,14 @@ def scan_code(code: str) -> list[dict]:
     for i, line in enumerate(lines, 1):
         for pattern, description in SUSPICIOUS_PATTERNS:
             if re.search(pattern, line, re.IGNORECASE):
-                issues.append({
-                    "line": i,
-                    "pattern": pattern,
-                    "description": description,
-                    "content": line.strip()[:100],
-                })
+                issues.append(
+                    {
+                        "line": i,
+                        "pattern": pattern,
+                        "description": description,
+                        "content": line.strip()[:100],
+                    }
+                )
 
     return issues
 

@@ -80,6 +80,7 @@ No markdown, no commentary outside the JSON."""
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def create_research_design(
     session: AsyncSession,
     paper_id: str,
@@ -124,7 +125,13 @@ async def create_research_design(
         mutable_fields="\n".join(f"  - {f}" for f in mutable) if mutable else "  (none)",
     )
 
-    response = await provider.complete(
+    from app.services.llm.spend import tracked_complete
+
+    response = await tracked_complete(
+        provider,
+        session=session,
+        paper_id=paper_id,
+        role="designer",
         messages=[
             {"role": "user", "content": prompt},
         ],
@@ -193,6 +200,7 @@ async def lock_design(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)

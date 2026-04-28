@@ -6,12 +6,38 @@ The fetch() method retrieves real data and writes it to local files.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def make_http_proof(
+    *,
+    request_url: str,
+    response_status: int,
+    response_body: bytes,
+    fetched_via: str,
+) -> dict:
+    """Build a Step-2 provenance proof dict for a real HTTP fetch.
+
+    `response_body` should be the raw bytes returned by the upstream API
+    (before any normalisation into CSV / JSON-flat). Hashing the raw body
+    lets us detect content drift independently of how we serialise it
+    locally.
+    """
+    return {
+        "method": "http",
+        "request_url": request_url,
+        "response_status": response_status,
+        "response_hash": hashlib.sha256(response_body).hexdigest(),
+        "fetched_at": datetime.now(UTC).isoformat(),
+        "fetched_via": fetched_via,
+    }
 
 
 @dataclass
@@ -36,6 +62,24 @@ class FetchResult:
     columns: list[str] = field(default_factory=list)
     description: str = ""
     error: str | None = None
+
+    # ── Provenance proof (Step 2) ──────────────────────────────────────
+    # Sources that perform real HTTP fetches populate `proof` with a dict
+    # describing how the response was obtained. The data_steward role
+    # writes this dict to SourceSnapshot.provenance_proof_json, and the L2
+    # Provenance review rejects claims tied to snapshots whose proof is
+    # missing or whose method is anything other than "http" / "vcr".
+    #
+    # Expected shape:
+    #   {
+    #     "method": "http",
+    #     "request_url": "https://...",
+    #     "response_status": 200,
+    #     "response_hash": "<sha256-hex>",
+    #     "fetched_at": "2026-04-26T12:34:56Z",
+    #     "fetched_via": "<source_id>_client_v1"
+    #   }
+    proof: dict | None = None
 
 
 class BaseDataSource(ABC):

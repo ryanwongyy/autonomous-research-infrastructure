@@ -9,12 +9,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.acknowledgment_record import AcknowledgmentRecord
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
@@ -23,7 +24,6 @@ from app.services.provenance.hasher import (
     compute_merkle_root,
     hash_content,
 )
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 async def build_package(
     session: AsyncSession,
@@ -108,82 +109,88 @@ async def build_package(
     # -----------------------------------------------------------------------
     # 4. Authorship declaration template
     # -----------------------------------------------------------------------
-    authorship_declaration = json.dumps({
-        "declaration_type": "human_authorship_required",
-        "template": {
-            "human_authors": [
-                {
-                    "name": "[REQUIRED: Full name]",
-                    "affiliation": "[REQUIRED: Institution]",
-                    "contribution": "[REQUIRED: Specific contributions]",
-                    "corresponding": False,
-                }
-            ],
-            "certification": (
-                "I/We certify that all human authors listed above made "
-                "substantive intellectual contributions to this work beyond "
-                "supervising AI-generated output."
-            ),
-            "signed_date": None,
+    authorship_declaration = json.dumps(
+        {
+            "declaration_type": "human_authorship_required",
+            "template": {
+                "human_authors": [
+                    {
+                        "name": "[REQUIRED: Full name]",
+                        "affiliation": "[REQUIRED: Institution]",
+                        "contribution": "[REQUIRED: Specific contributions]",
+                        "corresponding": False,
+                    }
+                ],
+                "certification": (
+                    "I/We certify that all human authors listed above made "
+                    "substantive intellectual contributions to this work beyond "
+                    "supervising AI-generated output."
+                ),
+                "signed_date": None,
+            },
+            "note": "This paper was generated with AI assistance. Human authorship "
+            "must be established before submission to any venue.",
         },
-        "note": "This paper was generated with AI assistance. Human authorship "
-                "must be established before submission to any venue.",
-    }, indent=2)
+        indent=2,
+    )
 
     # -----------------------------------------------------------------------
     # 5. AI contribution log
     # -----------------------------------------------------------------------
-    ai_contribution_log = json.dumps({
-        "pipeline_version": "phase_3_bounded_roles",
-        "model": "claude-opus-4-6",
-        "stages": {
-            "scout": {
-                "role": "Idea generation and screening",
-                "ai_contribution": "Generated research idea cards from governance landscape gaps; "
-                                   "screened ideas on 6 dimensions",
-                "human_oversight": "Human approves or rejects ideas before proceeding",
+    ai_contribution_log = json.dumps(
+        {
+            "pipeline_version": "phase_3_bounded_roles",
+            "model": "claude-opus-4-6",
+            "stages": {
+                "scout": {
+                    "role": "Idea generation and screening",
+                    "ai_contribution": "Generated research idea cards from governance landscape gaps; "
+                    "screened ideas on 6 dimensions",
+                    "human_oversight": "Human approves or rejects ideas before proceeding",
+                },
+                "designer": {
+                    "role": "Research design creation",
+                    "ai_contribution": "Generated research design YAML with all required fields; "
+                    "produced narrative memo explaining design choices",
+                    "human_oversight": "Human reviews and locks the design",
+                },
+                "data_steward": {
+                    "role": "Source manifest and data fetching",
+                    "ai_contribution": "Matched research needs to available source cards; "
+                    "built source manifest with fetch parameters",
+                    "human_oversight": "Human verifies source selections and data quality",
+                },
+                "analyst": {
+                    "role": "Analysis code generation and execution",
+                    "ai_contribution": "Generated analysis code implementing locked design; "
+                    "executed code to produce result objects",
+                    "human_oversight": "Human reviews code and validates results",
+                },
+                "drafter": {
+                    "role": "Manuscript composition",
+                    "ai_contribution": "Composed full LaTeX manuscript with evidence-linked claims; "
+                    "generated bibliography entries",
+                    "human_oversight": "Human reviews manuscript for accuracy and quality",
+                },
+                "verifier": {
+                    "role": "Claim verification",
+                    "ai_contribution": "Cross-checked all claims against evidence base; "
+                    "flagged causal language violations and tier compliance issues",
+                    "human_oversight": "Human reviews verification report",
+                },
+                "packager": {
+                    "role": "Package assembly",
+                    "ai_contribution": "Computed artifact hashes and Merkle root; "
+                    "generated disclosure and contribution log",
+                    "human_oversight": "Human signs authorship declaration before submission",
+                },
             },
-            "designer": {
-                "role": "Research design creation",
-                "ai_contribution": "Generated research design YAML with all required fields; "
-                                   "produced narrative memo explaining design choices",
-                "human_oversight": "Human reviews and locks the design",
-            },
-            "data_steward": {
-                "role": "Source manifest and data fetching",
-                "ai_contribution": "Matched research needs to available source cards; "
-                                   "built source manifest with fetch parameters",
-                "human_oversight": "Human verifies source selections and data quality",
-            },
-            "analyst": {
-                "role": "Analysis code generation and execution",
-                "ai_contribution": "Generated analysis code implementing locked design; "
-                                   "executed code to produce result objects",
-                "human_oversight": "Human reviews code and validates results",
-            },
-            "drafter": {
-                "role": "Manuscript composition",
-                "ai_contribution": "Composed full LaTeX manuscript with evidence-linked claims; "
-                                   "generated bibliography entries",
-                "human_oversight": "Human reviews manuscript for accuracy and quality",
-            },
-            "verifier": {
-                "role": "Claim verification",
-                "ai_contribution": "Cross-checked all claims against evidence base; "
-                                   "flagged causal language violations and tier compliance issues",
-                "human_oversight": "Human reviews verification report",
-            },
-            "packager": {
-                "role": "Package assembly",
-                "ai_contribution": "Computed artifact hashes and Merkle root; "
-                                   "generated disclosure and contribution log",
-                "human_oversight": "Human signs authorship declaration before submission",
-            },
+            "component_hashes": component_hashes,
+            "merkle_root": merkle_root,
+            "packaged_at": datetime.now(UTC).isoformat(),
         },
-        "component_hashes": component_hashes,
-        "merkle_root": merkle_root,
-        "packaged_at": datetime.now(timezone.utc).isoformat(),
-    }, indent=2)
+        indent=2,
+    )
 
     # -----------------------------------------------------------------------
     # 6. Standardized disclosure text
@@ -223,23 +230,15 @@ async def build_package(
     if ack_records:
         ack_lines = [a.acknowledgment_text for a in ack_records if a.acknowledgment_text]
         if ack_lines:
-            disclosure_text += (
-                "\n\nACKNOWLEDGMENTS\n\n"
-                + " ".join(ack_lines)
-            )
+            disclosure_text += "\n\nACKNOWLEDGMENTS\n\n" + " ".join(ack_lines)
 
     # -----------------------------------------------------------------------
     # 7. Create PaperPackage record
     # -----------------------------------------------------------------------
-    package_path = os.path.join(
-        settings.papers_dir, paper_id, "package_v1"
-    )
+    package_path = os.path.join(settings.papers_dir, paper_id, "package_v1")
 
     # Check for existing package and increment version if needed
-    existing_stmt = (
-        select(PaperPackage)
-        .where(PaperPackage.paper_id == paper_id)
-    )
+    existing_stmt = select(PaperPackage).where(PaperPackage.paper_id == paper_id)
     existing_result = await session.execute(existing_stmt)
     existing_package = existing_result.scalar_one_or_none()
 
@@ -271,7 +270,7 @@ async def build_package(
         authorship_declaration=authorship_declaration,
         ai_contribution_log=ai_contribution_log,
         disclosure_text=disclosure_text,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     session.add(package)
 
@@ -296,6 +295,7 @@ async def build_package(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
@@ -305,9 +305,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
