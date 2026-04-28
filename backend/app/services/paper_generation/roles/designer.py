@@ -125,7 +125,13 @@ async def create_research_design(
         mutable_fields="\n".join(f"  - {f}" for f in mutable) if mutable else "  (none)",
     )
 
-    response = await provider.complete(
+    from app.services.llm.spend import tracked_complete
+
+    response = await tracked_complete(
+        provider,
+        session=session,
+        paper_id=paper_id,
+        role="designer",
         messages=[
             {"role": "user", "content": prompt},
         ],

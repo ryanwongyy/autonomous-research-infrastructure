@@ -162,6 +162,70 @@ async def daily_spend_total(session: AsyncSession) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Tracked LLM call wrapper
+# ---------------------------------------------------------------------------
+
+
+async def tracked_complete(
+    provider,
+    *,
+    session: AsyncSession,
+    paper_id: str | None,
+    role: str,
+    model: str,
+    messages: list[dict],
+    temperature: float = 0.7,
+    max_tokens: int = 4096,
+    note: str | None = None,
+) -> str:
+    """Wrap ``provider.complete()`` with automatic spend recording.
+
+    Call sites that know their ``paper_id`` and ``role`` use this instead
+    of calling ``provider.complete(...)`` directly. The provider populates
+    ``provider.last_usage`` on every call; we read it here and insert one
+    ``LLMSpend`` row.
+
+    If ``settings.cost_tracking_enabled`` is False, ``record_spend`` is
+    skipped — the call still happens, the text still returns, no row is
+    written. Useful for offline tests that don't want to set up a paper
+    fixture for every LLM call.
+
+    If the provider returned no usage info (a legacy provider, or a stub
+    used in tests), we silently skip recording rather than insert a row
+    of zeros.
+    """
+    text = await provider.complete(
+        messages=messages,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+    if not settings.cost_tracking_enabled:
+        return text
+
+    usage = getattr(provider, "last_usage", None)
+    if not usage:
+        return text
+
+    # Provider class name → spend-ledger key. Falls back to "unknown" if a
+    # caller passes a stub class without a "Provider" suffix.
+    provider_name = provider.__class__.__name__.lower().removesuffix("provider") or "unknown"
+
+    await record_spend(
+        session,
+        paper_id=paper_id,
+        role=role,
+        provider=provider_name,
+        model=model,
+        input_tokens=int(usage.get("input_tokens", 0)),
+        output_tokens=int(usage.get("output_tokens", 0)),
+        note=note,
+    )
+    return text
+
+
+# ---------------------------------------------------------------------------
 # Enforcement
 # ---------------------------------------------------------------------------
 

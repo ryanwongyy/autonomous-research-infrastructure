@@ -168,7 +168,13 @@ async def compose_manuscript(
         family_description=family_description,
     )
 
-    response = await provider.complete(
+    from app.services.llm.spend import tracked_complete
+
+    response = await tracked_complete(
+        provider,
+        session=session,
+        paper_id=paper_id,
+        role="drafter",
         messages=[
             {"role": "user", "content": prompt},
         ],

@@ -51,6 +51,14 @@ class GoogleProvider(LLMProvider):
                 contents=contents,
                 config=config,
             )
+        # Stash usage so tracked_complete() can record it. Gemini exposes
+        # `usage_metadata.prompt_token_count` / `candidates_token_count`.
+        usage = getattr(response, "usage_metadata", None)
+        self.last_usage = {
+            "input_tokens": getattr(usage, "prompt_token_count", 0) if usage else 0,
+            "output_tokens": getattr(usage, "candidates_token_count", 0) if usage else 0,
+            "model": model,
+        }
         return response.text
 
     @_llm_retry()
@@ -96,4 +104,12 @@ class GoogleProvider(LLMProvider):
                 contents=contents,
                 config=config,
             )
+        # Stash usage so tracked_complete() can record it. Gemini exposes
+        # `usage_metadata.prompt_token_count` / `candidates_token_count`.
+        usage = getattr(response, "usage_metadata", None)
+        self.last_usage = {
+            "input_tokens": getattr(usage, "prompt_token_count", 0) if usage else 0,
+            "output_tokens": getattr(usage, "candidates_token_count", 0) if usage else 0,
+            "model": model,
+        }
         return response.text

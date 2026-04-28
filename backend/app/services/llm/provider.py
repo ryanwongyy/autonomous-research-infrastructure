@@ -35,6 +35,16 @@ class LLMProvider(ABC):
 
     timeout_seconds: int = 120  # 2-minute default for LLM API calls
 
+    # Set by each ``complete()`` / ``complete_with_pdf()`` call; read by the
+    # ``tracked_complete()`` helper in app.services.llm.spend to insert one
+    # ``LLMSpend`` row per call. Shape:
+    #   {"input_tokens": int, "output_tokens": int, "model": str}
+    # Concurrency note: providers stash this on the instance, so a single
+    # LLMProvider instance must NOT be shared across concurrent calls if
+    # spend tracking is enabled. The roles already construct their own
+    # provider via ``get_generation_provider()``.
+    last_usage: dict | None = None
+
     @abstractmethod
     async def complete(
         self,

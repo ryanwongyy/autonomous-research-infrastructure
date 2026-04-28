@@ -37,6 +37,14 @@ class OpenAIProvider(LLMProvider):
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+        # Stash usage so tracked_complete() can record it. OpenAI returns
+        # `usage.prompt_tokens` / `usage.completion_tokens` on every call.
+        usage = getattr(response, "usage", None)
+        self.last_usage = {
+            "input_tokens": getattr(usage, "prompt_tokens", 0) if usage else 0,
+            "output_tokens": getattr(usage, "completion_tokens", 0) if usage else 0,
+            "model": model,
+        }
         return response.choices[0].message.content
 
     @_llm_retry()
@@ -80,4 +88,10 @@ class OpenAIProvider(LLMProvider):
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+        usage = getattr(response, "usage", None)
+        self.last_usage = {
+            "input_tokens": getattr(usage, "prompt_tokens", 0) if usage else 0,
+            "output_tokens": getattr(usage, "completion_tokens", 0) if usage else 0,
+            "model": model,
+        }
         return response.choices[0].message.content

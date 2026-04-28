@@ -192,13 +192,20 @@ async def generate_ideas(
         source_cards=source_card_text if source_card_text else "  (none registered)",
     )
 
-    response = await provider.complete(
+    from app.services.llm.spend import tracked_complete
+
+    response = await tracked_complete(
+        provider,
+        session=session,
+        paper_id=None,  # Scout fires before any paper exists.
+        role="scout_generate",
         messages=[
             {"role": "user", "content": prompt},
         ],
         model=model,
         temperature=0.85,
         max_tokens=8192,
+        note=f"family={family_id}",
     )
 
     ideas = _parse_json_array(response)
@@ -233,7 +240,13 @@ async def screen_idea(
 
     prompt = SCREEN_USER_PROMPT.format(idea_yaml=idea_yaml)
 
-    response = await provider.complete(
+    from app.services.llm.spend import tracked_complete
+
+    response = await tracked_complete(
+        provider,
+        session=session,
+        paper_id=None,  # Scout fires before any paper exists.
+        role="scout_screen",
         messages=[
             {"role": "user", "content": prompt},
         ],
