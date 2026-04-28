@@ -8,18 +8,22 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC
 from typing import Any
 
 import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.claim_map import ClaimMap
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
 from app.models.source_card import SourceCard
+from app.models.source_snapshot import SourceSnapshot
 from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
+from app.services.storage.artifact_store import FilesystemArtifactStore
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +96,7 @@ No markdown, no commentary outside the JSON."""
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def verify_manuscript(
     session: AsyncSession,
     paper_id: str,
@@ -113,8 +118,7 @@ async def verify_manuscript(
     lock = await _load_active_lock(session, paper_id)
     if lock is None:
         raise ValueError(
-            f"No active lock for paper '{paper_id}'. "
-            "Cannot verify without a locked design."
+            f"No active lock for paper '{paper_id}'. Cannot verify without a locked design."
         )
 
     # Load all claim map entries
@@ -136,16 +140,36 @@ async def verify_manuscript(
             },
         }
 
+    # ── Step 3 + numeric-claim follow-up: mechanical claim verification ──
+    # BEFORE the LLM is consulted, mechanically verify that claims with a
+    # quoted span actually appear in the cited snapshot bytes, AND that
+    # claims with a result_object_ref resolve to entries in the analyst's
+    # result manifest. Mechanical failures override any LLM verdict —
+    # a fabricated number doesn't get to be "pass" just because the LLM
+    # finds it plausible.
+    mechanical_failures = await _mechanical_verify_claims(
+        session, claims, result_manifest=result_manifest
+    )
+    if mechanical_failures:
+        logger.warning(
+            "Verifier: %d/%d claim(s) fail mechanical verification for paper %s",
+            len(mechanical_failures),
+            len(claims),
+            paper_id,
+        )
+
     # Build claims YAML for the LLM
     claims_data = []
     for c in claims:
-        claims_data.append({
-            "claim_text": c.claim_text,
-            "claim_type": c.claim_type,
-            "source_card_id": c.source_card_id,
-            "source_span_ref": c.source_span_ref,
-            "result_object_ref": c.result_object_ref,
-        })
+        claims_data.append(
+            {
+                "claim_text": c.claim_text,
+                "claim_type": c.claim_type,
+                "source_card_id": c.source_card_id,
+                "source_span_ref": c.source_span_ref,
+                "result_object_ref": c.result_object_ref,
+            }
+        )
 
     claims_yaml = yaml.dump(claims_data, default_flow_style=False, sort_keys=False)
 
@@ -184,6 +208,11 @@ async def verify_manuscript(
 
     verification = _parse_json_object(response)
 
+    # ── Step 3: merge mechanical failures into LLM verification ─────────
+    # Mechanical failures hard-fail the claim, regardless of LLM verdict.
+    if mechanical_failures:
+        verification = _apply_mechanical_failures(verification, claims, mechanical_failures)
+
     # Update claim verification statuses in the database
     claim_results = verification.get("claim_verifications", [])
     await _update_claim_statuses(session, paper_id, claims, claim_results)
@@ -212,6 +241,7 @@ async def verify_manuscript(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
@@ -221,9 +251,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -245,10 +273,7 @@ async def _build_source_tier_map(session: AsyncSession) -> str:
     if not cards:
         return "(no source cards registered)"
 
-    lines = [
-        f"- {sc.id}: Tier {sc.tier} ({sc.name})"
-        for sc in cards
-    ]
+    lines = [f"- {sc.id}: Tier {sc.tier} ({sc.name})" for sc in cards]
     return "\n".join(lines)
 
 
@@ -259,7 +284,7 @@ async def _update_claim_statuses(
     verifications: list[dict[str, Any]],
 ) -> None:
     """Update ClaimMap verification statuses based on verifier output."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     # Build a lookup by claim_text (best-effort matching)
     verify_map: dict[str, dict] = {}
@@ -281,7 +306,7 @@ async def _update_claim_statuses(
             claim.verification_status = "pending"
 
         claim.verified_by = "verifier_role"
-        claim.verified_at = datetime.now(timezone.utc)
+        claim.verified_at = datetime.now(UTC)
         session.add(claim)
 
     await session.flush()
@@ -319,3 +344,315 @@ def _parse_json_object(response: str) -> dict:
                 "recommendation": "revise",
             },
         }
+
+
+# ---------------------------------------------------------------------------
+# Step 3: mechanical claim verification (source-bytes string match)
+# ---------------------------------------------------------------------------
+
+
+async def _mechanical_verify_claims(
+    session: AsyncSession,
+    claims: list[ClaimMap],
+    result_manifest: dict[str, Any] | None = None,
+) -> dict[int, str]:
+    """Verify each claim against the bytes of its cited snapshot AND/OR
+    against the analyst's result manifest.
+
+    For every claim that references a ``source_snapshot_id``:
+      1. Load the snapshot record.
+      2. Retrieve the snapshot bytes from the artifact store.
+      3. If the snapshot bytes can't be retrieved → mechanical failure.
+      4. If the claim's ``source_span_ref`` includes a ``quote`` field, the
+         quote string MUST appear (case-sensitive substring) in the snapshot
+         bytes. Otherwise → mechanical failure.
+
+    For every claim that references a ``result_object_ref`` AND when a
+    ``result_manifest`` was provided:
+      5. Parse the JSON. If malformed → mechanical failure.
+      6. If it has a ``path`` (dot-notation), traverse the manifest. A
+         path that doesn't resolve → mechanical failure.
+      7. If it has a ``value`` AND a ``path``, the value at ``path`` must
+         match (string equality, or numeric tolerance ≤ 1e-6).
+      8. If it has only a ``value`` (no path), the stringified manifest
+         must contain that value as a substring — i.e. *some* result
+         object reports it. Otherwise → mechanical failure.
+
+    Returns a ``{claim_id: failure_reason}`` map. Claims with neither a
+    snapshot reference nor a result-object reference are skipped here and
+    left to the LLM verifier.
+
+    Mechanical failures are hard fails: ``_apply_mechanical_failures``
+    overrides the LLM verdict for these claim IDs.
+    """
+    failures: dict[int, str] = {}
+    if not claims:
+        return failures
+
+    store = FilesystemArtifactStore(settings.artifact_store_path)
+    snapshot_cache: dict[int, SourceSnapshot | None] = {}
+    bytes_cache: dict[str, bytes | None] = {}
+
+    for claim in claims:
+        # ── Numeric / result-object check (independent of snapshot ref) ──
+        if claim.result_object_ref and result_manifest is not None:
+            ref_failure = _check_result_object_ref(claim, result_manifest)
+            if ref_failure:
+                failures[claim.id] = ref_failure
+                continue
+
+        if not claim.source_snapshot_id:
+            continue  # skip — no snapshot to verify against
+
+        if claim.source_snapshot_id not in snapshot_cache:
+            stmt = select(SourceSnapshot).where(SourceSnapshot.id == claim.source_snapshot_id)
+            snapshot_cache[claim.source_snapshot_id] = (
+                await session.execute(stmt)
+            ).scalar_one_or_none()
+        snapshot = snapshot_cache[claim.source_snapshot_id]
+        if snapshot is None:
+            failures[claim.id] = f"Cited snapshot {claim.source_snapshot_id} not found in database"
+            continue
+
+        if snapshot.snapshot_hash not in bytes_cache:
+            bytes_cache[snapshot.snapshot_hash] = await store.retrieve(snapshot.snapshot_hash)
+        body = bytes_cache[snapshot.snapshot_hash]
+        if body is None:
+            failures[claim.id] = (
+                f"Snapshot bytes unretrievable for hash "
+                f"{snapshot.snapshot_hash[:12]}... — claim cannot be mechanically "
+                f"verified."
+            )
+            continue
+
+        # Optional quote check: if source_span_ref carries a `quote`, it must
+        # appear verbatim in the snapshot bytes.
+        if claim.source_span_ref:
+            try:
+                span = json.loads(claim.source_span_ref)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                failures[claim.id] = "source_span_ref is not valid JSON"
+                continue
+
+            quote = (span.get("quote") if isinstance(span, dict) else None) or ""
+            quote = quote.strip()
+            if quote:
+                # Decode permissively — the snapshot may be UTF-8 or a CSV
+                # generated locally; either way the quote should appear as
+                # literal characters.
+                text = body.decode("utf-8", errors="replace")
+                if quote not in text:
+                    excerpt = quote[:80] + ("..." if len(quote) > 80 else "")
+                    failures[claim.id] = (
+                        f"Quote {excerpt!r} not found in cited snapshot "
+                        f"(hash={snapshot.snapshot_hash[:12]}...). The claim "
+                        f"either misquotes the source or cites the wrong "
+                        f"snapshot."
+                    )
+                    continue
+
+    return failures
+
+
+def _apply_mechanical_failures(
+    verification: dict,
+    claims: list[ClaimMap],
+    mechanical_failures: dict[int, str],
+) -> dict:
+    """Override LLM verdicts for claims that failed mechanical verification.
+
+    For each claim ID in ``mechanical_failures``:
+      - Find the matching entry in ``verification["claim_verifications"]``
+        (by ``claim_text``). If absent, append a synthetic entry.
+      - Set ``overall = "fail"`` and ``evidence_link.status = "missing"``
+        with the mechanical failure reason as the note.
+      - Add the failure to ``summary.critical_violations``.
+      - Recompute summary counts and force ``recommendation = "reject"``.
+    """
+    if not mechanical_failures:
+        return verification
+
+    claim_by_id = {c.id: c for c in claims}
+
+    # Build a text → entry map for the LLM-produced list so we can update
+    # in place, and a separate list for synthetic entries we have to add.
+    claim_verifications = list(verification.get("claim_verifications", []))
+    text_to_entry: dict[str, dict] = {}
+    for entry in claim_verifications:
+        text = entry.get("claim_text", "")
+        text_to_entry[text] = entry
+
+    for claim_id, reason in mechanical_failures.items():
+        claim = claim_by_id.get(claim_id)
+        if claim is None:
+            continue
+
+        entry = text_to_entry.get(claim.claim_text)
+        if entry is None:
+            entry = {
+                "claim_text": claim.claim_text,
+                "evidence_link": {"status": "missing", "note": reason},
+                "citation_accuracy": {
+                    "status": "unsupported",
+                    "note": "Mechanical verification failed — see evidence_link.",
+                },
+                "causal_language": {"status": "not_applicable", "note": ""},
+                "tier_compliance": {"status": "not_applicable", "note": ""},
+                "scope_accuracy": {"status": "not_applicable", "note": ""},
+                "overall": "fail",
+            }
+            claim_verifications.append(entry)
+        else:
+            entry["overall"] = "fail"
+            entry["evidence_link"] = {
+                "status": "missing",
+                "note": (
+                    f"Mechanical verification failed: {reason} "
+                    f"(LLM said: {entry.get('evidence_link', {}).get('note', '—')})"
+                ),
+            }
+
+    # Recompute summary counts.
+    passed = sum(1 for v in claim_verifications if v.get("overall") == "pass")
+    failed = sum(1 for v in claim_verifications if v.get("overall") == "fail")
+    warnings = sum(1 for v in claim_verifications if v.get("overall") == "warning")
+
+    summary = dict(verification.get("summary", {}))
+    summary["total_claims"] = len(claim_verifications)
+    summary["passed"] = passed
+    summary["failed"] = failed
+    summary["warnings"] = warnings
+
+    critical = list(summary.get("critical_violations", []))
+    for reason in mechanical_failures.values():
+        critical.append(f"Mechanical verification: {reason}")
+    summary["critical_violations"] = critical
+
+    # Any mechanical failure forces reject — these are non-negotiable.
+    summary["recommendation"] = "reject"
+
+    return {
+        "claim_verifications": claim_verifications,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Numeric claim verification (result_object_ref → result_manifest)
+# ---------------------------------------------------------------------------
+
+# Tolerance for numeric equality. Floats stored differently in JSON vs the
+# manifest may differ in their trailing decimals, so 1e-6 absolute is the
+# practical bound that catches "the manifest says 0.42, the claim says 0.43"
+# without flagging "the manifest says 0.5000001, the claim says 0.5".
+_NUMERIC_ABS_TOLERANCE = 1e-6
+
+
+def _check_result_object_ref(claim: ClaimMap, result_manifest: dict[str, Any]) -> str | None:
+    """Validate a single claim's ``result_object_ref`` against the manifest.
+
+    Accepted ref shapes (any one is sufficient; missing fields are skipped):
+      - ``{"path": "regression.beta_1.estimate", "value": 0.42}``
+            Traverse manifest by the dotted path; the leaf must equal value.
+      - ``{"path": "..."}`` (no value)
+            Path must resolve to *something*. Used when the value is a
+            non-scalar object the LLM is allowed to summarise.
+      - ``{"value": 0.42}`` (no path)
+            The stringified manifest must contain ``"0.42"`` somewhere.
+            Catches obviously-fabricated numbers but doesn't pin them.
+
+    Returns ``None`` on success, or a human-readable failure reason on fail.
+    """
+    raw = claim.result_object_ref
+    if not raw:
+        return None
+
+    try:
+        ref = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return "result_object_ref is not valid JSON"
+
+    if not isinstance(ref, dict):
+        return "result_object_ref must be a JSON object (got non-dict)"
+
+    path = ref.get("path")
+    expected_value = ref.get("value")
+
+    # Manifest may be wrapped as {"result_objects": {...}} or be the bare
+    # results dict — accept either shape.
+    root = result_manifest.get("result_objects", result_manifest)
+
+    # Case 1: ref has a path.
+    if isinstance(path, str) and path:
+        leaf, found = _traverse_path(root, path)
+        if not found:
+            return (
+                f"result_object_ref path {path!r} does not resolve in the "
+                f"analyst's result manifest. The cited result object does "
+                f"not exist."
+            )
+        if expected_value is not None and not _values_match(leaf, expected_value):
+            return (
+                f"result_object_ref value mismatch at {path!r}: manifest "
+                f"reports {leaf!r}, claim asserts {expected_value!r}."
+            )
+        return None
+
+    # Case 2: ref has only a value.
+    if expected_value is not None:
+        haystack = json.dumps(result_manifest, default=str)
+        if str(expected_value) not in haystack:
+            return (
+                f"result_object_ref value {expected_value!r} not found in the "
+                f"analyst's result manifest. The cited number does not appear "
+                f"in any result object."
+            )
+        return None
+
+    # Ref has neither path nor value — the LLM still inspects, but mechanically
+    # we have nothing to verify. Pass-through.
+    return None
+
+
+def _traverse_path(root: Any, dotted_path: str) -> tuple[Any, bool]:
+    """Walk ``dotted_path`` (e.g. ``"a.b.0.c"``) into a nested dict / list.
+
+    Returns ``(leaf_value, True)`` on success; ``(None, False)`` if any step
+    is missing. Numeric tokens index into lists; everything else is treated
+    as a dict key.
+    """
+    cur = root
+    for token in dotted_path.split("."):
+        if isinstance(cur, dict):
+            if token not in cur:
+                return (None, False)
+            cur = cur[token]
+        elif isinstance(cur, list):
+            try:
+                idx = int(token)
+            except ValueError:
+                return (None, False)
+            if idx < 0 or idx >= len(cur):
+                return (None, False)
+            cur = cur[idx]
+        else:
+            return (None, False)
+    return (cur, True)
+
+
+def _values_match(manifest_value: Any, expected: Any) -> bool:
+    """Equality with numeric tolerance for floats.
+
+    Strings and bools fall back to ``==``. Numbers are compared with an
+    absolute tolerance of ``_NUMERIC_ABS_TOLERANCE``. Mixed-type comparisons
+    (``"0.5"`` vs ``0.5``) try numeric coercion first.
+    """
+    if isinstance(manifest_value, bool) or isinstance(expected, bool):
+        return manifest_value == expected
+    if isinstance(manifest_value, int | float) and isinstance(expected, int | float):
+        return abs(float(manifest_value) - float(expected)) <= _NUMERIC_ABS_TOLERANCE
+    # Try numeric coercion if one side is a stringified number.
+    try:
+        return abs(float(manifest_value) - float(expected)) <= _NUMERIC_ABS_TOLERANCE
+    except (TypeError, ValueError):
+        return manifest_value == expected

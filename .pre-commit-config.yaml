@@ -1,0 +1,78 @@
+# Pre-commit hooks for the autonomous research infrastructure.
+#
+# Install once per clone:
+#     pip install pre-commit && pre-commit install
+#
+# Run on demand:
+#     pre-commit run --all-files
+#
+# CI runs the same checks; local hooks just catch issues earlier.
+
+repos:
+  # ── Universal hygiene ─────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^.*\.(md|svg)$
+      - id: end-of-file-fixer
+        exclude: ^.*\.(svg|ico|png|jpg|jpeg|gif|webp)$
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-toml
+      - id: check-json
+        exclude: ^frontend/(\.next|node_modules)/
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # ── Backend (Python) ──────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (backend)
+        files: ^backend/.*\.py$
+        args: [--fix]
+      - id: ruff-format
+        name: ruff format (backend)
+        files: ^backend/.*\.py$
+
+  # ── Frontend (TypeScript / TSX) ───────────────────────────────────
+  - repo: local
+    hooks:
+      - id: tsc
+        name: tsc --noEmit (frontend)
+        entry: bash -c 'cd frontend && npx tsc --noEmit'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: eslint
+        name: eslint (frontend)
+        entry: bash -c 'cd frontend && npx eslint --max-warnings=0'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+
+  # ── Optional: tests on commit (off by default; enable per-developer) ─
+  # Uncomment if you want pytest/vitest to run on every commit. Most
+  # developers prefer a faster commit cycle and rely on CI for tests.
+  #
+  # - repo: local
+  #   hooks:
+  #     - id: pytest
+  #       name: pytest (backend)
+  #       entry: bash -c 'cd backend && pytest -q'
+  #       language: system
+  #       files: ^backend/.*\.py$
+  #       pass_filenames: false
+  #     - id: vitest
+  #       name: vitest (frontend)
+  #       entry: bash -c 'cd frontend && npm test -- --run'
+  #       language: system
+  #       files: ^frontend/.*\.(ts|tsx)$
+  #       pass_filenames: false

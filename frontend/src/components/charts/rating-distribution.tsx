@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import {
   BarChart,
   Bar,
@@ -20,11 +20,11 @@ interface RatingDistributionProps {
 }
 
 export const RatingDistribution = memo(function RatingDistribution({ data, title }: RatingDistributionProps) {
-  const chartData = data.map((bucket) => ({
+  const chartData = useMemo(() => data.map((bucket) => ({
     range: `${bucket.bucket_start.toFixed(0)}`,
     "AI Papers": bucket.count_ai,
     Benchmark: bucket.count_benchmark,
-  }));
+  })), [data]);
 
   return (
     <Card>
@@ -35,10 +35,10 @@ export const RatingDistribution = memo(function RatingDistribution({ data, title
         <div role="img" aria-label={`Bar chart: ${title}. ${chartData.length} rating buckets comparing AI-generated papers against benchmarks.`}>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted-foreground) / 0.2)" />
               <XAxis dataKey="range" fontSize={12} />
               <YAxis />
-              <Tooltip />
+              <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: "0.5rem", color: "hsl(var(--popover-foreground))", fontSize: "0.75rem" }} />
               <Legend />
               <Bar
                 dataKey="AI Papers"

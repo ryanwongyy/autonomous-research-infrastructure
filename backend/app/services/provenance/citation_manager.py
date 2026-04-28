@@ -66,9 +66,7 @@ def create_csl_entry(
     return entry
 
 
-def generate_bibliography(
-    citations: list[dict], style: str = "apa"
-) -> list[str]:
+def generate_bibliography(citations: list[dict], style: str = "apa") -> list[str]:
     """Generate formatted bibliography strings from CSL-JSON entries.
 
     Basic implementation covering APA and Chicago styles.
@@ -132,6 +130,7 @@ def export_bibtex(citations: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _map_source_type_to_csl(source_type: str) -> str:
     """Map the project's source_type strings to CSL-JSON types."""
@@ -199,7 +198,7 @@ def _format_chicago(cit: dict) -> str:
     year = _extract_year(cit) or "n.d."
     title = cit.get("title", "Untitled")
     url_part = f" {cit['URL']}." if "URL" in cit else ""
-    return f"{authors}. {year}. \"{title}.\"{url_part}"
+    return f'{authors}. {year}. "{title}."{url_part}'
 
 
 def _format_generic(cit: dict) -> str:

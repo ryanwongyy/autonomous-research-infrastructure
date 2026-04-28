@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,51 +68,52 @@ async def verify_paper_claims(session: AsyncSession, paper_id: str) -> dict:
         has_source = claim.source_card_id is not None
         has_result = claim.result_object_ref is not None
         if not has_source and not has_result:
-            unlinked_claims.append(
-                f"claim_id={claim.id}: {claim.claim_text[:80]}"
-            )
+            unlinked_claims.append(f"claim_id={claim.id}: {claim.claim_text[:80]}")
             continue
 
         # --- Source-card-level checks ---
         if has_source:
             source_card = await _get_source_card(session, claim.source_card_id)
             if source_card is None:
-                tier_violations.append({
-                    "claim_id": claim.id,
-                    "claim_type": claim.claim_type,
-                    "source_card_id": claim.source_card_id,
-                    "violation": "Source card not found in database.",
-                })
+                tier_violations.append(
+                    {
+                        "claim_id": claim.id,
+                        "claim_type": claim.claim_type,
+                        "source_card_id": claim.source_card_id,
+                        "violation": "Source card not found in database.",
+                    }
+                )
                 continue
 
             # Tier C anchoring central claims
-            if (
-                source_card.tier.upper() == "C"
-                and claim.claim_type.lower() in CENTRAL_CLAIM_TYPES
-            ):
-                tier_violations.append({
-                    "claim_id": claim.id,
-                    "claim_type": claim.claim_type,
-                    "source_card_id": claim.source_card_id,
-                    "source_tier": "C",
-                    "violation": (
-                        f"Tier C source '{source_card.name}' anchoring "
-                        f"central claim type '{claim.claim_type}'."
-                    ),
-                })
+            if source_card.tier.upper() == "C" and claim.claim_type.lower() in CENTRAL_CLAIM_TYPES:
+                tier_violations.append(
+                    {
+                        "claim_id": claim.id,
+                        "claim_type": claim.claim_type,
+                        "source_card_id": claim.source_card_id,
+                        "source_tier": "C",
+                        "violation": (
+                            f"Tier C source '{source_card.name}' anchoring "
+                            f"central claim type '{claim.claim_type}'."
+                        ),
+                    }
+                )
 
             # Validate claim type against source permissions
             validation = await validate_claim_against_source(
                 source_card, claim.claim_text, claim.claim_type
             )
             if not validation["valid"]:
-                tier_violations.append({
-                    "claim_id": claim.id,
-                    "claim_type": claim.claim_type,
-                    "source_card_id": claim.source_card_id,
-                    "source_tier": source_card.tier,
-                    "violation": validation["reason"],
-                })
+                tier_violations.append(
+                    {
+                        "claim_id": claim.id,
+                        "claim_type": claim.claim_type,
+                        "source_card_id": claim.source_card_id,
+                        "source_tier": source_card.tier,
+                        "violation": validation["reason"],
+                    }
+                )
 
             # Check linked snapshot freshness if a snapshot is referenced
             if claim.source_snapshot_id is not None:
@@ -120,13 +121,15 @@ async def verify_paper_claims(session: AsyncSession, paper_id: str) -> dict:
                 if snapshot is not None:
                     staleness = _check_snapshot_staleness(snapshot)
                     if not staleness["fresh"]:
-                        stale_sources.append({
-                            "claim_id": claim.id,
-                            "source_card_id": claim.source_card_id,
-                            "snapshot_id": snapshot.id,
-                            "fetched_at": str(snapshot.fetched_at),
-                            "days_stale": staleness["days_stale"],
-                        })
+                        stale_sources.append(
+                            {
+                                "claim_id": claim.id,
+                                "source_card_id": claim.source_card_id,
+                                "snapshot_id": snapshot.id,
+                                "fetched_at": str(snapshot.fetched_at),
+                                "days_stale": staleness["days_stale"],
+                            }
+                        )
 
     coverage_ratio = verified / total_claims if total_claims > 0 else 0.0
 
@@ -175,9 +178,7 @@ async def verify_single_claim(session: AsyncSession, claim_id: int) -> dict:
     if has_source:
         source_card = await _get_source_card(session, claim.source_card_id)
         if source_card is None:
-            issues.append(
-                f"Source card '{claim.source_card_id}' not found in database."
-            )
+            issues.append(f"Source card '{claim.source_card_id}' not found in database.")
         else:
             source_validation = await validate_claim_against_source(
                 source_card, claim.claim_text, claim.claim_type
@@ -189,9 +190,7 @@ async def verify_single_claim(session: AsyncSession, claim_id: int) -> dict:
             if claim.source_snapshot_id is not None:
                 snapshot = await _get_snapshot(session, claim.source_snapshot_id)
                 if snapshot is None:
-                    issues.append(
-                        f"Referenced snapshot {claim.source_snapshot_id} not found."
-                    )
+                    issues.append(f"Referenced snapshot {claim.source_snapshot_id} not found.")
                 else:
                     snapshot_freshness = _check_snapshot_staleness(snapshot)
                     if not snapshot_freshness["fresh"]:
@@ -221,18 +220,15 @@ async def verify_single_claim(session: AsyncSession, claim_id: int) -> dict:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-async def _get_source_card(
-    session: AsyncSession, source_card_id: str
-) -> SourceCard | None:
+
+async def _get_source_card(session: AsyncSession, source_card_id: str) -> SourceCard | None:
     """Fetch a source card by ID."""
     stmt = select(SourceCard).where(SourceCard.id == source_card_id)
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
 
 
-async def _get_snapshot(
-    session: AsyncSession, snapshot_id: int
-) -> SourceSnapshot | None:
+async def _get_snapshot(session: AsyncSession, snapshot_id: int) -> SourceSnapshot | None:
     """Fetch a source snapshot by ID."""
     stmt = select(SourceSnapshot).where(SourceSnapshot.id == snapshot_id)
     result = await session.execute(stmt)
@@ -241,10 +237,10 @@ async def _get_snapshot(
 
 def _check_snapshot_staleness(snapshot: SourceSnapshot) -> dict:
     """Check if a snapshot is stale based on its fetch date."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     fetched = snapshot.fetched_at
     if fetched.tzinfo is None:
-        fetched = fetched.replace(tzinfo=timezone.utc)
+        fetched = fetched.replace(tzinfo=UTC)
 
     delta = now - fetched
     days_stale = delta.days

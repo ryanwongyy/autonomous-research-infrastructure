@@ -10,14 +10,14 @@ interface FunnelChartProps {
 }
 
 const stageColors: Record<string, string> = {
-  scouting: "bg-violet-500",
-  design: "bg-blue-500",
-  data_collection: "bg-cyan-500",
-  analysis: "bg-teal-500",
-  drafting: "bg-green-500",
-  verification: "bg-yellow-500",
-  packaging: "bg-orange-500",
-  submission_ready: "bg-emerald-600",
+  scouting: "bg-violet-500 dark:bg-violet-400",
+  design: "bg-blue-500 dark:bg-blue-400",
+  data_collection: "bg-cyan-500 dark:bg-cyan-400",
+  analysis: "bg-teal-500 dark:bg-teal-400",
+  drafting: "bg-green-500 dark:bg-green-400",
+  verification: "bg-yellow-500 dark:bg-yellow-400",
+  packaging: "bg-orange-500 dark:bg-orange-400",
+  submission_ready: "bg-emerald-600 dark:bg-emerald-400",
 };
 
 function stageLabel(key: string): string {
@@ -39,7 +39,7 @@ export const FunnelChart = memo(function FunnelChart({ stages, killed, className
         const color = stageColors[stage] ?? "bg-gray-400";
         return (
           <div key={stage} className="flex items-center gap-3">
-            <span className="w-36 shrink-0 text-right text-xs text-muted-foreground">
+            <span className="w-20 sm:w-36 shrink-0 text-right text-xs text-muted-foreground truncate">
               {stageLabel(stage)}
             </span>
             <div className="flex-1 h-6 bg-muted rounded overflow-hidden">
@@ -56,12 +56,12 @@ export const FunnelChart = memo(function FunnelChart({ stages, killed, className
       })}
       {/* Killed row */}
       <div className="flex items-center gap-3">
-        <span className="w-36 shrink-0 text-right text-xs text-muted-foreground">
+        <span className="w-20 sm:w-36 shrink-0 text-right text-xs text-muted-foreground">
           Killed
         </span>
         <div className="flex-1 h-6 bg-muted rounded overflow-hidden">
           <div
-            className="h-full rounded bg-red-500 transition-all"
+            className="h-full rounded bg-red-500 dark:bg-red-400 transition-all"
             style={{ width: `${Math.max((killed / maxValue) * 100, 2)}%` }}
           />
         </div>
