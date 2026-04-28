@@ -30,6 +30,13 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "httpx>=0.28.0",
+    "boto3>=1.35.0",
+    "moto[s3]>=5.0.0",
+]
+# `cloud` is the runtime extra for S3-compatible artefact storage.
+# Install with `pip install -e .[cloud]` only if ARTIFACT_STORE_BACKEND=s3.
+cloud = [
+    "boto3>=1.35.0",
 ]
 
 [tool.pytest.ini_options]

@@ -40,10 +40,33 @@ class Settings(BaseSettings):
     papers_dir: str = str(Path(__file__).parent.parent / "papers")
 
     # Artifact storage
+    #
+    # Backend selection. "filesystem" (default) writes to local disk at
+    # `artifact_store_path` — fine for development and tests, but ephemeral
+    # on Render-style hosts (the disk is wiped on every redeploy). For any
+    # public release, use "s3" with the s3_* settings below.
+    artifact_store_backend: str = "filesystem"
     artifact_store_path: str = str(Path(__file__).parent.parent / "artifacts")
 
+    # S3-compatible object store (works for AWS S3, Cloudflare R2,
+    # Backblaze B2, Supabase Storage, MinIO, etc.). Only consulted when
+    # artifact_store_backend == "s3".
+    #
+    # For R2: set s3_endpoint_url to https://<account>.r2.cloudflarestorage.com
+    # For Supabase: https://<project>.supabase.co/storage/v1/s3
+    # For B2: https://s3.<region>.backblazeb2.com
+    # For AWS S3: leave s3_endpoint_url blank.
+    s3_bucket: str = ""
+    s3_endpoint_url: str = ""
+    s3_region: str = "us-east-1"
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_artifact_prefix: str = "artifacts"  # key prefix; e.g. "artifacts/aa/bb/<hash>"
+
     # Lock enforcement
-    lock_enforcement: str = "hard"  # "hard" = halt on violation, "soft" = log and continue
+    lock_enforcement: str = (
+        "hard"  # "hard" = halt on violation, "soft" = log and continue
+    )
 
     # Source freshness
     source_stale_days: int = 90  # source considered stale after this many days
