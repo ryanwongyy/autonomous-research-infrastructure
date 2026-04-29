@@ -38,22 +38,22 @@ from app.services.paper_generation.boundary_enforcer import (
     PipelineViolationError,
     verify_lock_integrity,
 )
-from app.services.paper_generation.roles.scout import generate_ideas, screen_idea
-from app.services.paper_generation.roles.designer import (
-    create_research_design,
-    lock_design,
+from app.services.paper_generation.roles.analyst import (
+    execute_analysis,
+    generate_analysis_code,
 )
 from app.services.paper_generation.roles.data_steward import (
     build_source_manifest,
     fetch_and_snapshot,
 )
-from app.services.paper_generation.roles.analyst import (
-    generate_analysis_code,
-    execute_analysis,
+from app.services.paper_generation.roles.designer import (
+    create_research_design,
+    lock_design,
 )
 from app.services.paper_generation.roles.drafter import compose_manuscript
-from app.services.paper_generation.roles.verifier import verify_manuscript
 from app.services.paper_generation.roles.packager import build_package
+from app.services.paper_generation.roles.scout import generate_ideas, screen_idea
+from app.services.paper_generation.roles.verifier import verify_manuscript
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ async def run_full_pipeline(
 
     # Resolve provider once for all roles
     if provider is None:
-        provider, model = await get_generation_provider()
+        provider, _model = await get_generation_provider()
 
     # Generate paper ID if not provided
     if not paper_id:
@@ -231,9 +231,7 @@ async def run_full_pipeline(
         report["stages"]["verifier"] = stage_report
 
         verification_report = stage_report.get("verification", {})
-        recommendation = verification_report.get("summary", {}).get(
-            "recommendation", "revise"
-        )
+        recommendation = verification_report.get("summary", {}).get("recommendation", "revise")
 
         # If verifier recommends rejection, kill the paper
         if recommendation == "reject":
@@ -569,18 +567,14 @@ async def _stage_data_steward(
     # so the pipeline can still produce real data rather than dying here.
     if not valid_sources:
         fallback_ids = [
-            sid
-            for sid in ("federal_register", "regulations_gov")
-            if sid in registered_ids
+            sid for sid in ("federal_register", "regulations_gov") if sid in registered_ids
         ]
         if fallback_ids:
             logger.warning(
                 "Data Steward got zero valid sources from LLM; falling back to %s",
                 fallback_ids,
             )
-            valid_sources = [
-                {"source_card_id": sid, "fetch_params": {}} for sid in fallback_ids
-            ]
+            valid_sources = [{"source_card_id": sid, "fetch_params": {}} for sid in fallback_ids]
 
     snapshots_created = 0
     fetch_errors: list[str] = []
@@ -612,9 +606,7 @@ async def _stage_data_steward(
 
     # Build a useful reason string so error_message isn't "(no error message)"
     if fetch_errors:
-        reason = f"All {len(fetch_errors)} source fetches failed: " + "; ".join(
-            fetch_errors[:3]
-        )
+        reason = f"All {len(fetch_errors)} source fetches failed: " + "; ".join(fetch_errors[:3])
     elif dropped_ids:
         reason = (
             f"LLM picked {len(dropped_ids)} unregistered source IDs and the "
@@ -670,9 +662,7 @@ async def _stage_analyst(
     )
 
     return {
-        "status": "completed"
-        if exec_result.get("success")
-        else "completed_with_errors",
+        "status": "completed" if exec_result.get("success") else "completed_with_errors",
         "code_hash": code_result.get("code_hash", ""),
         "code_content": code_content,
         "result_manifest": exec_result,
@@ -726,9 +716,9 @@ async def _stage_collegial_review(
     provider: LLMProvider,
 ) -> dict[str, Any]:
     """Collegial review stage: constructive multi-turn feedback from colleagues."""
-    from app.services.collegial.review_loop import run_full_collegial_review
-    from app.models.lock_artifact import LockArtifact
     from app.models.claim_map import ClaimMap
+    from app.models.lock_artifact import LockArtifact
+    from app.services.collegial.review_loop import run_full_collegial_review
 
     # Load lock YAML for context
     lock_result = await session.execute(
@@ -743,9 +733,7 @@ async def _stage_collegial_review(
     lock_yaml = lock.lock_yaml if lock else ""
 
     # Load claims
-    claims_result = await session.execute(
-        select(ClaimMap).where(ClaimMap.paper_id == paper.id)
-    )
+    claims_result = await session.execute(select(ClaimMap).where(ClaimMap.paper_id == paper.id))
     claims = [
         {"claim_text": c.claim_text, "claim_type": c.claim_type}
         for c in claims_result.scalars().all()
@@ -883,9 +871,7 @@ async def _run_stage(
         raise  # Let boundary violations propagate
     except Exception as e:
         tb = traceback.format_exc()
-        logger.error(
-            "[%s] Stage '%s' failed: %s", paper.id, stage_name, e, exc_info=True
-        )
+        logger.error("[%s] Stage '%s' failed: %s", paper.id, stage_name, e, exc_info=True)
         # Compose a rich error string so even bare exceptions surface
         # something useful. ``error_class`` and ``error_traceback`` are
         # captured separately for structured access.
