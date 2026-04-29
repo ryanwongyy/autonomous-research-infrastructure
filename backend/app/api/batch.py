@@ -119,6 +119,7 @@ async def batch_generate(body: GenerateRequest, request: Request):
                 )
             final_status = report.get("final_status", "unknown")
             stage_errors = _extract_stage_errors(report)
+            stage_details = _extract_stage_details(report)
             entry["generation"] = {
                 "status": final_status,
                 "duration_sec": report.get("total_duration_sec", 0),
@@ -127,6 +128,10 @@ async def batch_generate(body: GenerateRequest, request: Request):
                 # values look identical to one another in the response payload.
                 "error_message": _primary_error_message(stage_errors, final_status),
                 "stage_errors": stage_errors,
+                # Structured side-data from failed stages (e.g. Scout's
+                # per-idea screening scores). Empty when no stage attached
+                # any details beyond a simple error string.
+                "stage_details": stage_details,
             }
             if final_status == "completed":
                 generated += 1
@@ -197,6 +202,37 @@ def _extract_stage_errors(report: dict[str, Any]) -> dict[str, str]:
         if stage_report.get("status") == "failed":
             err = stage_report.get("error") or stage_report.get("reason") or "(no error message)"
             out[stage_name] = str(err)
+    return out
+
+
+# Stage-report keys that aren't useful in the API response — they're
+# infrastructure / timing fields, not diagnostic content.
+_STAGE_INFRA_KEYS = frozenset({"status", "stage_name", "duration_sec", "error", "reason"})
+
+
+def _extract_stage_details(report: dict[str, Any]) -> dict[str, Any]:
+    """Pull structured side-data from each FAILED stage's report.
+
+    Stages that fail in interesting ways attach extra fields to their
+    return dict beyond ``status`` / ``error``. Scout, for example, returns
+    ``screenings`` — a list of per-idea screening scores — when no idea
+    cleared the threshold. Surfacing those lets the operator see WHY each
+    candidate idea was rejected (composite < 4? novelty < 4? data < 4?)
+    without needing Render runtime logs.
+
+    The infra-only keys (status, stage_name, duration_sec, error, reason)
+    are filtered out — they're already in ``stage_errors`` or the entry's
+    top-level ``status`` / ``duration_sec`` fields.
+    """
+    out: dict[str, Any] = {}
+    for stage_name, stage_report in (report.get("stages") or {}).items():
+        if not isinstance(stage_report, dict):
+            continue
+        if stage_report.get("status") != "failed":
+            continue
+        details = {k: v for k, v in stage_report.items() if k not in _STAGE_INFRA_KEYS}
+        if details:
+            out[stage_name] = details
     return out
 
 

@@ -14,6 +14,7 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.paper_family import PaperFamily
 from app.models.source_card import SourceCard
 from app.services.llm.provider import LLMProvider
@@ -254,18 +255,37 @@ async def screen_idea(
 
     screening["weighted_composite"] = round(weighted, 3)
 
-    # Enforce minimum thresholds
+    # Enforce minimum thresholds — configurable via settings so deploys
+    # can tune for early-operation (looser) vs mature-operation (strict).
+    # Production blocked at zero papers for weeks under the original
+    # 4.0/4/4 thresholds because Claude self-rates fresh ideas
+    # conservatively (3-3.5 typical, never quite "highly novel"). Looser
+    # defaults allow the rest of the pipeline to be exercised; once it's
+    # producing real papers the thresholds can be ratcheted back up.
     novelty_score = _extract_score(scores, "novelty")
     data_score = _extract_score(scores, "data_adequacy")
-    passed = weighted >= 4.0 and novelty_score >= 4 and data_score >= 4
+    passed = (
+        weighted >= settings.scout_screen_min_composite
+        and novelty_score >= settings.scout_screen_min_novelty
+        and data_score >= settings.scout_screen_min_data_adequacy
+    )
+    # Also surface the threshold values in the screening output so the
+    # batch /generate response (and any downstream RSI tuning) can see
+    # exactly what was required.
     screening["pass"] = passed
+    screening["thresholds"] = {
+        "composite": settings.scout_screen_min_composite,
+        "novelty": settings.scout_screen_min_novelty,
+        "data_adequacy": settings.scout_screen_min_data_adequacy,
+    }
 
     logger.info(
-        "Scout screened idea (composite=%.2f, novelty=%d, data=%d, pass=%s)",
+        "Scout screened idea (composite=%.2f, novelty=%d, data=%d, pass=%s, thresholds=%s)",
         weighted,
         novelty_score,
         data_score,
         passed,
+        screening["thresholds"],
     )
     return screening
 
@@ -313,7 +333,12 @@ def _parse_json_object(response: str) -> dict:
         return json.loads(response[start:end])
     except (ValueError, json.JSONDecodeError):
         logger.warning("Failed to parse screening object from LLM response")
-        return {"scores": {}, "weighted_composite": 0.0, "pass": False, "summary": "Parse error"}
+        return {
+            "scores": {},
+            "weighted_composite": 0.0,
+            "pass": False,
+            "summary": "Parse error",
+        }
 
 
 def _normalise_idea_card(raw: dict, family_id: str) -> dict[str, Any]:

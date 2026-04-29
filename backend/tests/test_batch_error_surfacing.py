@@ -20,7 +20,11 @@ from typing import Any
 
 import pytest
 
-from app.api.batch import _extract_stage_errors, _primary_error_message
+from app.api.batch import (
+    _extract_stage_details,
+    _extract_stage_errors,
+    _primary_error_message,
+)
 
 # ── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -263,6 +267,128 @@ async def test_generate_endpoint_completed_paper_has_no_error_message(
     assert gen["status"] == "completed"
     assert gen["error_message"] is None
     assert gen["stage_errors"] == {}
+    assert gen["stage_details"] == {}
+
+
+# ── _extract_stage_details ───────────────────────────────────────────────────
+
+
+def test_extract_stage_details_picks_up_screening_results():
+    """When Scout fails with `No ideas passed screening`, it attaches a
+    `screenings` list to the stage report. The new helper surfaces that
+    list verbatim under the stage name so the operator can see scores."""
+    report = {
+        "stages": {
+            "scout": {
+                "status": "failed",
+                "reason": "No ideas passed screening",
+                "duration_sec": 122.2,
+                "screenings": [
+                    {"question": "Q1", "composite": 3.4, "passed": False},
+                    {"question": "Q2", "composite": 3.8, "passed": False},
+                    {"question": "Q3", "composite": 2.9, "passed": False},
+                ],
+            }
+        }
+    }
+    out = _extract_stage_details(report)
+    assert "scout" in out
+    assert len(out["scout"]["screenings"]) == 3
+    # Infra fields (status, duration_sec, reason) are stripped.
+    assert "status" not in out["scout"]
+    assert "duration_sec" not in out["scout"]
+    assert "reason" not in out["scout"]
+
+
+def test_extract_stage_details_only_failed_stages():
+    """A stage with status=completed contributes no details, even if it
+    has extra fields like manuscripts or output paths."""
+    report = {
+        "stages": {
+            "scout": {"status": "completed", "idea_card": {"q": "..."}},
+            "designer": {
+                "status": "failed",
+                "reason": "Bad protocol",
+                "attempted_fields": ["x", "y"],
+            },
+        }
+    }
+    out = _extract_stage_details(report)
+    assert set(out.keys()) == {"designer"}
+    assert out["designer"]["attempted_fields"] == ["x", "y"]
+
+
+def test_extract_stage_details_empty_when_only_simple_errors():
+    """A stage that failed with only a plain error (no extra fields)
+    contributes nothing to stage_details — its message is already in
+    stage_errors. Avoids duplicating the same error string in two places."""
+    report = {
+        "stages": {
+            "scout": {"status": "failed", "error": "AuthenticationError"},
+        }
+    }
+    out = _extract_stage_details(report)
+    assert out == {}
+
+
+def test_extract_stage_details_handles_empty_report():
+    assert _extract_stage_details({}) == {}
+    assert _extract_stage_details({"stages": None}) == {}
+
+
+@pytest.mark.asyncio
+async def test_generate_endpoint_surfaces_scout_screenings(
+    client, seeded_family, db_session, monkeypatch
+):
+    """End-to-end: a Scout failure with screenings results in the
+    response payload exposing those scores under stage_details.scout."""
+    await db_session.commit()
+
+    async def fake_run_full_pipeline(*, session, family_id, paper_id, **_):
+        return {
+            "paper_id": paper_id,
+            "family_id": family_id,
+            "stages": {
+                "scout": {
+                    "status": "failed",
+                    "reason": "No ideas passed screening",
+                    "duration_sec": 100.0,
+                    "screenings": [
+                        {
+                            "question": "Does AI procurement reduce cost?",
+                            "composite": 3.6,
+                            "passed": False,
+                        },
+                        {
+                            "question": "Can audits detect bias?",
+                            "composite": 4.1,
+                            "passed": False,  # composite OK but novelty failed
+                        },
+                    ],
+                }
+            },
+            "final_status": "killed_at_scout",
+            "total_duration_sec": 100.5,
+        }
+
+    monkeypatch.setattr(
+        "app.services.paper_generation.orchestrator.run_full_pipeline",
+        fake_run_full_pipeline,
+    )
+
+    resp = await client.post("/api/v1/batch/generate", json={"count": 1, "family_id": "F_BTC"})
+    body = resp.json()
+    gen = body["results"][0]["generation"]
+
+    assert gen["status"] == "killed_at_scout"
+    assert "scout" in gen["stage_details"]
+    screenings = gen["stage_details"]["scout"]["screenings"]
+    assert len(screenings) == 2
+    assert screenings[0]["composite"] == 3.6
+    assert screenings[1]["composite"] == 4.1
+    # Infra fields stripped from details.
+    assert "status" not in gen["stage_details"]["scout"]
+    assert "duration_sec" not in gen["stage_details"]["scout"]
 
 
 # Pyflakes: imported `Any` is exercised by type annotations in helpers above

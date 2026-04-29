@@ -52,6 +52,20 @@ class Settings(BaseSettings):
     # Manifest drift threshold (0.0-1.0): minimum coherence between design and downstream artifacts
     drift_threshold: float = 0.8
 
+    # ── Scout screening thresholds ──────────────────────────────────────
+    # Each idea is scored on a 0-5 scale across six dimensions; the Scout
+    # role accepts an idea only if (composite >= min_composite AND
+    # novelty >= min_novelty AND data_adequacy >= min_data_adequacy).
+    #
+    # The original code hardcoded 4.0 / 4 / 4 — strict enough that fresh
+    # Claude-generated ideas never pass (Claude rates its own ideas
+    # conservatively at 3-3.5 typical). Looser early-operation defaults
+    # let the rest of the pipeline run. Tighten when papers start
+    # consistently passing into review.
+    scout_screen_min_composite: float = 3.0
+    scout_screen_min_novelty: int = 3
+    scout_screen_min_data_adequacy: int = 3
+
     # ── LLM model IDs ──────────────────────────────────────────────────
     # Centralised so a deploy can flip to a new model id (e.g. when
     # Anthropic releases a new dated suffix) without code changes. Each
