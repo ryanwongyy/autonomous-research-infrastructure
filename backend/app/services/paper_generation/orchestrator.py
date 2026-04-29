@@ -866,7 +866,14 @@ async def _run_stage(
     paper: Paper,
     **kwargs,
 ) -> dict[str, Any]:
-    """Run a pipeline stage with timing and error handling."""
+    """Run a pipeline stage with timing and error handling.
+
+    On exception, captures error_class + truncated traceback alongside
+    the str(e). Without this, an exception with an empty str (e.g.
+    bare ``RuntimeError()``) shows up as ``(no error message)`` in the
+    cron payload — production run #25137481628 hit this exact pattern
+    at the Analyst stage.
+    """
     start = time.monotonic()
     logger.info("[%s] Starting stage: %s", paper.id, stage_name)
 
@@ -875,10 +882,21 @@ async def _run_stage(
     except PipelineViolationError:
         raise  # Let boundary violations propagate
     except Exception as e:
+        tb = traceback.format_exc()
         logger.error(
             "[%s] Stage '%s' failed: %s", paper.id, stage_name, e, exc_info=True
         )
-        result = {"status": "failed", "error": str(e)}
+        # Compose a rich error string so even bare exceptions surface
+        # something useful. ``error_class`` and ``error_traceback`` are
+        # captured separately for structured access.
+        err_class = type(e).__name__
+        err_msg = str(e) or "(empty exception message)"
+        result = {
+            "status": "failed",
+            "error": f"{err_class}: {err_msg}",
+            "error_class": err_class,
+            "error_traceback": tb,
+        }
 
     elapsed = time.monotonic() - start
     result["duration_sec"] = round(elapsed, 2)
