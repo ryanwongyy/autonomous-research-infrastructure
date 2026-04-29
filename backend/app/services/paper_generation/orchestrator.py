@@ -769,7 +769,11 @@ async def _ensure_paper(session: AsyncSession, paper_id: str, family_id: str) ->
 
 async def _reload_paper(session: AsyncSession, paper_id: str) -> Paper:
     """Reload a paper from the database to get current state."""
-    await session.expire_all()
+    # AsyncSession.expire_all() is SYNCHRONOUS — it returns None, not a
+    # coroutine. Awaiting it raises ``TypeError: object NoneType can't be
+    # used in 'await' expression``. This crashed every pipeline run that
+    # made it past Designer (run #25129536542 traceback pointed here).
+    session.expire_all()
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
     paper = result.scalar_one_or_none()
