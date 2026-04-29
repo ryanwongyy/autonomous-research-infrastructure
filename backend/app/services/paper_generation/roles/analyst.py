@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import async_session
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
 from app.models.source_snapshot import SourceSnapshot
@@ -83,40 +84,54 @@ No markdown, no commentary outside the JSON."""
 
 
 async def generate_analysis_code(
-    session: AsyncSession,
     paper_id: str,
     provider: LLMProvider | None = None,
+    session: AsyncSession | None = None,
 ) -> dict[str, Any]:
     """Generate analysis code based on locked design and source data.
 
-    1. Read lock artifact for method specification
-    2. Read source manifest for data schemas
-    3. Generate Python analysis script
-    4. Generate requirements.txt with pinned versions
-    5. Return code content, requirements, and expected outputs
+    Internally manages DB sessions in three phases (read → LLM → write)
+    so we never hold a connection across the long LLM call. Without
+    this split, asyncpg drops the connection mid-call and the final
+    commit fails (production run #25135681422 hit this at ~11 min).
+
+    The ``session`` parameter is kept for back-compat but ignored —
+    every DB phase opens its own short-lived ``async_session()``.
+
+    1. Read lock artifact + source schemas (short session)
+    2. Generate Python analysis script via LLM (no session held)
+    3. Persist funnel_stage update (short session)
+    4. Return code content, requirements, and expected outputs
     """
-    paper = await _load_paper(session, paper_id)
+    del session  # explicitly ignored; see docstring
 
-    # Load lock artifact
-    lock = await _load_active_lock(session, paper_id)
-    if lock is None:
-        raise ValueError(
-            f"No active lock artifact for paper '{paper_id}'. "
-            "Design must be locked before generating analysis code."
-        )
+    # ── Phase 1: reads (short-lived session) ─────────────────────────
+    async with async_session() as s:
+        paper = await _load_paper(s, paper_id)
+        lock = await _load_active_lock(s, paper_id)
+        if lock is None:
+            raise ValueError(
+                f"No active lock artifact for paper '{paper_id}'. "
+                "Design must be locked before generating analysis code."
+            )
+        source_schemas = await _build_source_schemas(s, paper_id)
+        # Copy values OUT of the session so we can use them after closing.
+        lock_yaml = lock.lock_yaml
+        protocol_type = lock.lock_protocol_type
+        del paper  # don't reuse a session-bound instance after close
 
-    # Load source snapshots for this paper's source cards
-    source_schemas = await _build_source_schemas(session, paper_id)
-
+    # ── Phase 2: LLM call (no session held) ──────────────────────────
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        from app.config import settings
+
+        model = settings.claude_opus_model
 
     prompt = ANALYSIS_USER_PROMPT.format(
         paper_id=paper_id,
-        lock_yaml=lock.lock_yaml,
-        protocol_type=lock.lock_protocol_type,
+        lock_yaml=lock_yaml,
+        protocol_type=protocol_type,
         source_schemas=source_schemas if source_schemas else "(no snapshots available)",
     )
 
@@ -132,17 +147,18 @@ async def generate_analysis_code(
     parsed = _parse_json_object(response)
     code_content = parsed.get("code", "")
     requirements = parsed.get(
-        "requirements", "numpy>=1.24.0\npandas>=2.0.0\nstatsmodels>=0.14.0\nscipy>=1.11.0\n"
+        "requirements",
+        "numpy>=1.24.0\npandas>=2.0.0\nstatsmodels>=0.14.0\nscipy>=1.11.0\n",
     )
     expected_outputs = parsed.get("expected_outputs", [])
-
-    # Hash the generated code for provenance
     code_hash = hash_content(code_content.encode("utf-8"))
 
-    # Update funnel stage
-    paper.funnel_stage = "analyzing"
-    session.add(paper)
-    await session.flush()
+    # ── Phase 3: write (short-lived session, fresh connection) ───────
+    async with async_session() as s:
+        paper = await _load_paper(s, paper_id)
+        paper.funnel_stage = "analyzing"
+        s.add(paper)
+        await s.commit()
 
     logger.info(
         "Analyst generated code for paper %s (hash=%s, %d expected outputs)",
@@ -160,15 +176,20 @@ async def generate_analysis_code(
 
 
 async def execute_analysis(
-    session: AsyncSession,
     paper_id: str,
     code_content: str,
     use_container: bool = False,
+    session: AsyncSession | None = None,
 ) -> dict[str, Any]:
     """Execute analysis code and extract result objects.
 
     For dev: uses subprocess with resource limits.
     For prod: would use Docker container (when available).
+
+    Internally manages DB sessions so we never hold a connection
+    across the subprocess call (which can take minutes).
+
+    The ``session`` parameter is kept for back-compat but ignored.
 
     Returns result_manifest with:
     - tables: list of generated table descriptions
@@ -177,8 +198,11 @@ async def execute_analysis(
     - execution_log: stdout/stderr
     - code_hash, output_hash
     """
+    del session  # explicitly ignored
+
     code_hash = hash_content(code_content.encode("utf-8"))
 
+    # ── Subprocess (no session held) ─────────────────────────────────
     if use_container:
         result = await _execute_in_container(code_content)
     else:
@@ -195,12 +219,13 @@ async def execute_analysis(
     output_data = json.dumps(result_manifest, sort_keys=True).encode("utf-8")
     output_hash = hash_content(output_data)
 
-    # Update funnel stage if execution succeeded
+    # ── Persist funnel stage if execution succeeded (fresh session) ──
     if exit_code == 0:
-        paper = await _load_paper(session, paper_id)
-        paper.funnel_stage = "analyzing"
-        session.add(paper)
-        await session.flush()
+        async with async_session() as s:
+            paper = await _load_paper(s, paper_id)
+            paper.funnel_stage = "analyzing"
+            s.add(paper)
+            await s.commit()
 
     execution_result = {
         "tables": result_manifest.get("tables", []),

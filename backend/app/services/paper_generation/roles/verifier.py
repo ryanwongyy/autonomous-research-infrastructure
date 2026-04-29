@@ -15,6 +15,7 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import async_session
 from app.models.claim_map import ClaimMap
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
@@ -95,52 +96,49 @@ No markdown, no commentary outside the JSON."""
 
 
 async def verify_manuscript(
-    session: AsyncSession,
     paper_id: str,
     result_manifest: dict[str, Any] | None = None,
     provider: LLMProvider | None = None,
+    session: AsyncSession | None = None,
 ) -> dict[str, Any]:
     """Full verification of a manuscript.
 
-    1. Load all claim_map entries
-    2. For each claim: verify against source span or result object
-    3. Check citation accuracy (does the cited source exist and say what's claimed?)
-    4. Check causal language against lock protocol permissions
-    5. Check Tier C sources aren't anchoring central claims
-    6. Return verification report with pass/fail per claim
+    Internally manages DB sessions in three phases (read → LLM → write)
+    so we never hold a connection across the LLM call.
+
+    The ``session`` parameter is kept for back-compat but ignored.
     """
-    paper = await _load_paper(session, paper_id)
+    del session  # explicitly ignored
 
-    # Load lock artifact
-    lock = await _load_active_lock(session, paper_id)
-    if lock is None:
-        raise ValueError(
-            f"No active lock for paper '{paper_id}'. Cannot verify without a locked design."
-        )
+    # ── Phase 1: reads (short-lived session) ─────────────────────────
+    async with async_session() as s:
+        await _load_paper(s, paper_id)  # validates paper exists
+        lock = await _load_active_lock(s, paper_id)
+        if lock is None:
+            raise ValueError(
+                f"No active lock for paper '{paper_id}'. Cannot verify without a locked design."
+            )
 
-    # Load all claim map entries
-    stmt = select(ClaimMap).where(ClaimMap.paper_id == paper_id)
-    result = await session.execute(stmt)
-    claims = result.scalars().all()
+        stmt = select(ClaimMap).where(ClaimMap.paper_id == paper_id)
+        result = await s.execute(stmt)
+        claims = list(result.scalars().all())
 
-    if not claims:
-        logger.warning("No claims found for paper %s -- nothing to verify", paper_id)
-        return {
-            "claim_verifications": [],
-            "summary": {
-                "total_claims": 0,
-                "passed": 0,
-                "failed": 0,
-                "warnings": 0,
-                "critical_violations": ["No claims found in manuscript"],
-                "recommendation": "revise",
-            },
-        }
+        if not claims:
+            logger.warning("No claims found for paper %s -- nothing to verify", paper_id)
+            return {
+                "claim_verifications": [],
+                "summary": {
+                    "total_claims": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "warnings": 0,
+                    "critical_violations": ["No claims found in manuscript"],
+                    "recommendation": "revise",
+                },
+            }
 
-    # Build claims YAML for the LLM
-    claims_data = []
-    for c in claims:
-        claims_data.append(
+        # Build claims YAML for the LLM (detach from session)
+        claims_data = [
             {
                 "claim_text": c.claim_text,
                 "claim_type": c.claim_type,
@@ -148,24 +146,28 @@ async def verify_manuscript(
                 "source_span_ref": c.source_span_ref,
                 "result_object_ref": c.result_object_ref,
             }
-        )
+            for c in claims
+        ]
+        # Capture claim IDs so the write-back phase can re-load them.
+        claim_ids = [c.id for c in claims]
+
+        source_tiers = await _build_source_tier_map(s)
+        protocol_type = lock.lock_protocol_type
+        inference_level = _determine_inference_level(protocol_type)
 
     claims_yaml = yaml.dump(claims_data, default_flow_style=False, sort_keys=False)
 
-    # Load source card tiers
-    source_tiers = await _build_source_tier_map(session)
-
-    # Determine inference level
-    inference_level = _determine_inference_level(lock.lock_protocol_type)
-
+    # ── Phase 2: LLM call (no session held) ──────────────────────────
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        from app.config import settings
+
+        model = settings.claude_opus_model
 
     prompt = VERIFY_USER_PROMPT.format(
         paper_id=paper_id,
-        protocol_type=lock.lock_protocol_type,
+        protocol_type=protocol_type,
         inference_level=inference_level,
         claims_yaml=claims_yaml,
         source_tiers=source_tiers,
@@ -187,17 +189,21 @@ async def verify_manuscript(
 
     verification = _parse_json_object(response)
 
-    # Update claim verification statuses in the database
+    # ── Phase 3: writes (short-lived session) ────────────────────────
     claim_results = verification.get("claim_verifications", [])
-    await _update_claim_statuses(session, paper_id, claims, claim_results)
-
-    # Update funnel stage
     summary = verification.get("summary", {})
     recommendation = summary.get("recommendation", "revise")
 
-    paper.funnel_stage = "reviewing"
-    session.add(paper)
-    await session.flush()
+    async with async_session() as s:
+        # Re-load claims by ID so they're attached to this fresh session.
+        reload_stmt = select(ClaimMap).where(ClaimMap.id.in_(claim_ids))
+        reloaded = (await s.execute(reload_stmt)).scalars().all()
+        await _update_claim_statuses(s, paper_id, reloaded, claim_results)
+
+        paper = await _load_paper(s, paper_id)
+        paper.funnel_stage = "reviewing"
+        s.add(paper)
+        await s.commit()
 
     logger.info(
         "Verifier checked paper %s: %d passed, %d failed, %d warnings (rec=%s)",

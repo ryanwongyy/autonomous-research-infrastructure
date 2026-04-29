@@ -589,12 +589,17 @@ async def _stage_analyst(
     *,
     provider: LLMProvider,
 ) -> dict[str, Any]:
-    """Analyst stage: generate code and run analysis."""
-    # Verify lock integrity before analysis
+    """Analyst stage: generate code and run analysis.
+
+    The role functions ``generate_analysis_code`` and ``execute_analysis``
+    each manage their own short-lived DB sessions so we don't hold a
+    connection across the long LLM call / subprocess execution.
+    """
+    # Verify lock integrity before analysis (reads only, fast)
     await verify_lock_integrity(session, paper)
 
+    # generate_analysis_code holds NO db session during the LLM call
     code_result = await generate_analysis_code(
-        session=session,
         paper_id=paper.id,
         provider=provider,
     )
@@ -603,8 +608,8 @@ async def _stage_analyst(
     if not code_content:
         return {"status": "failed", "reason": "No analysis code generated"}
 
+    # execute_analysis holds NO db session during subprocess execution
     exec_result = await execute_analysis(
-        session=session,
         paper_id=paper.id,
         code_content=code_content,
         use_container=False,
@@ -627,12 +632,15 @@ async def _stage_drafter(
     source_manifest: dict,
     provider: LLMProvider,
 ) -> dict[str, Any]:
-    """Drafter stage: compose manuscript."""
-    # Verify lock integrity before drafting
+    """Drafter stage: compose manuscript.
+
+    ``compose_manuscript`` manages its own short-lived sessions so the
+    long manuscript-generation LLM call doesn't sit on a held connection.
+    """
+    # Verify lock integrity before drafting (reads only, fast)
     await verify_lock_integrity(session, paper)
 
     manuscript_result = await compose_manuscript(
-        session=session,
         paper_id=paper.id,
         result_manifest=result_manifest,
         source_manifest=source_manifest,
@@ -735,7 +743,6 @@ async def _stage_verifier(
     await verify_lock_integrity(session, paper)
 
     verification = await verify_manuscript(
-        session=session,
         paper_id=paper.id,
         result_manifest=result_manifest,
         provider=provider,
