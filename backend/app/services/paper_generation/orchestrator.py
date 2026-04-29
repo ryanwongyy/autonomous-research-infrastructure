@@ -166,7 +166,9 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 4. ANALYST: generate and run analysis code
         # ---------------------------------------------------------------
-        stage_report = await _run_stage_with_session(
+        # Long-LLM stage — must NOT hold an outer session across the
+        # LLM call (see _run_stage_no_outer_session docstring).
+        stage_report = await _run_stage_no_outer_session(
             "analyst",
             _stage_analyst,
             paper_id,
@@ -183,7 +185,8 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 5. DRAFTER: compose manuscript
         # ---------------------------------------------------------------
-        stage_report = await _run_stage_with_session(
+        # Long-LLM stage — must NOT hold an outer session.
+        stage_report = await _run_stage_no_outer_session(
             "drafter",
             _stage_drafter,
             paper_id,
@@ -217,7 +220,8 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 6. VERIFIER: cross-check claims
         # ---------------------------------------------------------------
-        stage_report = await _run_stage_with_session(
+        # Long-LLM stage — must NOT hold an outer session.
+        stage_report = await _run_stage_no_outer_session(
             "verifier",
             _stage_verifier,
             paper_id,
@@ -296,6 +300,12 @@ async def _run_stage_with_session(
     ensures the connection is alive before use, so a connection that
     was dropped during the previous stage's LLM call gets replaced
     cleanly here rather than blowing up on the next ``commit()``.
+
+    Use for FAST stages (<2 min) where the session can safely be held
+    through the whole stage. For long-LLM stages (Analyst, Drafter,
+    Verifier), use ``_run_stage_no_outer_session`` instead — those
+    stages must NOT hold a session across the LLM call or the
+    connection dies and the final commit raises InterfaceError.
     """
     async with async_session() as s:
         paper = await _reload_paper(s, paper_id)
@@ -309,6 +319,38 @@ async def _run_stage_with_session(
             await s.rollback()
             raise
     return result
+
+
+async def _run_stage_no_outer_session(
+    stage_name: str,
+    stage_fn,
+    paper_id: str,
+    **stage_kwargs,
+) -> dict[str, Any]:
+    """Like ``_run_stage_with_session`` but does NOT hold a session
+    across the stage's call.
+
+    Required for long-LLM stages (Analyst, Drafter, Verifier) where
+    the LLM call can take 5+ min. Holding a session that long means
+    the underlying DB connection dies and even ``commit()`` raises
+    InterfaceError (production runs #25133985204, #25135681422,
+    #25136675659 all hit this exact symptom).
+
+    Pattern:
+      1. Open a short session JUST for paper reload, then close.
+         Connection returns to the pool.
+      2. Call the stage with ``session=None`` and the detached paper.
+      3. The stage manages its own DB lifecycle internally — its
+         role functions each open short-lived sessions for read /
+         LLM-call / write phases.
+    """
+    # Quick session for paper reload
+    async with async_session() as s:
+        paper = await _reload_paper(s, paper_id)
+    # Session closed; connection returned to the pool.
+
+    # Stage runs WITHOUT an outer session. It manages its own DB.
+    return await _run_stage(stage_name, stage_fn, None, paper, **stage_kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -592,7 +634,7 @@ async def _stage_data_steward(
 
 
 async def _stage_analyst(
-    session: AsyncSession,
+    session: AsyncSession | None,
     paper: Paper,
     *,
     provider: LLMProvider,
@@ -602,9 +644,13 @@ async def _stage_analyst(
     The role functions ``generate_analysis_code`` and ``execute_analysis``
     each manage their own short-lived DB sessions so we don't hold a
     connection across the long LLM call / subprocess execution.
+
+    Routed through ``_run_stage_no_outer_session`` so ``session=None``.
+    Open short sessions internally for any DB ops here.
     """
-    # Verify lock integrity before analysis (reads only, fast)
-    await verify_lock_integrity(session, paper)
+    # Verify lock integrity in a short session (reads only, fast)
+    async with async_session() as s:
+        await verify_lock_integrity(s, paper)
 
     # generate_analysis_code holds NO db session during the LLM call
     code_result = await generate_analysis_code(
@@ -635,7 +681,7 @@ async def _stage_analyst(
 
 
 async def _stage_drafter(
-    session: AsyncSession,
+    session: AsyncSession | None,
     paper: Paper,
     *,
     result_manifest: dict,
@@ -646,9 +692,12 @@ async def _stage_drafter(
 
     ``compose_manuscript`` manages its own short-lived sessions so the
     long manuscript-generation LLM call doesn't sit on a held connection.
+
+    Routed through ``_run_stage_no_outer_session`` so ``session=None``.
     """
-    # Verify lock integrity before drafting (reads only, fast)
-    await verify_lock_integrity(session, paper)
+    # Verify lock integrity in a short session
+    async with async_session() as s:
+        await verify_lock_integrity(s, paper)
 
     manuscript_result = await compose_manuscript(
         paper_id=paper.id,
@@ -744,15 +793,19 @@ async def _stage_collegial_review(
 
 
 async def _stage_verifier(
-    session: AsyncSession,
+    session: AsyncSession | None,
     paper: Paper,
     *,
     result_manifest: dict,
     provider: LLMProvider,
 ) -> dict[str, Any]:
-    """Verifier stage: cross-check claims."""
-    # Verify lock integrity before verification
-    await verify_lock_integrity(session, paper)
+    """Verifier stage: cross-check claims.
+
+    Routed through ``_run_stage_no_outer_session`` so ``session=None``.
+    """
+    # Verify lock integrity in a short session
+    async with async_session() as s:
+        await verify_lock_integrity(s, paper)
 
     verification = await verify_manuscript(
         paper_id=paper.id,
