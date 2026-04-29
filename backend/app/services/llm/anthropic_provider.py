@@ -46,9 +46,18 @@ class AnthropicProvider(LLMProvider):
         if system_msg:
             kwargs["system"] = system_msg
 
+        # Use streaming for long generations. The Anthropic SDK refuses
+        # non-streaming requests that it estimates may exceed 10 minutes
+        # (raises ValueError on Drafter's 32K-token manuscripts —
+        # production run #25139424603). Streaming has no such limit
+        # and accumulates the same final text, so we can use it
+        # unconditionally.
         async with asyncio.timeout(self.timeout_seconds):
-            response = await self.client.messages.create(**kwargs)
-        return response.content[0].text
+            chunks: list[str] = []
+            async with self.client.messages.stream(**kwargs) as stream:
+                async for text in stream.text_stream:
+                    chunks.append(text)
+            return "".join(chunks)
 
     @_llm_retry()
     async def complete_with_pdf(
@@ -91,6 +100,10 @@ class AnthropicProvider(LLMProvider):
         if system_msg:
             kwargs["system"] = system_msg
 
+        # Stream to avoid the SDK's >10-min non-streaming refusal.
         async with asyncio.timeout(self.timeout_seconds):
-            response = await self.client.messages.create(**kwargs)
-        return response.content[0].text
+            chunks: list[str] = []
+            async with self.client.messages.stream(**kwargs) as stream:
+                async for text in stream.text_stream:
+                    chunks.append(text)
+            return "".join(chunks)
