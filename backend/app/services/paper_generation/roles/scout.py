@@ -257,37 +257,56 @@ async def screen_idea(
 
     screening["weighted_composite"] = round(weighted, 3)
 
-    # Enforce minimum thresholds — configurable via settings so deploys
-    # can tune for early-operation (looser) vs mature-operation (strict).
-    # Production blocked at zero papers for weeks under the original
-    # 4.0/4/4 thresholds because Claude self-rates fresh ideas
-    # conservatively (3-3.5 typical, never quite "highly novel"). Looser
-    # defaults allow the rest of the pipeline to be exercised; once it's
-    # producing real papers the thresholds can be ratcheted back up.
+    # Enforce gate. Two operating modes, switchable via
+    # `settings.scout_screen_strict_per_dimension`:
+    #
+    #   strict=False (default, post-2026-04-29): the weighted composite
+    #     alone is the gate. The composite already includes novelty
+    #     (weight 0.20) and data_adequacy (weight 0.20); the legacy
+    #     extra `AND novelty >= X AND data_adequacy >= X` second filter
+    #     was provably blocking ideas the composite accepted (production
+    #     run #25110421840: ideas scoring 3.10 / 3.20 composite — well
+    #     above the 3.0 floor — still failed because Claude rated one
+    #     of those two dimensions at 2 / "below average").
+    #
+    #   strict=True (legacy): re-impose the per-dimension AND-gate with
+    #     thresholds from `scout_screen_min_novelty` and
+    #     `scout_screen_min_data_adequacy`. Useful once the system has
+    #     a track record of consistently producing >=3.5 ideas and the
+    #     operator wants to ratchet the bar up.
     novelty_score = _extract_score(scores, "novelty")
     data_score = _extract_score(scores, "data_adequacy")
-    passed = (
-        weighted >= settings.scout_screen_min_composite
-        and novelty_score >= settings.scout_screen_min_novelty
-        and data_score >= settings.scout_screen_min_data_adequacy
-    )
-    # Also surface the threshold values in the screening output so the
-    # batch /generate response (and any downstream RSI tuning) can see
-    # exactly what was required.
+    composite_pass = weighted >= settings.scout_screen_min_composite
+    if settings.scout_screen_strict_per_dimension:
+        passed = (
+            composite_pass
+            and novelty_score >= settings.scout_screen_min_novelty
+            and data_score >= settings.scout_screen_min_data_adequacy
+        )
+    else:
+        passed = composite_pass
+
+    # Surface the full scores dict (not just composite) so the batch
+    # response and any downstream RSI tuning can see WHICH dimensions
+    # were weak even when an idea passed. The scores dict shape:
+    #   {dim_name: {"score": int, "reason": str}, ...}
+    # is preserved verbatim from the LLM output for full diagnostic value.
     screening["pass"] = passed
     screening["thresholds"] = {
         "composite": settings.scout_screen_min_composite,
         "novelty": settings.scout_screen_min_novelty,
         "data_adequacy": settings.scout_screen_min_data_adequacy,
+        "strict_per_dimension": settings.scout_screen_strict_per_dimension,
     }
 
     logger.info(
         "Scout screened idea (composite=%.2f, novelty=%d, data=%d, pass=%s, "
-        "thresholds=%s)",
+        "strict=%s, thresholds=%s)",
         weighted,
         novelty_score,
         data_score,
         passed,
+        settings.scout_screen_strict_per_dimension,
         screening["thresholds"],
     )
     return screening
