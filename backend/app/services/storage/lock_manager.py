@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
 
 import yaml
 from sqlalchemy import select
@@ -13,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
-from app.utils import safe_json_loads
 from app.services.provenance.hasher import hash_content
+from app.utils import safe_json_loads, utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +188,10 @@ async def create_lock(
     # 5. Update paper-level lock fields.
     paper.lock_hash = lock_hash
     paper.lock_version = new_version
-    paper.lock_timestamp = datetime.now(timezone.utc)
+    # Note: papers.lock_timestamp is `TIMESTAMP WITHOUT TIME ZONE` on
+    # Postgres. Writing a tz-aware datetime via asyncpg raises a
+    # DataError. Use utcnow_naive() to match the column type.
+    paper.lock_timestamp = utcnow_naive()
     session.add(paper)
 
     await session.flush()
@@ -386,10 +388,17 @@ def extract_design_fields(lock_yaml_content: str) -> dict:
         return []
 
     return {
-        "research_questions": _as_list(data.get("research_questions", data.get("research_question", []))),
-        "data_sources": _as_list(data.get("data_sources", data.get("source_lineage", []))),
-        "expected_outputs": _as_list(data.get("expected_outputs", data.get("output_tables", []))),
-        "identification_strategy": data.get("identification_strategy") or data.get("estimand"),
+        "research_questions": _as_list(
+            data.get("research_questions", data.get("research_question", []))
+        ),
+        "data_sources": _as_list(
+            data.get("data_sources", data.get("source_lineage", []))
+        ),
+        "expected_outputs": _as_list(
+            data.get("expected_outputs", data.get("output_tables", []))
+        ),
+        "identification_strategy": data.get("identification_strategy")
+        or data.get("estimand"),
         "method": data.get("method") or data.get("synthesis_method"),
     }
 
@@ -397,6 +406,7 @@ def extract_design_fields(lock_yaml_content: str) -> dict:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 async def _get_paper(session: AsyncSession, paper_id: str) -> Paper | None:
     """Fetch a paper by ID."""
