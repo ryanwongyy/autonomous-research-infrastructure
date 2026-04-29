@@ -36,12 +36,18 @@ from app.services.paper_generation.boundary_enforcer import (
     PipelineViolationError,
     verify_lock_integrity,
 )
-from app.services.paper_generation.roles.analyst import execute_analysis, generate_analysis_code
+from app.services.paper_generation.roles.analyst import (
+    execute_analysis,
+    generate_analysis_code,
+)
 from app.services.paper_generation.roles.data_steward import (
     build_source_manifest,
     fetch_and_snapshot,
 )
-from app.services.paper_generation.roles.designer import create_research_design, lock_design
+from app.services.paper_generation.roles.designer import (
+    create_research_design,
+    lock_design,
+)
 from app.services.paper_generation.roles.drafter import compose_manuscript
 from app.services.paper_generation.roles.packager import build_package
 from app.services.paper_generation.roles.scout import generate_ideas, screen_idea
@@ -220,7 +226,9 @@ async def run_full_pipeline(
         report["stages"]["verifier"] = stage_report
 
         verification_report = stage_report.get("verification", {})
-        recommendation = verification_report.get("summary", {}).get("recommendation", "revise")
+        recommendation = verification_report.get("summary", {}).get(
+            "recommendation", "revise"
+        )
 
         # If verifier recommends rejection, kill the paper
         if recommendation == "reject":
@@ -342,10 +350,23 @@ async def _stage_scout(
             idea_card=idea,
             provider=provider,
         )
+        # Compact per-dimension score map: {dim: int} for the surfaced
+        # screening result. Keeps payload small but tells the operator
+        # exactly which dimension was the floor on each rejected idea.
+        # Run #25110421840 surfaced only `composite` here, leaving us
+        # unable to tell whether novelty or data_adequacy was failing.
+        scores = screening.get("scores", {}) or {}
+        per_dim: dict[str, int] = {}
+        for dim_name, dim_data in scores.items():
+            if isinstance(dim_data, dict):
+                val = dim_data.get("score")
+                if isinstance(val, int):
+                    per_dim[dim_name] = val
         screening_results.append(
             {
                 "question": idea.get("research_question", "")[:80],
                 "composite": screening.get("weighted_composite", 0),
+                "scores": per_dim,
                 "passed": screening.get("pass", False),
             }
         )
@@ -487,7 +508,9 @@ async def _stage_analyst(
     )
 
     return {
-        "status": "completed" if exec_result.get("success") else "completed_with_errors",
+        "status": "completed"
+        if exec_result.get("success")
+        else "completed_with_errors",
         "code_hash": code_result.get("code_hash", ""),
         "code_content": code_content,
         "result_manifest": exec_result,

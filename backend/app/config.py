@@ -66,6 +66,19 @@ class Settings(BaseSettings):
     scout_screen_min_novelty: int = 3
     scout_screen_min_data_adequacy: int = 3
 
+    # If False (the default), Scout's gate is composite-only — the
+    # weighted composite already includes novelty (0.20) and
+    # data_adequacy (0.20) so a per-dimension AND-gate is a redundant
+    # second filter. Production run #25110421840 demonstrated that the
+    # AND-gate was provably blocking ideas (composite 3.10 and 3.20)
+    # that the composite floor accepted, because Claude self-rated one
+    # of those two dimensions at 2 even when overall composite was OK.
+    #
+    # If True, re-impose the per-dimension floors. Useful for mature
+    # operation when the system is consistently producing higher-scoring
+    # ideas and the operator wants to ratchet the bar up.
+    scout_screen_strict_per_dimension: bool = False
+
     # ── LLM model IDs ──────────────────────────────────────────────────
     # Centralised so a deploy can flip to a new model id (e.g. when
     # Anthropic releases a new dated suffix) without code changes. Each
