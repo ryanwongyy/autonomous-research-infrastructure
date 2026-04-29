@@ -101,6 +101,13 @@ class Settings(BaseSettings):
     judge_non_claude_model: str = "gpt-4o"  # L3 explicitly non-Claude
     google_main_model: str = "gemini-1.5-pro"
 
+    # Per-LLM-call timeout. Long generations (Analyst's 16K-token code,
+    # Drafter's 32K-token manuscript) can legitimately take 3-5 minutes
+    # at the model side. The previous 120s default was too tight and
+    # production runs killed Analyst with TimeoutError (run #25138168976).
+    # 600s (10 min) gives generous headroom for the longest stages.
+    llm_timeout_seconds: int = 600
+
     # Authentication (leave blank to disable auth in dev)
     ape_api_key: str = ""  # Required for all mutation endpoints when set
     ape_admin_key: str = ""  # Required for expensive ops (RSI, tournament, import)
