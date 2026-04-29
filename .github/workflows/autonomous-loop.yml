@@ -71,10 +71,13 @@ jobs:
         run: |
           COUNT="${{ inputs.count || '2' }}"
           echo "Generating $COUNT papers..."
-          # Capture HTTP status separately from the body so non-2xx
-          # responses still print their body. Without this we lose
-          # the diagnostic payload entirely on server errors.
-          HTTP_CODE=$(curl -s -o /tmp/generate_response.json \
+          # /batch/generate returns NDJSON: heartbeat lines every ~15s
+          # while the pipeline runs, then a final result line.  The
+          # streaming response keeps Render's proxy from timing out
+          # at ~5-7 min of silence.  Use --no-buffer so curl doesn't
+          # buffer the stream.
+          HTTP_CODE=$(curl -s --no-buffer \
+            -o /tmp/generate_response.ndjson \
             -w "%{http_code}" \
             -X POST "$API_BASE/api/v1/batch/generate" \
             -H "X-API-Key: $API_KEY" \
@@ -83,9 +86,10 @@ jobs:
             --max-time 3600)
           CURL_EXIT=$?
           echo "HTTP status: $HTTP_CODE (curl exit $CURL_EXIT)"
-          echo "Response body:"
-          python3 -m json.tool /tmp/generate_response.json 2>/dev/null \
-            || cat /tmp/generate_response.json
+          echo "Stream lines (heartbeats + final result):"
+          # Print the streamed lines for visibility, then extract the
+          # last line (which is the actual result/error event).
+          cat /tmp/generate_response.ndjson
           echo "---"
           if [ "$CURL_EXIT" -ne 0 ]; then
             echo "::error::curl failed (exit=$CURL_EXIT) — likely network/timeout"
@@ -95,7 +99,17 @@ jobs:
             echo "::error::backend returned HTTP $HTTP_CODE"
             exit 1
           fi
-          SUMMARY=$(python3 -c 'import sys,json; print(json.load(open("/tmp/generate_response.json")).get("summary",""))')
+          # Pull the final line and decode the result envelope.
+          tail -n 1 /tmp/generate_response.ndjson > /tmp/final_event.json
+          echo "Final event:"
+          python3 -m json.tool /tmp/final_event.json 2>/dev/null \
+            || cat /tmp/final_event.json
+          EVENT=$(python3 -c 'import sys,json; print(json.load(open("/tmp/final_event.json")).get("event",""))')
+          if [ "$EVENT" != "result" ]; then
+            echo "::error::final stream event was not 'result' (got: $EVENT)"
+            exit 1
+          fi
+          SUMMARY=$(python3 -c 'import sys,json; print(json.load(open("/tmp/final_event.json")).get("data",{}).get("summary",""))')
           echo "summary=$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Review pending papers
