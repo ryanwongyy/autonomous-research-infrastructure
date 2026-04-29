@@ -64,21 +64,31 @@ logger = logging.getLogger(__name__)
 
 
 async def run_full_pipeline(
-    session: AsyncSession,
-    family_id: str,
+    session: AsyncSession | None = None,
+    family_id: str = "F1",
     paper_id: str | None = None,
     provider: LLMProvider | None = None,
 ) -> dict[str, Any]:
     """Run the complete paper generation pipeline.
 
-    Each stage:
-    1. Verifies preconditions (previous stage completed, lock intact)
-    2. Executes the role
-    3. Updates Paper.funnel_stage
-    4. Verifies lock hasn't been tampered with (for stages after lock)
+    Each stage runs in its OWN AsyncSession (= its own DB connection
+    from the pool). This avoids holding a single connection across
+    10+ minutes of LLM work — Postgres / network providers tend to
+    drop long-idle connections, and a stale connection makes even
+    ``commit()`` and ``rollback()`` raise InterfaceError (production
+    run #25133985204 hit this exact symptom).
+
+    The ``session`` parameter is kept for backward compatibility with
+    callers that pass one in (and tests that monkeypatch this function
+    on the kwarg shape) but is **ignored** — every stage opens a fresh
+    session via ``async_session()``. State propagates across stages
+    via the database (each stage commits its writes, the next stage
+    queries fresh).
 
     Returns pipeline report with timing, status per stage, and final paper_id.
     """
+    del session  # explicitly ignored; see docstring
+
     pipeline_start = time.monotonic()
 
     # Resolve provider once for all roles
@@ -101,25 +111,21 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 0. Create Paper record
         # ---------------------------------------------------------------
-        paper = await _ensure_paper(session, paper_id, family_id)
-        await session.commit()  # checkpoint: paper record exists
+        async with async_session() as s:
+            await _ensure_paper(s, paper_id, family_id)
+            await s.commit()
 
         # ---------------------------------------------------------------
         # 1. SCOUT: generate and screen ideas
         # ---------------------------------------------------------------
-        stage_report = await _run_stage(
+        stage_report = await _run_stage_with_session(
             "scout",
             _stage_scout,
-            session,
-            paper,
+            paper_id,
             family_id=family_id,
             provider=provider,
         )
         report["stages"]["scout"] = stage_report
-        # Per-stage checkpoint: commit so we don't hold a long
-        # transaction across LLM calls (Postgres' default
-        # idle_in_transaction timeout drops the connection mid-way).
-        await session.commit()
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_scout"
             return _finalise_report(report, pipeline_start)
@@ -129,16 +135,14 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 2. DESIGNER: create research design and lock it
         # ---------------------------------------------------------------
-        stage_report = await _run_stage(
+        stage_report = await _run_stage_with_session(
             "designer",
             _stage_designer,
-            session,
-            paper,
+            paper_id,
             idea_card=idea_card,
             provider=provider,
         )
         report["stages"]["designer"] = stage_report
-        await session.commit()
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_designer"
             return _finalise_report(report, pipeline_start)
@@ -146,17 +150,13 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 3. DATA STEWARD: build source manifest and fetch data
         # ---------------------------------------------------------------
-        # Re-load paper to get updated funnel_stage after lock
-        paper = await _reload_paper(session, paper_id)
-        stage_report = await _run_stage(
+        stage_report = await _run_stage_with_session(
             "data_steward",
             _stage_data_steward,
-            session,
-            paper,
+            paper_id,
             provider=provider,
         )
         report["stages"]["data_steward"] = stage_report
-        await session.commit()
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_data_steward"
             return _finalise_report(report, pipeline_start)
@@ -166,16 +166,13 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 4. ANALYST: generate and run analysis code
         # ---------------------------------------------------------------
-        paper = await _reload_paper(session, paper_id)
-        stage_report = await _run_stage(
+        stage_report = await _run_stage_with_session(
             "analyst",
             _stage_analyst,
-            session,
-            paper,
+            paper_id,
             provider=provider,
         )
         report["stages"]["analyst"] = stage_report
-        await session.commit()
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_analyst"
             return _finalise_report(report, pipeline_start)
@@ -186,18 +183,15 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 5. DRAFTER: compose manuscript
         # ---------------------------------------------------------------
-        paper = await _reload_paper(session, paper_id)
-        stage_report = await _run_stage(
+        stage_report = await _run_stage_with_session(
             "drafter",
             _stage_drafter,
-            session,
-            paper,
+            paper_id,
             result_manifest=result_manifest,
             source_manifest=source_manifest,
             provider=provider,
         )
         report["stages"]["drafter"] = stage_report
-        await session.commit()
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_drafter"
             return _finalise_report(report, pipeline_start)
@@ -207,17 +201,14 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 5.5. COLLEGIAL REVIEW: constructive multi-turn feedback
         # ---------------------------------------------------------------
-        paper = await _reload_paper(session, paper_id)
-        stage_report = await _run_stage(
+        stage_report = await _run_stage_with_session(
             "collegial_review",
             _stage_collegial_review,
-            session,
-            paper,
+            paper_id,
             manuscript_latex=manuscript_latex,
             provider=provider,
         )
         report["stages"]["collegial_review"] = stage_report
-        await session.commit()
         # Collegial review cannot kill a paper — it only strengthens it
         # Use the revised manuscript if available
         if stage_report.get("revised_manuscript"):
@@ -226,17 +217,14 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 6. VERIFIER: cross-check claims
         # ---------------------------------------------------------------
-        paper = await _reload_paper(session, paper_id)
-        stage_report = await _run_stage(
+        stage_report = await _run_stage_with_session(
             "verifier",
             _stage_verifier,
-            session,
-            paper,
+            paper_id,
             result_manifest=result_manifest,
             provider=provider,
         )
         report["stages"]["verifier"] = stage_report
-        await session.commit()
 
         verification_report = stage_report.get("verification", {})
         recommendation = verification_report.get("summary", {}).get(
@@ -245,23 +233,22 @@ async def run_full_pipeline(
 
         # If verifier recommends rejection, kill the paper
         if recommendation == "reject":
-            paper = await _reload_paper(session, paper_id)
-            paper.funnel_stage = "killed"
-            paper.kill_reason = "Verifier recommended rejection"
-            session.add(paper)
-            await session.commit()
+            async with async_session() as s:
+                paper = await _reload_paper(s, paper_id)
+                paper.funnel_stage = "killed"
+                paper.kill_reason = "Verifier recommended rejection"
+                s.add(paper)
+                await s.commit()
             report["final_status"] = "rejected_by_verifier"
             return _finalise_report(report, pipeline_start)
 
         # ---------------------------------------------------------------
         # 7. PACKAGER: assemble final package
         # ---------------------------------------------------------------
-        paper = await _reload_paper(session, paper_id)
-        stage_report = await _run_stage(
+        stage_report = await _run_stage_with_session(
             "packager",
             _stage_packager,
-            session,
-            paper,
+            paper_id,
             manuscript_latex=manuscript_latex,
             code_content=code_content,
             result_manifest=result_manifest,
@@ -269,13 +256,13 @@ async def run_full_pipeline(
             verification_report=verification_report,
         )
         report["stages"]["packager"] = stage_report
-        await session.commit()
 
         # ---------------------------------------------------------------
         # Pipeline complete
         # ---------------------------------------------------------------
-        paper = await _reload_paper(session, paper_id)
-        report["final_status"] = f"completed (funnel_stage={paper.funnel_stage})"
+        async with async_session() as s:
+            paper = await _reload_paper(s, paper_id)
+            report["final_status"] = f"completed (funnel_stage={paper.funnel_stage})"
         logger.info("Pipeline completed for paper %s", paper_id)
 
     except PipelineViolationError as e:
@@ -284,7 +271,6 @@ async def run_full_pipeline(
         report["error_class"] = type(e).__name__
         report["error_traceback"] = traceback.format_exc()
         logger.error("Pipeline boundary violation for paper %s: %s", paper_id, e)
-        await session.rollback()
     except Exception as e:
         report["final_status"] = f"error: {e}"
         # Capture diagnostics so the cron / GitHub Actions log shows
@@ -293,10 +279,36 @@ async def run_full_pipeline(
         report["error_class"] = type(e).__name__
         report["error_traceback"] = traceback.format_exc()
         logger.error("Pipeline failed for paper %s: %s", paper_id, e, exc_info=True)
-        await session.rollback()
         await _set_error(paper_id, str(e))
 
     return _finalise_report(report, pipeline_start)
+
+
+async def _run_stage_with_session(
+    stage_name: str,
+    stage_fn,
+    paper_id: str,
+    **stage_kwargs,
+) -> dict[str, Any]:
+    """Open a fresh DB session, reload the paper, run the stage, commit.
+
+    Each call gets a fresh connection from the pool — pool_pre_ping
+    ensures the connection is alive before use, so a connection that
+    was dropped during the previous stage's LLM call gets replaced
+    cleanly here rather than blowing up on the next ``commit()``.
+    """
+    async with async_session() as s:
+        paper = await _reload_paper(s, paper_id)
+        result = await _run_stage(stage_name, stage_fn, s, paper, **stage_kwargs)
+        # Commit even on stage failure so partial progress (paper
+        # record updates, kill_reason, etc.) persists. Each stage's
+        # exception handling is inside _run_stage; nothing here raises.
+        try:
+            await s.commit()
+        except Exception:
+            await s.rollback()
+            raise
+    return result
 
 
 # ---------------------------------------------------------------------------

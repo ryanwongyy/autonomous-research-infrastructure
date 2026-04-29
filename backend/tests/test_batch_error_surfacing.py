@@ -117,7 +117,7 @@ async def test_generate_endpoint_surfaces_killed_at_scout_error(
     """
     await db_session.commit()  # so the seeded family is visible
 
-    async def fake_run_full_pipeline(*, session, family_id, paper_id, **_):
+    async def fake_run_full_pipeline(*, family_id, paper_id, session=None, **_):
         # Mirror the orchestrator's report shape on a scout failure.
         return {
             "paper_id": paper_id,
@@ -170,7 +170,7 @@ async def test_generate_endpoint_counts_completed_separately_from_killed(
 
     call_count = {"i": 0}
 
-    async def fake_run_full_pipeline(*, session, family_id, paper_id, **_):
+    async def fake_run_full_pipeline(*, family_id, paper_id, session=None, **_):
         call_count["i"] += 1
         if call_count["i"] == 1:
             return {
@@ -245,7 +245,7 @@ async def test_generate_endpoint_completed_paper_has_no_error_message(
     empty ``stage_errors``."""
     await db_session.commit()
 
-    async def fake_run_full_pipeline(*, session, family_id, paper_id, **_):
+    async def fake_run_full_pipeline(*, family_id, paper_id, session=None, **_):
         return {
             "paper_id": paper_id,
             "family_id": family_id,
@@ -351,7 +351,7 @@ async def test_generate_endpoint_surfaces_scout_screenings(
     response payload exposing those scores under stage_details.scout."""
     await db_session.commit()
 
-    async def fake_run_full_pipeline(*, session, family_id, paper_id, **_):
+    async def fake_run_full_pipeline(*, family_id, paper_id, session=None, **_):
         return {
             "paper_id": paper_id,
             "family_id": family_id,

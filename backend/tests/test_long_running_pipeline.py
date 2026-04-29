@@ -28,21 +28,35 @@ import inspect
 from app.services.paper_generation import orchestrator
 
 
-def test_orchestrator_commits_between_stages():
-    """The pipeline must commit between stages so we don't hold a
-    single transaction across 10+ minutes of LLM work.
+def test_orchestrator_uses_per_stage_sessions():
+    """Each pipeline stage must run in its OWN AsyncSession.
 
-    Counts ``await session.commit()`` occurrences in run_full_pipeline.
-    Should be at least 7 (one per major stage + final commit).
+    A single AsyncSession holds one underlying connection until
+    closed; if the connection is dropped mid-pipeline (e.g. after
+    10+ minutes of LLM work), even ``commit()`` and ``rollback()``
+    on the dead connection raise InterfaceError. The fix is per-stage
+    sessions so each stage gets a fresh connection from the pool
+    (with pool_pre_ping verifying it).
+
+    This test counts ``_run_stage_with_session`` calls in
+    run_full_pipeline. Should be at least 7 (one per major stage).
     """
     src = inspect.getsource(orchestrator.run_full_pipeline)
-    commit_count = src.count("await session.commit()")
-    assert commit_count >= 7, (
-        f"Expected >=7 per-stage commits in run_full_pipeline; got "
-        f"{commit_count}. If commits are removed, the pipeline holds "
-        f"one long transaction and Postgres' "
-        f"idle_in_transaction_session_timeout drops the connection "
-        f"mid-flight."
+    helper_calls = src.count("_run_stage_with_session(")
+    assert helper_calls >= 7, (
+        f"Expected >=7 _run_stage_with_session() calls in "
+        f"run_full_pipeline; got {helper_calls}. If stages share "
+        f"a single session, the pipeline holds one connection across "
+        f"all stages and drops dead at ~10 minutes."
+    )
+
+    helper_src = inspect.getsource(orchestrator._run_stage_with_session)
+    assert "async_session()" in helper_src, (
+        "_run_stage_with_session must open a fresh AsyncSession per "
+        "stage so each call gets a fresh connection from the pool."
+    )
+    assert "await s.commit()" in helper_src, (
+        "_run_stage_with_session must commit each stage's writes."
     )
 
 
