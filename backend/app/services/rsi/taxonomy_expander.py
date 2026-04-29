@@ -6,7 +6,6 @@ import json
 import logging
 import re
 from collections import defaultdict
-from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.failure_record import FailureRecord
 from app.models.failure_type_proposal import FailureTypeProposal
 from app.services.rsi.experiment_manager import create_experiment
-from app.utils import safe_json_loads
+from app.utils import safe_json_loads, utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +260,9 @@ async def cluster_other_failures(
             cohesion = 1.0
 
         common = sorted(
-            all_keywords, key=lambda k: sum(1 for ks in keyword_sets if k in ks), reverse=True
+            all_keywords,
+            key=lambda k: sum(1 for ks in keyword_sets if k in ks),
+            reverse=True,
         )[:10]
 
         clusters.append(
@@ -395,7 +396,7 @@ async def approve_failure_type(
 
     # Update proposal status
     proposal.status = "approved"
-    proposal.approved_at = datetime.now(UTC)
+    proposal.approved_at = utcnow_naive()
 
     await session.flush()
 

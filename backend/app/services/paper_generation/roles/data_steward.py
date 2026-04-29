@@ -10,7 +10,6 @@ import csv
 import io
 import json
 import logging
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -25,6 +24,7 @@ from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
 from app.services.provenance.hasher import hash_content
 from app.services.storage.artifact_store import FilesystemArtifactStore
+from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +199,9 @@ async def fetch_and_snapshot(
         file_size_bytes=len(content),
         record_count=_estimate_record_count(content),
         fetch_parameters=json.dumps(fetch_params) if fetch_params else None,
-        fetched_at=datetime.now(UTC),
+        # source_snapshots.fetched_at is `TIMESTAMP WITHOUT TIME ZONE`
+        # on Postgres; writing a tz-aware datetime raises a DataError.
+        fetched_at=utcnow_naive(),
     )
     session.add(snapshot)
 
@@ -254,7 +256,12 @@ def _parse_json_object(response: str) -> dict:
         return json.loads(response[start:end])
     except (ValueError, json.JSONDecodeError):
         logger.warning("Failed to parse manifest JSON from LLM response")
-        return {"sources": [], "tier_a_count": 0, "total_sources": 0, "notes": "Parse error"}
+        return {
+            "sources": [],
+            "tier_a_count": 0,
+            "total_sources": 0,
+            "notes": "Parse error",
+        }
 
 
 def _validate_tier_requirements(protocol_type: str, manifest: dict) -> None:

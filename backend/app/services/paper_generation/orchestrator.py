@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import traceback
 import uuid
 from typing import Any
 
@@ -266,10 +267,18 @@ async def run_full_pipeline(
 
     except PipelineViolationError as e:
         report["final_status"] = f"boundary_violation: {e}"
+        report["error_message"] = str(e)
+        report["error_class"] = type(e).__name__
+        report["error_traceback"] = traceback.format_exc()
         logger.error("Pipeline boundary violation for paper %s: %s", paper_id, e)
         await session.rollback()
     except Exception as e:
         report["final_status"] = f"error: {e}"
+        # Capture diagnostics so the cron / GitHub Actions log shows
+        # exactly which line raised, without needing Render runtime logs.
+        report["error_message"] = str(e)
+        report["error_class"] = type(e).__name__
+        report["error_traceback"] = traceback.format_exc()
         logger.error("Pipeline failed for paper %s: %s", paper_id, e, exc_info=True)
         await session.rollback()
         await _set_error(paper_id, str(e))
@@ -752,7 +761,11 @@ async def _ensure_paper(session: AsyncSession, paper_id: str, family_id: str) ->
 
 async def _reload_paper(session: AsyncSession, paper_id: str) -> Paper:
     """Reload a paper from the database to get current state."""
-    await session.expire_all()
+    # AsyncSession.expire_all() is SYNCHRONOUS — it returns None, not a
+    # coroutine. Awaiting it raises ``TypeError: object NoneType can't be
+    # used in 'await' expression``. This crashed every pipeline run that
+    # made it past Designer (run #25129536542 traceback pointed here).
+    session.expire_all()
     stmt = select(Paper).where(Paper.id == paper_id)
     result = await session.execute(stmt)
     paper = result.scalar_one_or_none()

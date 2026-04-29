@@ -17,7 +17,7 @@ from app.models.reliability_metric import ReliabilityMetric
 from app.models.rsi_experiment import RSIExperiment
 from app.models.rsi_gate_log import RSIGateLog
 from app.models.submission_outcome import SubmissionOutcome
-from app.utils import safe_json_loads
+from app.utils import safe_json_loads, utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -553,7 +553,9 @@ async def execute_meta_cycle(session: AsyncSession) -> dict:
 
     Returns dict with run_id, final status, and summary.
     """
-    now = datetime.now(UTC)
+    # MetaPipelineRun.started_at / completed_at are TIMESTAMP WITHOUT
+    # TIME ZONE on Postgres; use utcnow_naive() for ORM writes.
+    now = utcnow_naive()
 
     # Create the run record
     run = MetaPipelineRun(
@@ -601,7 +603,7 @@ async def execute_meta_cycle(session: AsyncSession) -> dict:
         run.promotion_decision = overall_decision[:16]
         run.production_delta_json = json.dumps(promotion, default=str)
         run.status = "completed"
-        run.completed_at = datetime.now(UTC)
+        run.completed_at = utcnow_naive()
         await session.flush()
 
         summary = {
@@ -627,7 +629,7 @@ async def execute_meta_cycle(session: AsyncSession) -> dict:
 
     except Exception:
         run.status = "failed"
-        run.completed_at = datetime.now(UTC)
+        run.completed_at = utcnow_naive()
         await session.flush()
         logger.exception("Meta-pipeline cycle failed (run_id=%d)", run_id)
         raise

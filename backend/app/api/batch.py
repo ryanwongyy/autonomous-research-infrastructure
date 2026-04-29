@@ -120,18 +120,36 @@ async def batch_generate(body: GenerateRequest, request: Request):
             final_status = report.get("final_status", "unknown")
             stage_errors = _extract_stage_errors(report)
             stage_details = _extract_stage_details(report)
+            stages_completed = _extract_stages_completed(report)
             entry["generation"] = {
                 "status": final_status,
                 "duration_sec": report.get("total_duration_sec", 0),
                 # Surface the underlying exception(s) so cron / GitHub Actions
                 # logs are self-diagnosing. Without this, killed_at_* status
                 # values look identical to one another in the response payload.
-                "error_message": _primary_error_message(stage_errors, final_status),
+                #
+                # Three sources, in priority order:
+                #   1. The report's top-level error_message (set by the
+                #      orchestrator's main except handler — covers crashes
+                #      that happen OUTSIDE any stage, e.g. between stages).
+                #   2. A failed stage's error string.
+                #   3. None when nothing failed.
+                "error_message": (
+                    report.get("error_message")
+                    or _primary_error_message(stage_errors, final_status)
+                ),
+                "error_class": report.get("error_class"),
+                # Truncated traceback — enough to identify the file/line
+                # without dumping kilobytes into the cron log.
+                "error_traceback": _truncate_traceback(report.get("error_traceback")),
                 "stage_errors": stage_errors,
                 # Structured side-data from failed stages (e.g. Scout's
                 # per-idea screening scores). Empty when no stage attached
                 # any details beyond a simple error string.
                 "stage_details": stage_details,
+                # Names of stages that recorded a status — tells us how
+                # far the pipeline progressed before any crash.
+                "stages_completed": stages_completed,
             }
             if final_status == "completed":
                 generated += 1
@@ -249,6 +267,34 @@ def _primary_error_message(stage_errors: dict[str, str], final_status: str) -> s
         if stage_name in stage_errors:
             return stage_errors[stage_name]
     return next(iter(stage_errors.values()))
+
+
+def _extract_stages_completed(report: dict[str, Any]) -> list[str]:
+    """List the names of every stage that recorded a status in the report.
+
+    Useful when the orchestrator's main except handler fires (e.g.
+    ``await None`` crash between stages). The presence of e.g.
+    ``["scout", "designer", "data_steward", "analyst"]`` tells us the
+    crash happened AFTER analyst completed but before drafter recorded
+    any status.
+    """
+    stages = report.get("stages") or {}
+    return list(stages.keys()) if isinstance(stages, dict) else []
+
+
+def _truncate_traceback(tb: str | None, limit: int = 4000) -> str | None:
+    """Trim a traceback so the response payload stays small.
+
+    Keeps the head (where the crash usually points) and the tail
+    (where the most-recently-called frame appears in Python format).
+    """
+    if not tb:
+        return None
+    if len(tb) <= limit:
+        return tb
+    head = tb[: limit // 2]
+    tail = tb[-limit // 2 :]
+    return f"{head}\n... [truncated] ...\n{tail}"
 
 
 # ---------------------------------------------------------------------------

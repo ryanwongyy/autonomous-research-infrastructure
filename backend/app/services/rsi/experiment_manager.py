@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rsi_experiment import RSIExperiment
 from app.models.rsi_gate_log import RSIGateLog
-from app.utils import safe_json_loads
+from app.utils import safe_json_loads, utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ async def activate_experiment(
         )
 
     experiment.status = "active"
-    experiment.activated_at = datetime.now(UTC)
+    experiment.activated_at = utcnow_naive()
 
     await _log_gate(
         session,
@@ -89,7 +88,7 @@ async def rollback_experiment(
         raise ValueError(f"Experiment {experiment_id} not found")
 
     experiment.status = "rolled_back"
-    experiment.rolled_back_at = datetime.now(UTC)
+    experiment.rolled_back_at = utcnow_naive()
 
     await _log_gate(
         session,

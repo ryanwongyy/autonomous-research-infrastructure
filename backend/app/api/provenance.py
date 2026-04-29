@@ -11,7 +11,7 @@ from app.models.claim_map import ClaimMap
 from app.models.paper import Paper
 from app.models.source_card import SourceCard
 from app.models.source_snapshot import SourceSnapshot
-from app.utils import safe_json_loads
+from app.utils import safe_json_loads, utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +207,9 @@ async def trigger_claim_verification(paper_id: str, db: AsyncSession = Depends(g
         )
         snapshot_map = {row.id: bool(row.snapshot_hash) for row in snap_results.all()}
 
-    now = datetime.now(UTC)
+    # claim.verified_at is TIMESTAMP WITHOUT TIME ZONE on Postgres;
+    # use utcnow_naive() for the assignments below.
+    now = utcnow_naive()
     for claim in pending_claims:
         if not claim.source_card_id and not claim.result_object_ref:
             skipped += 1
