@@ -119,12 +119,13 @@ async def batch_generate(body: GenerateRequest, request: Request):
 
         # --- Generation ---
         try:
-            async with async_session() as session:
-                report = await run_full_pipeline(
-                    session=session,
-                    family_id=fid,
-                    paper_id=paper_id,
-                )
+            # run_full_pipeline opens its own per-stage sessions so it
+            # doesn't hold one connection across 10+ minutes of LLM
+            # work. Don't wrap in an outer async_session here.
+            report = await run_full_pipeline(
+                family_id=fid,
+                paper_id=paper_id,
+            )
             final_status = report.get("final_status", "unknown")
             stage_errors = _extract_stage_errors(report)
             stage_details = _extract_stage_details(report)
