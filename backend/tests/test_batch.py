@@ -136,13 +136,21 @@ async def test_promote_empty(admin_client):
 
 @pytest.mark.asyncio
 async def test_generate_no_families(admin_client):
-    """Generate with no families returns 'no active families' summary."""
+    """Generate with no families returns 'no active families' summary.
+
+    /batch/generate now streams NDJSON; parse the final result line.
+    """
+    import json as _json
+
     resp = await admin_client.post(
         "/api/v1/batch/generate",
         json={"count": 1},
     )
     assert resp.status_code == 200
-    data = resp.json()
+    last_line = resp.text.rstrip().split("\n")[-1]
+    envelope = _json.loads(last_line)
+    assert envelope["event"] == "result"
+    data = envelope["data"]
     assert data["action"] == "generate"
     assert "No active families" in data["summary"]
 

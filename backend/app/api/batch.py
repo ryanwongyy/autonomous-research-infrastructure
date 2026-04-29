@@ -3,15 +3,25 @@
 Called by GitHub Actions cron to drive the full generate -> review -> tournament -> promote loop.
 All endpoints are synchronous (not BackgroundTask) so the caller can wait for results
 and keep the Render process alive for the duration.
+
+The generate endpoint streams an NDJSON response — one ``{"event":"heartbeat",...}``
+line every 15 seconds and a final ``{"event":"result","data":{...}}`` line. Periodic
+output keeps Render's HTTP proxy from returning 502 on long-running requests
+(production run #25134915432 hit a 502 after 7m21s of silence). Clients should
+read line-by-line and use the last line as the result.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+import time
 import uuid
 from typing import Any
 
 from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -21,6 +31,11 @@ from app.models.paper_family import PaperFamily
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# How often to emit an NDJSON heartbeat while the pipeline is running.
+# Render's proxy seems to time out around 5-7 minutes of silence, so 15s
+# gives plenty of margin while keeping log volume manageable.
+_HEARTBEAT_INTERVAL_SEC = 15
 
 
 # ---------------------------------------------------------------------------
@@ -75,11 +90,63 @@ async def _pick_underserved_families(count: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/batch/generate", response_model=BatchResult)
-async def batch_generate(body: GenerateRequest, request: Request):
-    """Generate papers and auto-trigger review for each.
+@router.post("/batch/generate")
+async def batch_generate(body: GenerateRequest, request: Request) -> StreamingResponse:
+    """Generate papers and auto-trigger review for each (streaming).
 
-    Runs sequentially to respect LLM rate limits and memory constraints.
+    Returns an NDJSON stream:
+      - ``{"event":"heartbeat","stage":"...","elapsed_sec":N}`` every 15s
+        while the pipeline runs.
+      - ``{"event":"result","data":{...BatchResult fields...}}`` at the end.
+
+    Clients should parse line-by-line and use the LAST line as the result.
+
+    The streaming format is forced because Render's HTTP proxy returns
+    502 after ~5-7 minutes of silent upstream — and a single paper-
+    generation pipeline can take 10+ minutes. With heartbeats, the
+    proxy keeps the connection open as long as the upstream is alive.
+    """
+
+    async def stream() -> Any:
+        # Background task: do the actual work
+        task = asyncio.create_task(_do_batch_generate(body))
+        start = time.monotonic()
+        last_heartbeat = start
+
+        while not task.done():
+            # Sleep in small increments so we can finalise quickly when
+            # the task finishes, but only emit a heartbeat every N sec.
+            await asyncio.sleep(1)
+            now = time.monotonic()
+            if now - last_heartbeat >= _HEARTBEAT_INTERVAL_SEC:
+                hb = {
+                    "event": "heartbeat",
+                    "elapsed_sec": round(now - start, 1),
+                }
+                yield json.dumps(hb) + "\n"
+                last_heartbeat = now
+
+        try:
+            result = await task
+            payload = {"event": "result", "data": result.model_dump()}
+        except Exception as e:
+            logger.exception("Streaming /batch/generate failed")
+            payload = {
+                "event": "error",
+                "error_class": type(e).__name__,
+                "error_message": str(e),
+            }
+        yield json.dumps(payload) + "\n"
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
+async def _do_batch_generate(body: GenerateRequest) -> BatchResult:
+    """The actual batch-generate work, factored out so it can run as
+    a background task while the streaming endpoint emits heartbeats.
+
+    Same logic as before — sequential pipeline calls per paper, with
+    per-stage sessions inside ``run_full_pipeline``.
     """
     from app.services.paper_generation.orchestrator import run_full_pipeline
     from app.services.review_pipeline.orchestrator import run_review_pipeline
@@ -111,12 +178,13 @@ async def batch_generate(body: GenerateRequest, request: Request):
 
         # --- Generation ---
         try:
-            async with async_session() as session:
-                report = await run_full_pipeline(
-                    session=session,
-                    family_id=fid,
-                    paper_id=paper_id,
-                )
+            # run_full_pipeline opens its own per-stage sessions so it
+            # doesn't hold one connection across 10+ minutes of LLM
+            # work. Don't wrap in an outer async_session here.
+            report = await run_full_pipeline(
+                family_id=fid,
+                paper_id=paper_id,
+            )
             final_status = report.get("final_status", "unknown")
             stage_errors = _extract_stage_errors(report)
             stage_details = _extract_stage_details(report)
