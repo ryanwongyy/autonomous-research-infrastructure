@@ -191,7 +191,7 @@ async def health():
 
 
 # Register routers
-from app.api import (
+from app.api import (  # noqa: E402
     leaderboard,
     stats,
     papers,
@@ -200,7 +200,7 @@ from app.api import (
     categories,
     config,
     reviews,
-)  # noqa: E402
+)
 from app.api import families, sources, provenance  # noqa: E402
 from app.api import release, throughput, significance_memos  # noqa: E402
 from app.api import reliability  # noqa: E402
