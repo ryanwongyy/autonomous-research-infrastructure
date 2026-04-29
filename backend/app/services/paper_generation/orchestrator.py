@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import traceback
 import uuid
 from typing import Any
 
@@ -268,10 +269,18 @@ async def run_full_pipeline(
 
     except PipelineViolationError as e:
         report["final_status"] = f"boundary_violation: {e}"
+        report["error_message"] = str(e)
+        report["error_class"] = type(e).__name__
+        report["error_traceback"] = traceback.format_exc()
         logger.error("Pipeline boundary violation for paper %s: %s", paper_id, e)
         await session.rollback()
     except Exception as e:
         report["final_status"] = f"error: {e}"
+        # Capture diagnostics so the cron / GitHub Actions log shows
+        # exactly which line raised, without needing Render runtime logs.
+        report["error_message"] = str(e)
+        report["error_class"] = type(e).__name__
+        report["error_traceback"] = traceback.format_exc()
         logger.error("Pipeline failed for paper %s: %s", paper_id, e, exc_info=True)
         await session.rollback()
         await _set_error(paper_id, str(e))
