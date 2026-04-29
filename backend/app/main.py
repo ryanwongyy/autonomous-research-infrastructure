@@ -26,10 +26,13 @@ logger = logging.getLogger("ape_replica")
 # Sentry initialization (no-op if DSN not configured)
 if settings.sentry_dsn:
     import sentry_sdk
+
     sentry_sdk.init(
         dsn=settings.sentry_dsn,
         traces_sample_rate=0.1,
-        environment="production" if not settings.database_url.startswith("sqlite") else "development",
+        environment="production"
+        if not settings.database_url.startswith("sqlite")
+        else "development",
     )
 
 
@@ -41,6 +44,29 @@ async def lifespan(app: FastAPI):
     except TimeoutError:
         logger.critical("Database initialization timed out after 30s")
         raise
+
+    # Seed source cards + families on startup. Both seed functions are
+    # idempotent (insert-or-update for source cards, skip-if-present for
+    # families), so it's safe to run on every boot.
+    #
+    # Without this, a fresh deployment has zero source cards in the DB,
+    # which causes the Data Steward stage to die with an empty fallback
+    # whitelist (production run #25131261938 hit this exact symptom).
+    # Wrapped in try/except so seed failures don't block the app from
+    # serving — the API stays up and reports the issue at request time.
+    try:
+        async with asyncio.timeout(60):
+            from seeds.families import seed_families
+            from seeds.source_cards import seed_source_cards
+
+            await seed_families()
+            await seed_source_cards()
+            logger.info("Seeded families + source cards on startup")
+    except TimeoutError:
+        logger.error("Seed run timed out after 60s — continuing without seeds")
+    except Exception as e:
+        logger.error("Seed run failed (non-fatal): %s", e, exc_info=True)
+
     yield
 
 
@@ -54,13 +80,16 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
         response: Response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
         return response
 
 
@@ -139,7 +168,13 @@ app.add_middleware(
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+    ],
 )
 
 
@@ -150,11 +185,22 @@ async def health():
             await conn.execute(select(1))
         return {"status": "ok"}
     except Exception:
-        return JSONResponse({"status": "degraded", "db": "unreachable"}, status_code=503)
+        return JSONResponse(
+            {"status": "degraded", "db": "unreachable"}, status_code=503
+        )
 
 
 # Register routers
-from app.api import leaderboard, stats, papers, matches, tournament, categories, config, reviews  # noqa: E402
+from app.api import (
+    leaderboard,
+    stats,
+    papers,
+    matches,
+    tournament,
+    categories,
+    config,
+    reviews,
+)  # noqa: E402
 from app.api import families, sources, provenance  # noqa: E402
 from app.api import release, throughput, significance_memos  # noqa: E402
 from app.api import reliability  # noqa: E402
@@ -183,7 +229,9 @@ app.include_router(sources.router, prefix="/api/v1", tags=["sources"])
 app.include_router(provenance.router, prefix="/api/v1", tags=["provenance"])
 app.include_router(release.router, prefix="/api/v1", tags=["release"])
 app.include_router(throughput.router, prefix="/api/v1", tags=["throughput"])
-app.include_router(significance_memos.router, prefix="/api/v1", tags=["significance-memos"])
+app.include_router(
+    significance_memos.router, prefix="/api/v1", tags=["significance-memos"]
+)
 app.include_router(reliability.router, prefix="/api/v1", tags=["reliability"])
 app.include_router(outcomes.router, prefix="/api/v1", tags=["outcomes"])
 app.include_router(corrections.router, prefix="/api/v1", tags=["corrections"])
