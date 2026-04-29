@@ -71,14 +71,32 @@ jobs:
         run: |
           COUNT="${{ inputs.count || '2' }}"
           echo "Generating $COUNT papers..."
-          RESPONSE=$(curl -sf -X POST "$API_BASE/api/v1/batch/generate" \
+          # Capture HTTP status separately from the body so non-2xx
+          # responses still print their body. Without this we lose
+          # the diagnostic payload entirely on server errors.
+          HTTP_CODE=$(curl -s -o /tmp/generate_response.json \
+            -w "%{http_code}" \
+            -X POST "$API_BASE/api/v1/batch/generate" \
             -H "X-API-Key: $API_KEY" \
             -H "Content-Type: application/json" \
             -d "{\"count\": $COUNT}" \
-            --max-time 3600) || { echo "Generate call failed"; exit 1; }
-          echo "$RESPONSE" | python3 -m json.tool
+            --max-time 3600)
+          CURL_EXIT=$?
+          echo "HTTP status: $HTTP_CODE (curl exit $CURL_EXIT)"
+          echo "Response body:"
+          python3 -m json.tool /tmp/generate_response.json 2>/dev/null \
+            || cat /tmp/generate_response.json
           echo "---"
-          echo "summary=$(echo "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("summary",""))')" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "::error::curl failed (exit=$CURL_EXIT) — likely network/timeout"
+            exit 1
+          fi
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "::error::backend returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+          SUMMARY=$(python3 -c 'import sys,json; print(json.load(open("/tmp/generate_response.json")).get("summary",""))')
+          echo "summary=$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Review pending papers
         run: |
