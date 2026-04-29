@@ -44,6 +44,29 @@ async def lifespan(app: FastAPI):
     except TimeoutError:
         logger.critical("Database initialization timed out after 30s")
         raise
+
+    # Seed source cards + families on startup. Both seed functions are
+    # idempotent (insert-or-update for source cards, skip-if-present for
+    # families), so it's safe to run on every boot.
+    #
+    # Without this, a fresh deployment has zero source cards in the DB,
+    # which causes the Data Steward stage to die with an empty fallback
+    # whitelist (production run #25131261938 hit this exact symptom).
+    # Wrapped in try/except so seed failures don't block the app from
+    # serving — the API stays up and reports the issue at request time.
+    try:
+        async with asyncio.timeout(60):
+            from seeds.families import seed_families
+            from seeds.source_cards import seed_source_cards
+
+            await seed_families()
+            await seed_source_cards()
+            logger.info("Seeded families + source cards on startup")
+    except TimeoutError:
+        logger.error("Seed run timed out after 60s — continuing without seeds")
+    except Exception as e:
+        logger.error("Seed run failed (non-fatal): %s", e, exc_info=True)
+
     yield
 
 
@@ -143,7 +166,13 @@ app.add_middleware(
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+    ],
 )
 
 

@@ -31,6 +31,7 @@ from app.database import async_session
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
 from app.models.rating import Rating
+from app.models.source_card import SourceCard
 from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
 from app.services.paper_generation.boundary_enforcer import (
@@ -452,18 +453,69 @@ async def _stage_data_steward(
     *,
     provider: LLMProvider,
 ) -> dict[str, Any]:
-    """Data Steward stage: build manifest and fetch data."""
+    """Data Steward stage: build manifest and fetch data.
+
+    The LLM building the manifest sometimes hallucinates source IDs that
+    aren't in the source-card registry (e.g. ``UNREGISTERED::fpds_ng_bulk``,
+    ``NONE_REGISTERED``). Without filtering, every fetch raises
+    "Source card not found" and the stage returns ``failed``.
+
+    This implementation:
+      1. Loads the registered source-card IDs once.
+      2. Filters the manifest's sources to only those that exist.
+      3. Falls back to a small default whitelist (federal_register +
+         regulations_gov) if zero valid IDs remain — these are
+         broad-purpose AI-governance-relevant sources that always work.
+      4. Surfaces ``reason`` on failed returns so diagnostics aren't
+         the literal string "(no error message)".
+    """
     source_manifest = await build_source_manifest(
         session=session,
         paper_id=paper.id,
         provider=provider,
     )
 
-    # Fetch and snapshot each source
+    # Load registered source-card IDs so we can drop hallucinated ones
+    registered_result = await session.execute(
+        select(SourceCard.id).where(SourceCard.active.is_(True))
+    )
+    registered_ids = {row[0] for row in registered_result.all()}
+
+    raw_sources = source_manifest.get("sources", []) or []
+    valid_sources: list[dict[str, Any]] = []
+    dropped_ids: list[str] = []
+    for src in raw_sources:
+        sc_id = (src or {}).get("source_card_id", "")
+        if sc_id in registered_ids:
+            valid_sources.append(src)
+        else:
+            dropped_ids.append(sc_id)
+
+    if dropped_ids:
+        logger.warning(
+            "Data Steward dropped %d unregistered source IDs from manifest "
+            "(LLM hallucinations): %s",
+            len(dropped_ids),
+            dropped_ids[:5],
+        )
+
+    # Fallback: if the LLM picked zero valid IDs, use broad-purpose defaults
+    # so the pipeline can still produce real data rather than dying here.
+    if not valid_sources:
+        fallback_ids = [
+            sid for sid in ("federal_register", "regulations_gov") if sid in registered_ids
+        ]
+        if fallback_ids:
+            logger.warning(
+                "Data Steward got zero valid sources from LLM; falling back to %s",
+                fallback_ids,
+            )
+            valid_sources = [{"source_card_id": sid, "fetch_params": {}} for sid in fallback_ids]
+
     snapshots_created = 0
     fetch_errors: list[str] = []
 
-    for source_entry in source_manifest.get("sources", []):
+    for source_entry in valid_sources:
         source_id = source_entry.get("source_card_id", "")
         fetch_params = source_entry.get("fetch_params")
 
@@ -479,11 +531,33 @@ async def _stage_data_steward(
             logger.warning("Failed to snapshot source '%s': %s", source_id, e)
             fetch_errors.append(f"{source_id}: {e}")
 
+    if snapshots_created > 0:
+        return {
+            "status": "completed",
+            "source_manifest": source_manifest,
+            "snapshots_created": snapshots_created,
+            "fetch_errors": fetch_errors,
+            "dropped_source_ids": dropped_ids,
+        }
+
+    # Build a useful reason string so error_message isn't "(no error message)"
+    if fetch_errors:
+        reason = f"All {len(fetch_errors)} source fetches failed: " + "; ".join(fetch_errors[:3])
+    elif dropped_ids:
+        reason = (
+            f"LLM picked {len(dropped_ids)} unregistered source IDs and the "
+            f"fallback whitelist was empty. Dropped: {dropped_ids[:5]}"
+        )
+    else:
+        reason = "Manifest contained zero sources and no fallback was configured"
+
     return {
-        "status": "completed" if snapshots_created > 0 else "failed",
+        "status": "failed",
+        "reason": reason,
         "source_manifest": source_manifest,
-        "snapshots_created": snapshots_created,
+        "snapshots_created": 0,
         "fetch_errors": fetch_errors,
+        "dropped_source_ids": dropped_ids,
     }
 
 
