@@ -14,6 +14,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import async_session
+
 from app.models.claim_map import ClaimMap
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
@@ -102,64 +104,77 @@ No markdown wrapper, no commentary outside the JSON."""
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def compose_manuscript(
-    session: AsyncSession,
     paper_id: str,
     result_manifest: dict[str, Any] | None = None,
     source_manifest: dict[str, Any] | None = None,
     provider: LLMProvider | None = None,
+    session: AsyncSession | None = None,
 ) -> dict[str, Any]:
     """Compose the full manuscript.
 
-    1. Load lock artifact, result manifest, source manifest
-    2. Load family's venue_ladder for style targeting
-    3. Generate LaTeX sections: intro, lit review, methodology, data, results,
-       discussion, conclusion
-    4. For each central claim, create a ClaimMap entry linking to source/result
-    5. Generate citations
-    6. Return manuscript text, claim_map entries, and bibliography
+    Internally manages DB sessions in three phases (read → LLM → write)
+    so we never hold a connection across the long manuscript-generation
+    LLM call (max_tokens=32768; can take 1-3 min).
+
+    The ``session`` parameter is kept for back-compat but ignored —
+    every DB phase opens its own short-lived session.
+
+    1. Load lock artifact, family info (short session)
+    2. Generate LaTeX manuscript via LLM (no session held)
+    3. Persist ClaimMap entries + funnel_stage update (short session)
     """
-    paper = await _load_paper(session, paper_id)
+    del session  # explicitly ignored
 
-    # Load the lock artifact
-    lock = await _load_active_lock(session, paper_id)
-    if lock is None:
-        raise ValueError(
-            f"No active lock for paper '{paper_id}'. "
-            "Design must be locked before drafting."
-        )
+    # ── Phase 1: reads (short-lived session) ─────────────────────────
+    async with async_session() as s:
+        paper = await _load_paper(s, paper_id)
+        lock = await _load_active_lock(s, paper_id)
+        if lock is None:
+            raise ValueError(
+                f"No active lock for paper '{paper_id}'. "
+                "Design must be locked before drafting."
+            )
+        family = await _load_family(s, paper.family_id) if paper.family_id else None
+        # Copy out values we need
+        lock_yaml = lock.lock_yaml
+        protocol_type = lock.lock_protocol_type
+        inference_level = _determine_inference_level(protocol_type)
+        venue_style = "general academic"
+        if family and family.venue_ladder:
+            try:
+                venue_data = json.loads(family.venue_ladder)
+                flagship = venue_data.get("flagship", [])
+                if flagship:
+                    venue_style = f"targeting {flagship[0]} style"
+            except (json.JSONDecodeError, TypeError):
+                pass
+        family_description = family.description if family else "AI governance research"
 
-    # Load family for venue targeting
-    family = await _load_family(session, paper.family_id) if paper.family_id else None
-
-    # Determine permitted inference level from the protocol
-    inference_level = _determine_inference_level(lock.lock_protocol_type)
-
-    # Build venue style string
-    venue_style = "general academic"
-    if family and family.venue_ladder:
-        try:
-            venue_data = json.loads(family.venue_ladder)
-            flagship = venue_data.get("flagship", [])
-            if flagship:
-                venue_style = f"targeting {flagship[0]} style"
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    family_description = family.description if family else "AI governance research"
-
+    # ── Phase 2: LLM call (no session held) ──────────────────────────
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        from app.config import settings
+
+        model = settings.claude_opus_model
 
     prompt = DRAFT_USER_PROMPT.format(
         paper_id=paper_id,
-        lock_yaml=lock.lock_yaml,
-        protocol_type=lock.lock_protocol_type,
+        lock_yaml=lock_yaml,
+        protocol_type=protocol_type,
         inference_level=inference_level,
-        result_manifest=json.dumps(result_manifest, indent=2) if result_manifest else "(no results yet)",
-        source_manifest=json.dumps(source_manifest, indent=2) if source_manifest else "(no manifest)",
+        result_manifest=(
+            json.dumps(result_manifest, indent=2)
+            if result_manifest
+            else "(no results yet)"
+        ),
+        source_manifest=(
+            json.dumps(source_manifest, indent=2)
+            if source_manifest
+            else "(no manifest)"
+        ),
         venue_style=venue_style,
         family_description=family_description,
     )
@@ -174,43 +189,44 @@ async def compose_manuscript(
     )
 
     parsed = _parse_json_object(response)
-
     manuscript_latex = parsed.get("manuscript_latex", "")
     claims_raw = parsed.get("claims", [])
     bibliography = parsed.get("bibliography_entries", [])
 
-    # Create ClaimMap entries for each claim
+    # ── Phase 3: writes (short-lived session, fresh connection) ──────
     claim_map_entries: list[dict[str, Any]] = []
-    for claim_data in claims_raw:
-        claim_map = ClaimMap(
-            paper_id=paper_id,
-            claim_text=claim_data.get("claim_text", ""),
-            claim_type=claim_data.get("claim_type", "descriptive"),
-            source_card_id=(
-                claim_data.get("source_ref")
-                if claim_data.get("source_type") == "source_span"
-                else None
-            ),
-            result_object_ref=(
-                json.dumps({"name": claim_data.get("source_ref")})
-                if claim_data.get("source_type") == "result_object"
-                else None
-            ),
-            verification_status="pending",
-        )
-        session.add(claim_map)
-        claim_map_entries.append({
-            "claim_text": claim_data.get("claim_text", ""),
-            "claim_type": claim_data.get("claim_type", "descriptive"),
-            "source_type": claim_data.get("source_type", ""),
-            "source_ref": claim_data.get("source_ref", ""),
-            "section": claim_data.get("section", ""),
-        })
-
-    # Update funnel stage
-    paper.funnel_stage = "drafting"
-    session.add(paper)
-    await session.flush()
+    async with async_session() as s:
+        for claim_data in claims_raw:
+            claim_map = ClaimMap(
+                paper_id=paper_id,
+                claim_text=claim_data.get("claim_text", ""),
+                claim_type=claim_data.get("claim_type", "descriptive"),
+                source_card_id=(
+                    claim_data.get("source_ref")
+                    if claim_data.get("source_type") == "source_span"
+                    else None
+                ),
+                result_object_ref=(
+                    json.dumps({"name": claim_data.get("source_ref")})
+                    if claim_data.get("source_type") == "result_object"
+                    else None
+                ),
+                verification_status="pending",
+            )
+            s.add(claim_map)
+            claim_map_entries.append(
+                {
+                    "claim_text": claim_data.get("claim_text", ""),
+                    "claim_type": claim_data.get("claim_type", "descriptive"),
+                    "source_type": claim_data.get("source_type", ""),
+                    "source_ref": claim_data.get("source_ref", ""),
+                    "section": claim_data.get("section", ""),
+                }
+            )
+        paper = await _load_paper(s, paper_id)
+        paper.funnel_stage = "drafting"
+        s.add(paper)
+        await s.commit()
 
     logger.info(
         "Drafter composed manuscript for paper %s (%d claims, %d bibliography entries)",
@@ -230,6 +246,7 @@ async def compose_manuscript(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)
@@ -255,9 +272,7 @@ async def _load_active_lock(
     return result.scalar_one_or_none()
 
 
-async def _load_family(
-    session: AsyncSession, family_id: str
-) -> PaperFamily | None:
+async def _load_family(session: AsyncSession, family_id: str) -> PaperFamily | None:
     stmt = select(PaperFamily).where(PaperFamily.id == family_id)
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
