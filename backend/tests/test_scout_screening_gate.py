@@ -27,7 +27,7 @@ class _FakeProvider:
     def __init__(self, response_text: str):
         self._response_text = response_text
 
-    async def complete(self, **_kwargs) -> str:  # noqa: D401, ANN003
+    async def complete(self, **_kwargs) -> str:
         return self._response_text
 
 

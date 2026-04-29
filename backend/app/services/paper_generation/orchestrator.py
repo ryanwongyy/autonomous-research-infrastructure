@@ -226,9 +226,7 @@ async def run_full_pipeline(
         report["stages"]["verifier"] = stage_report
 
         verification_report = stage_report.get("verification", {})
-        recommendation = verification_report.get("summary", {}).get(
-            "recommendation", "revise"
-        )
+        recommendation = verification_report.get("summary", {}).get("recommendation", "revise")
 
         # If verifier recommends rejection, kill the paper
         if recommendation == "reject":
@@ -508,9 +506,7 @@ async def _stage_analyst(
     )
 
     return {
-        "status": "completed"
-        if exec_result.get("success")
-        else "completed_with_errors",
+        "status": "completed" if exec_result.get("success") else "completed_with_errors",
         "code_hash": code_result.get("code_hash", ""),
         "code_content": code_content,
         "result_manifest": exec_result,
