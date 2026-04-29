@@ -4,20 +4,17 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rsi_experiment import RSIExperiment
 from app.models.rsi_gate_log import RSIGateLog
-from app.utils import safe_json_loads
+from app.utils import safe_json_loads, utcnow_naive
 
 logger = logging.getLogger(__name__)
 
-VALID_TIERS = frozenset(
-    f"{n}{s}" for n in range(1, 5) for s in ("a", "b", "c")
-)
+VALID_TIERS = frozenset(f"{n}{s}" for n in range(1, 5) for s in ("a", "b", "c"))
 
 DEFAULT_DEGRADATION_THRESHOLD = 0.10
 
@@ -45,7 +42,9 @@ async def create_experiment(
     )
     session.add(experiment)
     await session.flush()
-    logger.info("Created RSI experiment %s (tier=%s, name=%s)", experiment.id, tier, name)
+    logger.info(
+        "Created RSI experiment %s (tier=%s, name=%s)", experiment.id, tier, name
+    )
     return experiment
 
 
@@ -69,7 +68,7 @@ async def activate_experiment(
         )
 
     experiment.status = "active"
-    experiment.activated_at = datetime.now(timezone.utc)
+    experiment.activated_at = utcnow_naive()
 
     await _log_gate(
         session,
@@ -97,7 +96,7 @@ async def rollback_experiment(
         raise ValueError(f"Experiment {experiment_id} not found")
 
     experiment.status = "rolled_back"
-    experiment.rolled_back_at = datetime.now(timezone.utc)
+    experiment.rolled_back_at = utcnow_naive()
 
     await _log_gate(
         session,
@@ -213,9 +212,7 @@ async def get_active_experiments(
 ) -> list[dict]:
     """List active/running experiments with optional filters."""
     excluded_statuses = ("archived", "rolled_back")
-    query = select(RSIExperiment).where(
-        RSIExperiment.status.notin_(excluded_statuses)
-    )
+    query = select(RSIExperiment).where(RSIExperiment.status.notin_(excluded_statuses))
 
     if tier is not None:
         query = query.where(RSIExperiment.tier == tier)
@@ -262,7 +259,9 @@ async def get_experiment(session: AsyncSession, experiment_id: int) -> dict | No
         "created_by": exp.created_by,
         "proposed_at": exp.proposed_at.isoformat() if exp.proposed_at else None,
         "activated_at": exp.activated_at.isoformat() if exp.activated_at else None,
-        "rolled_back_at": exp.rolled_back_at.isoformat() if exp.rolled_back_at else None,
+        "rolled_back_at": exp.rolled_back_at.isoformat()
+        if exp.rolled_back_at
+        else None,
         "config_snapshot": safe_json_loads(exp.config_snapshot_json, None),
         "result_summary": safe_json_loads(exp.result_summary_json, None),
         "created_at": exp.created_at.isoformat() if exp.created_at else None,
@@ -273,23 +272,19 @@ async def get_rsi_dashboard(session: AsyncSession) -> dict:
     """Aggregate RSI dashboard data: counts by tier, by status, recent gate logs."""
     # Counts by tier
     tier_counts_result = await session.execute(
-        select(RSIExperiment.tier, func.count())
-        .group_by(RSIExperiment.tier)
+        select(RSIExperiment.tier, func.count()).group_by(RSIExperiment.tier)
     )
     by_tier = {row[0]: row[1] for row in tier_counts_result.all()}
 
     # Counts by status
     status_counts_result = await session.execute(
-        select(RSIExperiment.status, func.count())
-        .group_by(RSIExperiment.status)
+        select(RSIExperiment.status, func.count()).group_by(RSIExperiment.status)
     )
     by_status = {row[0]: row[1] for row in status_counts_result.all()}
 
     # Recent gate logs (last 20)
     gate_logs_result = await session.execute(
-        select(RSIGateLog)
-        .order_by(RSIGateLog.decided_at.desc())
-        .limit(20)
+        select(RSIGateLog).order_by(RSIGateLog.decided_at.desc()).limit(20)
     )
     gate_logs = gate_logs_result.scalars().all()
 

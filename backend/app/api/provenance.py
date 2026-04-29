@@ -11,7 +11,7 @@ from app.models.paper import Paper
 from app.models.claim_map import ClaimMap
 from app.models.source_card import SourceCard
 from app.models.source_snapshot import SourceSnapshot
-from app.utils import safe_json_loads
+from app.utils import safe_json_loads, utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -38,19 +38,25 @@ async def list_paper_claims(paper_id: str, db: AsyncSession = Depends(get_db)):
 
     output = []
     for claim in claims:
-        output.append({
-            "id": claim.id,
-            "claim_text": claim.claim_text,
-            "claim_type": claim.claim_type,
-            "source_card_id": claim.source_card_id,
-            "source_snapshot_id": claim.source_snapshot_id,
-            "source_span_ref": safe_json_loads(claim.source_span_ref),
-            "result_object_ref": safe_json_loads(claim.result_object_ref),
-            "verification_status": claim.verification_status,
-            "verified_by": claim.verified_by,
-            "verified_at": claim.verified_at.isoformat() if claim.verified_at else None,
-            "created_at": claim.created_at.isoformat() if claim.created_at else None,
-        })
+        output.append(
+            {
+                "id": claim.id,
+                "claim_text": claim.claim_text,
+                "claim_type": claim.claim_type,
+                "source_card_id": claim.source_card_id,
+                "source_snapshot_id": claim.source_snapshot_id,
+                "source_span_ref": safe_json_loads(claim.source_span_ref),
+                "result_object_ref": safe_json_loads(claim.result_object_ref),
+                "verification_status": claim.verification_status,
+                "verified_by": claim.verified_by,
+                "verified_at": claim.verified_at.isoformat()
+                if claim.verified_at
+                else None,
+                "created_at": claim.created_at.isoformat()
+                if claim.created_at
+                else None,
+            }
+        )
 
     # Summary counts by status — aggregated in SQL
     status_rows = (
@@ -109,7 +115,9 @@ async def get_paper_provenance(paper_id: str, db: AsyncSession = Depends(get_db)
                 tier_breakdown[tier] = tier_breakdown.get(tier, 0) + 1
 
     # Source freshness: batch query for latest snapshot per source
-    stale_threshold = datetime.now(timezone.utc) - timedelta(days=settings.source_stale_days)
+    stale_threshold = datetime.now(timezone.utc) - timedelta(
+        days=settings.source_stale_days
+    )
     stale_sources = []
     fresh_sources = []
     if source_ids:
@@ -121,7 +129,9 @@ async def get_paper_provenance(paper_id: str, db: AsyncSession = Depends(get_db)
             .where(SourceSnapshot.source_card_id.in_(source_ids))
             .group_by(SourceSnapshot.source_card_id)
         )
-        snap_map = {row.source_card_id: row.latest_fetched for row in snap_results.all()}
+        snap_map = {
+            row.source_card_id: row.latest_fetched for row in snap_results.all()
+        }
 
         for src_id in source_ids:
             fetched_at = snap_map.get(src_id)
@@ -202,16 +212,21 @@ async def trigger_claim_verification(paper_id: str, db: AsyncSession = Depends(g
     skipped = 0
 
     # Batch-load all referenced snapshots
-    snapshot_ids = list({c.source_snapshot_id for c in pending_claims if c.source_snapshot_id})
+    snapshot_ids = list(
+        {c.source_snapshot_id for c in pending_claims if c.source_snapshot_id}
+    )
     snapshot_map: dict[int, bool] = {}
     if snapshot_ids:
         snap_results = await db.execute(
-            select(SourceSnapshot.id, SourceSnapshot.snapshot_hash)
-            .where(SourceSnapshot.id.in_(snapshot_ids))
+            select(SourceSnapshot.id, SourceSnapshot.snapshot_hash).where(
+                SourceSnapshot.id.in_(snapshot_ids)
+            )
         )
         snapshot_map = {row.id: bool(row.snapshot_hash) for row in snap_results.all()}
 
-    now = datetime.now(timezone.utc)
+    # claim.verified_at is TIMESTAMP WITHOUT TIME ZONE on Postgres;
+    # use utcnow_naive() for the assignments below.
+    now = utcnow_naive()
     for claim in pending_claims:
         if not claim.source_card_id and not claim.result_object_ref:
             skipped += 1
@@ -242,7 +257,9 @@ async def trigger_claim_verification(paper_id: str, db: AsyncSession = Depends(g
     except Exception:
         await db.rollback()
         logger.exception("Failed to persist claim verification for paper %s", paper_id)
-        raise HTTPException(status_code=500, detail="Failed to persist claim verification results")
+        raise HTTPException(
+            status_code=500, detail="Failed to persist claim verification results"
+        )
 
     return {
         "paper_id": paper_id,
