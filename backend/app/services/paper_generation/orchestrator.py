@@ -38,22 +38,22 @@ from app.services.paper_generation.boundary_enforcer import (
     PipelineViolationError,
     verify_lock_integrity,
 )
-from app.services.paper_generation.roles.analyst import (
-    execute_analysis,
-    generate_analysis_code,
+from app.services.paper_generation.roles.scout import generate_ideas, screen_idea
+from app.services.paper_generation.roles.designer import (
+    create_research_design,
+    lock_design,
 )
 from app.services.paper_generation.roles.data_steward import (
     build_source_manifest,
     fetch_and_snapshot,
 )
-from app.services.paper_generation.roles.designer import (
-    create_research_design,
-    lock_design,
+from app.services.paper_generation.roles.analyst import (
+    generate_analysis_code,
+    execute_analysis,
 )
 from app.services.paper_generation.roles.drafter import compose_manuscript
-from app.services.paper_generation.roles.packager import build_package
-from app.services.paper_generation.roles.scout import generate_ideas, screen_idea
 from app.services.paper_generation.roles.verifier import verify_manuscript
+from app.services.paper_generation.roles.packager import build_package
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +91,9 @@ async def run_full_pipeline(
 
     pipeline_start = time.monotonic()
 
-    # Resolve provider once for all roles (model is selected per-role downstream)
+    # Resolve provider once for all roles
     if provider is None:
-        provider, _model = await get_generation_provider()
+        provider, model = await get_generation_provider()
 
     # Generate paper ID if not provided
     if not paper_id:
@@ -166,7 +166,9 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 4. ANALYST: generate and run analysis code
         # ---------------------------------------------------------------
-        stage_report = await _run_stage_with_session(
+        # Long-LLM stage — must NOT hold an outer session across the
+        # LLM call (see _run_stage_no_outer_session docstring).
+        stage_report = await _run_stage_no_outer_session(
             "analyst",
             _stage_analyst,
             paper_id,
@@ -183,7 +185,8 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 5. DRAFTER: compose manuscript
         # ---------------------------------------------------------------
-        stage_report = await _run_stage_with_session(
+        # Long-LLM stage — must NOT hold an outer session.
+        stage_report = await _run_stage_no_outer_session(
             "drafter",
             _stage_drafter,
             paper_id,
@@ -217,7 +220,8 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         # 6. VERIFIER: cross-check claims
         # ---------------------------------------------------------------
-        stage_report = await _run_stage_with_session(
+        # Long-LLM stage — must NOT hold an outer session.
+        stage_report = await _run_stage_no_outer_session(
             "verifier",
             _stage_verifier,
             paper_id,
@@ -227,7 +231,9 @@ async def run_full_pipeline(
         report["stages"]["verifier"] = stage_report
 
         verification_report = stage_report.get("verification", {})
-        recommendation = verification_report.get("summary", {}).get("recommendation", "revise")
+        recommendation = verification_report.get("summary", {}).get(
+            "recommendation", "revise"
+        )
 
         # If verifier recommends rejection, kill the paper
         if recommendation == "reject":
@@ -294,6 +300,12 @@ async def _run_stage_with_session(
     ensures the connection is alive before use, so a connection that
     was dropped during the previous stage's LLM call gets replaced
     cleanly here rather than blowing up on the next ``commit()``.
+
+    Use for FAST stages (<2 min) where the session can safely be held
+    through the whole stage. For long-LLM stages (Analyst, Drafter,
+    Verifier), use ``_run_stage_no_outer_session`` instead — those
+    stages must NOT hold a session across the LLM call or the
+    connection dies and the final commit raises InterfaceError.
     """
     async with async_session() as s:
         paper = await _reload_paper(s, paper_id)
@@ -307,6 +319,38 @@ async def _run_stage_with_session(
             await s.rollback()
             raise
     return result
+
+
+async def _run_stage_no_outer_session(
+    stage_name: str,
+    stage_fn,
+    paper_id: str,
+    **stage_kwargs,
+) -> dict[str, Any]:
+    """Like ``_run_stage_with_session`` but does NOT hold a session
+    across the stage's call.
+
+    Required for long-LLM stages (Analyst, Drafter, Verifier) where
+    the LLM call can take 5+ min. Holding a session that long means
+    the underlying DB connection dies and even ``commit()`` raises
+    InterfaceError (production runs #25133985204, #25135681422,
+    #25136675659 all hit this exact symptom).
+
+    Pattern:
+      1. Open a short session JUST for paper reload, then close.
+         Connection returns to the pool.
+      2. Call the stage with ``session=None`` and the detached paper.
+      3. The stage manages its own DB lifecycle internally — its
+         role functions each open short-lived sessions for read /
+         LLM-call / write phases.
+    """
+    # Quick session for paper reload
+    async with async_session() as s:
+        paper = await _reload_paper(s, paper_id)
+    # Session closed; connection returned to the pool.
+
+    # Stage runs WITHOUT an outer session. It manages its own DB.
+    return await _run_stage(stage_name, stage_fn, None, paper, **stage_kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -525,14 +569,18 @@ async def _stage_data_steward(
     # so the pipeline can still produce real data rather than dying here.
     if not valid_sources:
         fallback_ids = [
-            sid for sid in ("federal_register", "regulations_gov") if sid in registered_ids
+            sid
+            for sid in ("federal_register", "regulations_gov")
+            if sid in registered_ids
         ]
         if fallback_ids:
             logger.warning(
                 "Data Steward got zero valid sources from LLM; falling back to %s",
                 fallback_ids,
             )
-            valid_sources = [{"source_card_id": sid, "fetch_params": {}} for sid in fallback_ids]
+            valid_sources = [
+                {"source_card_id": sid, "fetch_params": {}} for sid in fallback_ids
+            ]
 
     snapshots_created = 0
     fetch_errors: list[str] = []
@@ -564,7 +612,9 @@ async def _stage_data_steward(
 
     # Build a useful reason string so error_message isn't "(no error message)"
     if fetch_errors:
-        reason = f"All {len(fetch_errors)} source fetches failed: " + "; ".join(fetch_errors[:3])
+        reason = f"All {len(fetch_errors)} source fetches failed: " + "; ".join(
+            fetch_errors[:3]
+        )
     elif dropped_ids:
         reason = (
             f"LLM picked {len(dropped_ids)} unregistered source IDs and the "
@@ -584,7 +634,7 @@ async def _stage_data_steward(
 
 
 async def _stage_analyst(
-    session: AsyncSession,
+    session: AsyncSession | None,
     paper: Paper,
     *,
     provider: LLMProvider,
@@ -594,9 +644,13 @@ async def _stage_analyst(
     The role functions ``generate_analysis_code`` and ``execute_analysis``
     each manage their own short-lived DB sessions so we don't hold a
     connection across the long LLM call / subprocess execution.
+
+    Routed through ``_run_stage_no_outer_session`` so ``session=None``.
+    Open short sessions internally for any DB ops here.
     """
-    # Verify lock integrity before analysis (reads only, fast)
-    await verify_lock_integrity(session, paper)
+    # Verify lock integrity in a short session (reads only, fast)
+    async with async_session() as s:
+        await verify_lock_integrity(s, paper)
 
     # generate_analysis_code holds NO db session during the LLM call
     code_result = await generate_analysis_code(
@@ -616,7 +670,9 @@ async def _stage_analyst(
     )
 
     return {
-        "status": "completed" if exec_result.get("success") else "completed_with_errors",
+        "status": "completed"
+        if exec_result.get("success")
+        else "completed_with_errors",
         "code_hash": code_result.get("code_hash", ""),
         "code_content": code_content,
         "result_manifest": exec_result,
@@ -625,7 +681,7 @@ async def _stage_analyst(
 
 
 async def _stage_drafter(
-    session: AsyncSession,
+    session: AsyncSession | None,
     paper: Paper,
     *,
     result_manifest: dict,
@@ -636,9 +692,12 @@ async def _stage_drafter(
 
     ``compose_manuscript`` manages its own short-lived sessions so the
     long manuscript-generation LLM call doesn't sit on a held connection.
+
+    Routed through ``_run_stage_no_outer_session`` so ``session=None``.
     """
-    # Verify lock integrity before drafting (reads only, fast)
-    await verify_lock_integrity(session, paper)
+    # Verify lock integrity in a short session
+    async with async_session() as s:
+        await verify_lock_integrity(s, paper)
 
     manuscript_result = await compose_manuscript(
         paper_id=paper.id,
@@ -667,9 +726,9 @@ async def _stage_collegial_review(
     provider: LLMProvider,
 ) -> dict[str, Any]:
     """Collegial review stage: constructive multi-turn feedback from colleagues."""
-    from app.models.claim_map import ClaimMap
-    from app.models.lock_artifact import LockArtifact
     from app.services.collegial.review_loop import run_full_collegial_review
+    from app.models.lock_artifact import LockArtifact
+    from app.models.claim_map import ClaimMap
 
     # Load lock YAML for context
     lock_result = await session.execute(
@@ -684,7 +743,9 @@ async def _stage_collegial_review(
     lock_yaml = lock.lock_yaml if lock else ""
 
     # Load claims
-    claims_result = await session.execute(select(ClaimMap).where(ClaimMap.paper_id == paper.id))
+    claims_result = await session.execute(
+        select(ClaimMap).where(ClaimMap.paper_id == paper.id)
+    )
     claims = [
         {"claim_text": c.claim_text, "claim_type": c.claim_type}
         for c in claims_result.scalars().all()
@@ -732,15 +793,19 @@ async def _stage_collegial_review(
 
 
 async def _stage_verifier(
-    session: AsyncSession,
+    session: AsyncSession | None,
     paper: Paper,
     *,
     result_manifest: dict,
     provider: LLMProvider,
 ) -> dict[str, Any]:
-    """Verifier stage: cross-check claims."""
-    # Verify lock integrity before verification
-    await verify_lock_integrity(session, paper)
+    """Verifier stage: cross-check claims.
+
+    Routed through ``_run_stage_no_outer_session`` so ``session=None``.
+    """
+    # Verify lock integrity in a short session
+    async with async_session() as s:
+        await verify_lock_integrity(s, paper)
 
     verification = await verify_manuscript(
         paper_id=paper.id,
@@ -801,7 +866,14 @@ async def _run_stage(
     paper: Paper,
     **kwargs,
 ) -> dict[str, Any]:
-    """Run a pipeline stage with timing and error handling."""
+    """Run a pipeline stage with timing and error handling.
+
+    On exception, captures error_class + truncated traceback alongside
+    the str(e). Without this, an exception with an empty str (e.g.
+    bare ``RuntimeError()``) shows up as ``(no error message)`` in the
+    cron payload — production run #25137481628 hit this exact pattern
+    at the Analyst stage.
+    """
     start = time.monotonic()
     logger.info("[%s] Starting stage: %s", paper.id, stage_name)
 
@@ -810,8 +882,21 @@ async def _run_stage(
     except PipelineViolationError:
         raise  # Let boundary violations propagate
     except Exception as e:
-        logger.error("[%s] Stage '%s' failed: %s", paper.id, stage_name, e, exc_info=True)
-        result = {"status": "failed", "error": str(e)}
+        tb = traceback.format_exc()
+        logger.error(
+            "[%s] Stage '%s' failed: %s", paper.id, stage_name, e, exc_info=True
+        )
+        # Compose a rich error string so even bare exceptions surface
+        # something useful. ``error_class`` and ``error_traceback`` are
+        # captured separately for structured access.
+        err_class = type(e).__name__
+        err_msg = str(e) or "(empty exception message)"
+        result = {
+            "status": "failed",
+            "error": f"{err_class}: {err_msg}",
+            "error_class": err_class,
+            "error_traceback": tb,
+        }
 
     elapsed = time.monotonic() - start
     result["duration_sec"] = round(elapsed, 2)
