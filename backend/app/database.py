@@ -39,11 +39,25 @@ if not _is_sqlite:
         {
             "pool_size": 10,
             "max_overflow": 20,
-            "pool_recycle": 3600,
+            # Recycle connections often so dead ones get replaced
+            # quickly. Long enough to amortise reconnect cost,
+            # short enough to refresh before Postgres provider-side
+            # idle timeouts kick in.
+            "pool_recycle": 1800,
         }
     )
-    if _connect_args:
-        _engine_kwargs["connect_args"] = _connect_args
+
+    # Server-side settings: disable idle_in_transaction killer.
+    # The paper-generation pipeline holds a single session for
+    # ~10 minutes while LLMs do their work. Postgres' default
+    # idle_in_transaction_session_timeout (which Render Postgres
+    # may set short) drops the connection mid-way and we get
+    # "Transaction.rollback(): underlying connection is closed"
+    # (seen in production run #25132990123).
+    _connect_args["server_settings"] = {
+        "idle_in_transaction_session_timeout": "0",
+    }
+    _engine_kwargs["connect_args"] = _connect_args
 else:
     _db_url = settings.database_url
 

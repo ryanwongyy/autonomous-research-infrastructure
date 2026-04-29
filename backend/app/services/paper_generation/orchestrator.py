@@ -102,6 +102,7 @@ async def run_full_pipeline(
         # 0. Create Paper record
         # ---------------------------------------------------------------
         paper = await _ensure_paper(session, paper_id, family_id)
+        await session.commit()  # checkpoint: paper record exists
 
         # ---------------------------------------------------------------
         # 1. SCOUT: generate and screen ideas
@@ -115,6 +116,10 @@ async def run_full_pipeline(
             provider=provider,
         )
         report["stages"]["scout"] = stage_report
+        # Per-stage checkpoint: commit so we don't hold a long
+        # transaction across LLM calls (Postgres' default
+        # idle_in_transaction timeout drops the connection mid-way).
+        await session.commit()
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_scout"
             return _finalise_report(report, pipeline_start)
@@ -133,6 +138,7 @@ async def run_full_pipeline(
             provider=provider,
         )
         report["stages"]["designer"] = stage_report
+        await session.commit()
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_designer"
             return _finalise_report(report, pipeline_start)
@@ -150,6 +156,7 @@ async def run_full_pipeline(
             provider=provider,
         )
         report["stages"]["data_steward"] = stage_report
+        await session.commit()
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_data_steward"
             return _finalise_report(report, pipeline_start)
@@ -168,6 +175,7 @@ async def run_full_pipeline(
             provider=provider,
         )
         report["stages"]["analyst"] = stage_report
+        await session.commit()
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_analyst"
             return _finalise_report(report, pipeline_start)
@@ -189,6 +197,7 @@ async def run_full_pipeline(
             provider=provider,
         )
         report["stages"]["drafter"] = stage_report
+        await session.commit()
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_drafter"
             return _finalise_report(report, pipeline_start)
@@ -208,6 +217,7 @@ async def run_full_pipeline(
             provider=provider,
         )
         report["stages"]["collegial_review"] = stage_report
+        await session.commit()
         # Collegial review cannot kill a paper — it only strengthens it
         # Use the revised manuscript if available
         if stage_report.get("revised_manuscript"):
@@ -226,6 +236,7 @@ async def run_full_pipeline(
             provider=provider,
         )
         report["stages"]["verifier"] = stage_report
+        await session.commit()
 
         verification_report = stage_report.get("verification", {})
         recommendation = verification_report.get("summary", {}).get("recommendation", "revise")
@@ -236,7 +247,7 @@ async def run_full_pipeline(
             paper.funnel_stage = "killed"
             paper.kill_reason = "Verifier recommended rejection"
             session.add(paper)
-            await session.flush()
+            await session.commit()
             report["final_status"] = "rejected_by_verifier"
             return _finalise_report(report, pipeline_start)
 
@@ -256,14 +267,13 @@ async def run_full_pipeline(
             verification_report=verification_report,
         )
         report["stages"]["packager"] = stage_report
+        await session.commit()
 
         # ---------------------------------------------------------------
         # Pipeline complete
         # ---------------------------------------------------------------
         paper = await _reload_paper(session, paper_id)
         report["final_status"] = f"completed (funnel_stage={paper.funnel_stage})"
-
-        await session.commit()
         logger.info("Pipeline completed for paper %s", paper_id)
 
     except PipelineViolationError as e:
