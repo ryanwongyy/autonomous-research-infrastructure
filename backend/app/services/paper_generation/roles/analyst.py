@@ -141,12 +141,16 @@ async def generate_analysis_code(
         ],
         model=model,
         temperature=0.3,
-        # Production run #25144668610 truncated at 56592 chars
-        # mid-string (max_tokens=16384 was tight for analysis code
-        # with multiple robustness checks). Bump to match Drafter's
-        # 32768 budget. With streaming enabled (PR #28), there's no
-        # 10-min timeout to worry about.
-        max_tokens=32768,
+        # Hold at 16K to fit inside Render's ~15-min HTTP request
+        # limit. PR #32 bumped this to 32K to recover from a one-off
+        # truncation, but the bigger budget pushed total pipeline
+        # runtime past the wall (run #25145786347 streamed for 14m47s
+        # then was killed mid-stage). The salvage path added in PR #32
+        # still handles any truncation that does occur, so we don't
+        # actually lose work — partial code is recovered. Once we
+        # migrate to fire-and-poll (no held HTTP connection) this can
+        # be re-bumped.
+        max_tokens=16384,
     )
 
     parsed = _parse_json_object(response)
