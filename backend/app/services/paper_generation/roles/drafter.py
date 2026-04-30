@@ -223,8 +223,16 @@ async def compose_manuscript(
                     "section": claim_data.get("section", ""),
                 }
             )
+        # Extract the manuscript title from the LaTeX so the paper
+        # record shows it instead of the placeholder "Generating...".
+        # Production paper apep_faf874ae completed but its title still
+        # showed the placeholder.
+        title = _extract_latex_title(manuscript_latex)
+
         paper = await _load_paper(s, paper_id)
         paper.funnel_stage = "drafting"
+        if title:
+            paper.title = title
         s.add(paper)
         await s.commit()
 
@@ -312,3 +320,33 @@ def _parse_json_object(response: str) -> dict:
             "claims": [],
             "bibliography_entries": [],
         }
+
+
+def _extract_latex_title(manuscript_latex: str) -> str | None:
+    """Pull the title out of a LaTeX manuscript via ``\\title{...}``.
+
+    Returns the title text (stripped of LaTeX braces and surrounding
+    whitespace) or None if no title block is found / the title is
+    empty. Used by ``compose_manuscript`` to update the ``papers.title``
+    column from its ``"Generating..."`` placeholder once the manuscript
+    is ready.
+    """
+    if not manuscript_latex:
+        return None
+    import re
+
+    # Match \title{...} allowing for nested braces (one level deep is
+    # plenty for typical academic titles like \title{Foo: \emph{Bar}}).
+    match = re.search(
+        r"\\title\{((?:[^{}]|\{[^{}]*\})*)\}", manuscript_latex, re.DOTALL
+    )
+    if not match:
+        return None
+    title = match.group(1).strip()
+    # Strip simple LaTeX commands that academic titles often include
+    # (e.g. \emph{...} -> ...). Conservative — a more sophisticated
+    # de-LaTeX is overkill for a DB column.
+    title = re.sub(r"\\[a-zA-Z]+\{([^{}]*)\}", r"\1", title)
+    title = title.strip()
+    # Cap at the column length (papers.title is String(512)).
+    return title[:512] if title else None

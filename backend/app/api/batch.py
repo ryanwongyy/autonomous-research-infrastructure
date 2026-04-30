@@ -227,7 +227,10 @@ async def _do_batch_generate(body: GenerateRequest) -> "BatchResult":
                 # far the pipeline progressed before any crash.
                 "stages_completed": stages_completed,
             }
-            if final_status == "completed":
+            # Orchestrator's success path emits ``"completed (funnel_stage=...)"``
+            # not bare ``"completed"`` (production run #25140732856), so use a
+            # ``startswith`` check.
+            if final_status.startswith("completed"):
                 generated += 1
             elif final_status.startswith("killed_at_"):
                 killed[final_status] = killed.get(final_status, 0) + 1
@@ -247,7 +250,9 @@ async def _do_batch_generate(body: GenerateRequest) -> "BatchResult":
             continue
 
         # --- Review (only if generation truly completed) ---
-        if entry["generation"]["status"] == "completed":
+        # Orchestrator emits "completed (funnel_stage=candidate)" — match
+        # the prefix so the review pipeline runs.
+        if entry["generation"]["status"].startswith("completed"):
             try:
                 async with async_session() as session:
                     review_report = await run_review_pipeline(session, paper_id)

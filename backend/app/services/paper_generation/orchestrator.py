@@ -760,9 +760,14 @@ async def _stage_collegial_review(
             select(PaperFamily).where(PaperFamily.id == paper.family_id).limit(1)
         )
         family = fam_result.scalar_one_or_none()
-        if family and family.venue_ladder_json:
+        # The PaperFamily column is named ``venue_ladder`` (Text holding
+        # JSON). Production run #25140732856 hit AttributeError on the
+        # incorrect ``venue_ladder_json`` name; the pipeline survived
+        # because collegial review is non-fatal, but the stage was a
+        # no-op.
+        if family and family.venue_ladder:
             try:
-                venues = json.loads(family.venue_ladder_json)
+                venues = json.loads(family.venue_ladder)
                 flagship = venues.get("flagship", [])
                 target_venue = flagship[0] if flagship else None
             except (ValueError, TypeError, IndexError):
