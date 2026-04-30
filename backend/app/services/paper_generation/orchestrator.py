@@ -15,6 +15,7 @@ Hard lock enforcement: any boundary violation raises PipelineViolationError.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -56,6 +57,36 @@ from app.services.paper_generation.roles.verifier import verify_manuscript
 from app.services.paper_generation.roles.packager import build_package
 
 logger = logging.getLogger(__name__)
+
+
+# Per-stage timeouts (seconds). Each stage gets bounded wall-clock
+# time so a hang in any single stage can't stall the whole pipeline.
+# Production paper apep_dd9fc939 hit a 19-minute hang in Packager
+# (a DB-only stage that should take <1s) — likely an asyncpg
+# poisoned-connection issue. Without a timeout the worker would
+# eventually be killed by Render's free-tier limits, but the paper
+# would be left in a half-done state with no error captured.
+#
+# Numbers are generous upper bounds, not expected runtimes:
+#   Scout:     5 idea-gen calls + 5 screening calls = ~5 min worst case
+#   Designer:  1 LLM call ~30s
+#   Data Steward: 1 LLM + N HTTP fetches = ~5 min
+#   Analyst:   LLM + subprocess = ~10 min
+#   Drafter:   32K-token manuscript = ~10 min
+#   Collegial: 3 colleagues x 2 rounds + assessor = ~8 min
+#   Verifier:  N batches of 15 claims = ~5 min
+#   Packager:  pure DB+filesystem, should be <1s; cap at 60s
+_STAGE_TIMEOUT_SEC: dict[str, int] = {
+    "scout": 600,
+    "designer": 300,
+    "data_steward": 600,
+    "analyst": 900,
+    "drafter": 900,
+    "collegial_review": 600,
+    "verifier": 600,
+    "packager": 60,
+}
+_DEFAULT_STAGE_TIMEOUT_SEC = 600  # fallback for any unlisted stage
 
 
 # ---------------------------------------------------------------------------
@@ -323,44 +354,68 @@ async def _run_stage_with_session(
     stages must NOT hold a session across the LLM call or the
     connection dies and the final commit raises InterfaceError.
     """
+    # Per-stage timeout: bound the whole stage (reload + run +
+    # commit) so a single hung await can't stall the pipeline
+    # indefinitely. Production paper apep_dd9fc939 hung 19 min in
+    # Packager (which is DB-only, should take <1s).
+    timeout_sec = _STAGE_TIMEOUT_SEC.get(stage_name, _DEFAULT_STAGE_TIMEOUT_SEC)
+
     # Outer try/except so wrapper-level exceptions (e.g. paper-reload
     # blew up because connection pool is corrupted) never propagate
     # past this helper. The caller always gets a dict.
     try:
-        async with async_session() as s:
-            paper = await _reload_paper(s, paper_id)
-            result = await _run_stage(stage_name, stage_fn, s, paper, **stage_kwargs)
-            # Commit even on stage failure so partial progress (paper
-            # record updates, kill_reason, etc.) persists. Each stage's
-            # exception handling is inside _run_stage; nothing here raises.
-            #
-            # If the session is in a "failed transaction" state (the inner
-            # work corrupted it without rolling back), commit raises
-            # ``InterfaceError`` AND rollback may also fail (production
-            # paper apep_bfb6d393 hit "Can't reconnect until invalid
-            # transaction is rolled back" because the rollback itself
-            # was on a poisoned session). Don't let those bubble out —
-            # the stage's ``result`` is still valid in memory; we just
-            # couldn't persist whatever was pending in the transaction.
-            try:
-                await s.commit()
-            except Exception as commit_err:
-                logger.warning(
-                    "Stage '%s' wrapper commit failed: %s. Attempting rollback.",
-                    stage_name,
-                    commit_err,
+        async with asyncio.timeout(timeout_sec):
+            async with async_session() as s:
+                paper = await _reload_paper(s, paper_id)
+                result = await _run_stage(
+                    stage_name, stage_fn, s, paper, **stage_kwargs
                 )
+                # Commit even on stage failure so partial progress (paper
+                # record updates, kill_reason, etc.) persists. Each stage's
+                # exception handling is inside _run_stage; nothing here raises.
+                #
+                # If the session is in a "failed transaction" state (the
+                # inner work corrupted it without rolling back), commit
+                # raises ``InterfaceError`` AND rollback may also fail
+                # (production paper apep_bfb6d393 hit "Can't reconnect
+                # until invalid transaction is rolled back" because the
+                # rollback itself was on a poisoned session). Don't let
+                # those bubble out — the stage's ``result`` is still valid
+                # in memory; we just couldn't persist whatever was pending.
                 try:
-                    await s.rollback()
-                except Exception as rb_err:
+                    await s.commit()
+                except Exception as commit_err:
                     logger.warning(
-                        "Stage '%s' wrapper rollback also failed: %s. "
-                        "Dropping session — pending writes lost.",
+                        "Stage '%s' wrapper commit failed: %s. Attempting rollback.",
                         stage_name,
-                        rb_err,
+                        commit_err,
                     )
-                result["wrapper_commit_failed"] = str(commit_err)[:500]
-        return result
+                    try:
+                        await s.rollback()
+                    except Exception as rb_err:
+                        logger.warning(
+                            "Stage '%s' wrapper rollback also failed: %s. "
+                            "Dropping session — pending writes lost.",
+                            stage_name,
+                            rb_err,
+                        )
+                    result["wrapper_commit_failed"] = str(commit_err)[:500]
+            return result
+    except TimeoutError:
+        logger.error(
+            "Stage '%s' exceeded timeout %ds — aborting (paper=%s)",
+            stage_name,
+            timeout_sec,
+            paper_id,
+        )
+        return {
+            "status": "failed",
+            "stage_name": stage_name,
+            "duration_sec": float(timeout_sec),
+            "error": f"TimeoutError: stage exceeded {timeout_sec}s",
+            "error_class": "TimeoutError",
+            "wrapper_timeout": True,
+        }
     except Exception as wrapper_err:
         logger.error(
             "Stage '%s' wrapper hit fatal exception (paper=%s): %s",
@@ -403,16 +458,38 @@ async def _run_stage_no_outer_session(
          role functions each open short-lived sessions for read /
          LLM-call / write phases.
     """
+    # Per-stage timeout — same rationale as _run_stage_with_session.
+    timeout_sec = _STAGE_TIMEOUT_SEC.get(stage_name, _DEFAULT_STAGE_TIMEOUT_SEC)
+
     # Outer try/except so wrapper-level exceptions never propagate
     # past this helper. The caller always gets a dict.
     try:
-        # Quick session for paper reload
-        async with async_session() as s:
-            paper = await _reload_paper(s, paper_id)
-        # Session closed; connection returned to the pool.
+        async with asyncio.timeout(timeout_sec):
+            # Quick session for paper reload
+            async with async_session() as s:
+                paper = await _reload_paper(s, paper_id)
+            # Session closed; connection returned to the pool.
 
-        # Stage runs WITHOUT an outer session. It manages its own DB.
-        return await _run_stage(stage_name, stage_fn, None, paper, **stage_kwargs)
+            # Stage runs WITHOUT an outer session. It manages its own DB.
+            return await _run_stage(
+                stage_name, stage_fn, None, paper, **stage_kwargs
+            )
+    except TimeoutError:
+        logger.error(
+            "Stage '%s' (no-outer-session) exceeded timeout %ds — aborting "
+            "(paper=%s)",
+            stage_name,
+            timeout_sec,
+            paper_id,
+        )
+        return {
+            "status": "failed",
+            "stage_name": stage_name,
+            "duration_sec": float(timeout_sec),
+            "error": f"TimeoutError: stage exceeded {timeout_sec}s",
+            "error_class": "TimeoutError",
+            "wrapper_timeout": True,
+        }
     except Exception as wrapper_err:
         logger.error(
             "Stage '%s' (no-outer-session) wrapper hit fatal exception "
