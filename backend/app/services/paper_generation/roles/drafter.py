@@ -196,19 +196,38 @@ async def compose_manuscript(
     # ── Phase 3: writes (short-lived session, fresh connection) ──────
     claim_map_entries: list[dict[str, Any]] = []
     async with async_session() as s:
+        # Load registered source-card IDs so we can drop hallucinated
+        # source_ref values from the LLM. Same root cause as PR #17 in
+        # Data Steward, but at the claim_map insertion site. Without
+        # this, the Drafter's INSERT into claim_maps blows up with a
+        # ForeignKeyViolationError when the LLM picks bogus IDs like
+        # "theoretical" (production run #25144089527).
+        from app.models.source_card import SourceCard
+
+        sc_result = await s.execute(
+            select(SourceCard.id).where(SourceCard.active.is_(True))
+        )
+        registered_source_ids = {row[0] for row in sc_result.all()}
+
         for claim_data in claims_raw:
+            source_type = claim_data.get("source_type", "")
+            source_ref = claim_data.get("source_ref", "")
+
+            # Only set source_card_id if the LLM's source_ref refers
+            # to an actually-registered source card. Otherwise NULL —
+            # the verifier will flag it as missing-evidence later.
+            valid_source_card_id: str | None = None
+            if source_type == "source_span" and source_ref in registered_source_ids:
+                valid_source_card_id = source_ref
+
             claim_map = ClaimMap(
                 paper_id=paper_id,
                 claim_text=claim_data.get("claim_text", ""),
                 claim_type=claim_data.get("claim_type", "descriptive"),
-                source_card_id=(
-                    claim_data.get("source_ref")
-                    if claim_data.get("source_type") == "source_span"
-                    else None
-                ),
+                source_card_id=valid_source_card_id,
                 result_object_ref=(
-                    json.dumps({"name": claim_data.get("source_ref")})
-                    if claim_data.get("source_type") == "result_object"
+                    json.dumps({"name": source_ref})
+                    if source_type == "result_object"
                     else None
                 ),
                 verification_status="pending",
@@ -218,8 +237,8 @@ async def compose_manuscript(
                 {
                     "claim_text": claim_data.get("claim_text", ""),
                     "claim_type": claim_data.get("claim_type", "descriptive"),
-                    "source_type": claim_data.get("source_type", ""),
-                    "source_ref": claim_data.get("source_ref", ""),
+                    "source_type": source_type,
+                    "source_ref": source_ref,
                     "section": claim_data.get("section", ""),
                 }
             )
