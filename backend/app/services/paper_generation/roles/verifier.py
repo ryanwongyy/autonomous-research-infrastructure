@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC
 from typing import Any
 
 import yaml
@@ -264,7 +263,7 @@ async def _update_claim_statuses(
     verifications: list[dict[str, Any]],
 ) -> None:
     """Update ClaimMap verification statuses based on verifier output."""
-    from datetime import datetime
+    from app.utils import utcnow_naive
 
     # Build a lookup by claim_text (best-effort matching)
     verify_map: dict[str, dict] = {}
@@ -272,6 +271,9 @@ async def _update_claim_statuses(
         text = v.get("claim_text", "")
         verify_map[text] = v
 
+    # claim_map.verified_at is TIMESTAMP WITHOUT TIME ZONE on Postgres;
+    # asyncpg refuses to silently strip tzinfo. Use utcnow_naive().
+    now = utcnow_naive()
     for claim in claims:
         v = verify_map.get(claim.claim_text)
         if v is None:
@@ -286,7 +288,7 @@ async def _update_claim_statuses(
             claim.verification_status = "pending"
 
         claim.verified_by = "verifier_role"
-        claim.verified_at = datetime.now(UTC)
+        claim.verified_at = now
         session.add(claim)
 
     await session.flush()

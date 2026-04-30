@@ -24,6 +24,7 @@ from app.services.provenance.hasher import (
     compute_merkle_root,
     hash_content,
 )
+from app.utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -270,7 +271,9 @@ async def build_package(
         authorship_declaration=authorship_declaration,
         ai_contribution_log=ai_contribution_log,
         disclosure_text=disclosure_text,
-        created_at=datetime.now(UTC),
+        # paper_packages.created_at is TIMESTAMP WITHOUT TIME ZONE
+        # on Postgres (run #25140027480 hit DataError on this write).
+        created_at=utcnow_naive(),
     )
     session.add(package)
 

@@ -146,6 +146,21 @@ async def generate_analysis_code(
 
     parsed = _parse_json_object(response)
     code_content = parsed.get("code", "")
+
+    if not code_content:
+        # Surface the actual LLM response (truncated) so the cron
+        # payload tells us why parsing failed. Without this, the
+        # operator sees only "No analysis code generated" and has
+        # no way to distinguish JSON-truncation, prose-only response,
+        # or model refusal.
+        head = response[:300] if response else "(empty response)"
+        tail = response[-300:] if len(response) > 600 else ""
+        raise RuntimeError(
+            f"Analyst LLM returned no parseable code. "
+            f"Response length: {len(response)}. "
+            f"Head: {head!r}. Tail: {tail!r}"
+        )
+
     requirements = parsed.get(
         "requirements",
         "numpy>=1.24.0\npandas>=2.0.0\nstatsmodels>=0.14.0\nscipy>=1.11.0\n",
@@ -301,13 +316,67 @@ async def _build_source_schemas(session: AsyncSession, paper_id: str) -> str:
 
 
 def _parse_json_object(response: str) -> dict:
+    """Parse a JSON object from an LLM response.
+
+    Tolerant to:
+      - markdown code fences (```json ... ```)
+      - leading/trailing whitespace and prose
+      - truncated responses (extracts the ``code`` field via regex
+        even when the closing brace is missing)
+
+    Logs the response head/tail on parse failure so the operator
+    can see what the LLM actually returned (production run
+    #25138860483 hit "No analysis code generated" with no diagnostic).
+    """
+    if not response:
+        logger.warning("Empty LLM response — cannot parse analysis JSON. Returning fallback.")
+        return {"code": "", "requirements": "", "expected_outputs": []}
+
+    # Try the full-JSON-extract path first.
     try:
         start = response.index("{")
         end = response.rindex("}") + 1
         return json.loads(response[start:end])
-    except (ValueError, json.JSONDecodeError):
-        logger.warning("Failed to parse analysis JSON from LLM response")
-        return {"code": "", "requirements": "", "expected_outputs": []}
+    except (ValueError, json.JSONDecodeError) as exc:
+        # Log enough of the response to diagnose without dumping
+        # 16K of tokens. Head + tail covers truncation, fence
+        # wrapping, and "I cannot do that" prose-only responses.
+        head = response[:500]
+        tail = response[-500:] if len(response) > 1000 else ""
+        logger.warning(
+            "Failed to parse analysis JSON (%s: %s).\n"
+            "Response length: %d chars.\n"
+            "First 500 chars: %r\n"
+            "Last 500 chars: %r",
+            type(exc).__name__,
+            exc,
+            len(response),
+            head,
+            tail,
+        )
+
+    # Truncation salvage: try to extract the ``code`` field via regex
+    # in case Claude was cut off mid-response.
+    import re
+
+    code_match = re.search(r'"code"\s*:\s*"((?:[^"\\]|\\.)*)"', response, re.DOTALL)
+    if code_match:
+        logger.warning(
+            "Salvaged ``code`` field from truncated JSON (%d chars).",
+            len(code_match.group(1)),
+        )
+        # Decode escape sequences so the salvaged code is runnable.
+        try:
+            code = json.loads(f'"{code_match.group(1)}"')
+        except json.JSONDecodeError:
+            code = code_match.group(1).encode().decode("unicode_escape")
+        return {
+            "code": code,
+            "requirements": "numpy>=1.24.0\npandas>=2.0.0\nstatsmodels>=0.14.0\nscipy>=1.11.0\n",
+            "expected_outputs": [],
+        }
+
+    return {"code": "", "requirements": "", "expected_outputs": []}
 
 
 async def _execute_in_subprocess(code_content: str) -> dict[str, Any]:

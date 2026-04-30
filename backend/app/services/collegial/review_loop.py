@@ -18,7 +18,6 @@ The convergence loop:
 
 import json
 import logging
-from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +28,7 @@ from app.models.collegial_exchange import CollegialExchange
 from app.models.collegial_session import CollegialSession
 from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
-from app.utils import safe_json_loads
+from app.utils import safe_json_loads, utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -444,7 +443,11 @@ async def run_targeted_feedback(
         "domain": ["literature_engagement", "contribution_clarity"],
         "venue_strategy": ["venue_fit", "contribution_clarity", "argument_coherence"],
         "quantitative_methods": ["methodology_rigor", "argument_coherence"],
-        "theory": ["literature_engagement", "contribution_clarity", "argument_coherence"],
+        "theory": [
+            "literature_engagement",
+            "contribution_clarity",
+            "argument_coherence",
+        ],
     }
     relevant_dims = expertise_relevance.get(colleague.expertise_area, [])
     relevant_gaps = [
@@ -822,7 +825,8 @@ async def complete_session(
 
     collegial_session.status = final_status
     collegial_session.session_summary = session_summary
-    collegial_session.completed_at = datetime.now(UTC)
+    # collegial_sessions.completed_at is TIMESTAMP WITHOUT TIME ZONE
+    collegial_session.completed_at = utcnow_naive()
     collegial_session.quality_trajectory_json = json.dumps(quality_trajectory)
     collegial_session.final_quality_score = final_score
     session.add(collegial_session)
@@ -1043,7 +1047,10 @@ async def run_full_collegial_review(
                         )
                     except Exception as e:
                         logger.warning(
-                            "[%s] Followup for %s failed: %s", paper_id, colleague.name, e
+                            "[%s] Followup for %s failed: %s",
+                            paper_id,
+                            colleague.name,
+                            e,
                         )
 
         # 2c. Quality assessment

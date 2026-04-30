@@ -33,7 +33,18 @@ def _llm_retry():
 class LLMProvider(ABC):
     """Abstract base class for LLM provider adapters."""
 
-    timeout_seconds: int = 120  # 2-minute default for LLM API calls
+    @property
+    def timeout_seconds(self) -> int:
+        """Per-LLM-call timeout, configured via settings.
+
+        Default: 600s (10 min). Long generations (Analyst code 16K
+        tokens, Drafter manuscript 32K tokens) can take 3-5 minutes
+        at the model. Production run #25138168976 killed Analyst
+        with TimeoutError under the old 120s default.
+        """
+        from app.config import settings
+
+        return settings.llm_timeout_seconds
 
     @abstractmethod
     async def complete(
