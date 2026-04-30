@@ -176,7 +176,7 @@ async def generate_ideas(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     prompt = IDEA_USER_PROMPT.format(
         count=count,
@@ -232,7 +232,7 @@ async def screen_idea(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     prompt = SCREEN_USER_PROMPT.format(idea_yaml=idea_yaml)
 

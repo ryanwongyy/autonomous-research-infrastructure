@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.cohort_tag import CohortTag
 from app.models.rating import Rating
 
@@ -27,11 +28,13 @@ def _current_cohort_id(generation_model: str) -> str:
 async def tag_paper_cohort(
     session: AsyncSession,
     paper_id: str,
-    generation_model: str = "claude-opus-4-6",
+    generation_model: str | None = None,
     review_models: list[str] | None = None,
     judge_model: str | None = None,
 ) -> CohortTag:
     """Tag a paper with its cohort based on the current model configuration."""
+    if generation_model is None:
+        generation_model = settings.claude_opus_model
     cohort_id = _current_cohort_id(generation_model)
 
     # Check if already tagged
