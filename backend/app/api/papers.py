@@ -71,6 +71,7 @@ async def list_papers(
 # Must be defined BEFORE /papers/{paper_id} to avoid wildcard capture.
 # ---------------------------------------------------------------------------
 
+
 @router.get("/papers/public")
 async def list_public_papers(
     limit: int = Query(50, ge=1, le=250),
@@ -123,18 +124,20 @@ async def paper_json_feed(
 
     items = []
     for p in papers:
-        items.append({
-            "id": p.id,
-            "title": p.title,
-            "content_text": p.abstract or "",
-            "date_published": p.created_at.isoformat() if p.created_at else None,
-            "_ari": {
-                "family_id": p.family_id,
-                "release_status": p.release_status,
-                "method": p.method,
-                "novelty_score": p.novelty_score,
-            },
-        })
+        items.append(
+            {
+                "id": p.id,
+                "title": p.title,
+                "content_text": p.abstract or "",
+                "date_published": p.created_at.isoformat() if p.created_at else None,
+                "_ari": {
+                    "family_id": p.family_id,
+                    "release_status": p.release_status,
+                    "method": p.method,
+                    "novelty_score": p.novelty_score,
+                },
+            }
+        )
 
     return {
         "version": "https://jsonfeed.org/version/1.1",
@@ -147,9 +150,7 @@ async def paper_json_feed(
 @router.get("/papers/{paper_id}", response_model=PaperWithRating)
 async def get_paper(paper_id: str, db: AsyncSession = Depends(get_db)):
     paper = (
-        await db.execute(
-            select(Paper).where(Paper.id == paper_id)
-        )
+        await db.execute(select(Paper).where(Paper.id == paper_id))
     ).scalar_one_or_none()
 
     if not paper:
@@ -164,6 +165,17 @@ async def get_paper(paper_id: str, db: AsyncSession = Depends(get_db)):
         data.matches_played = paper.rating.matches_played
         data.rank = paper.rating.rank
         data.rank_change_48h = paper.rating.rank_change_48h
+
+    # Surface parsed error_message from the orchestrator's metadata_json
+    # blob so failed papers can be diagnosed without backend log access.
+    if paper.status == "error" and paper.metadata_json:
+        try:
+            import json as _json
+
+            metadata = _json.loads(paper.metadata_json)
+            data.error_message = metadata.get("error")
+        except (_json.JSONDecodeError, TypeError):
+            data.error_message = paper.metadata_json[:500]
 
     return data
 
@@ -253,7 +265,9 @@ async def create_paper(paper_in: PaperCreate, db: AsyncSession = Depends(get_db)
     dependencies=[Depends(admin_key_required)],
 )
 @limiter.limit("10/hour")
-async def import_papers(request: Request, data: PaperImport, db: AsyncSession = Depends(get_db)):
+async def import_papers(
+    request: Request, data: PaperImport, db: AsyncSession = Depends(get_db)
+):
     created = []
     # Pre-generate IDs and batch-check existence to avoid N+1
     candidate_ids = [p.id or generate_paper_id() for p in data.papers]
@@ -276,7 +290,9 @@ async def import_papers(request: Request, data: PaperImport, db: AsyncSession = 
             method=paper_in.method,
             version=paper_in.version,
             status="published",
-            review_status="peer_reviewed" if paper_in.source in ("aer", "aej_policy", "benchmark") else "awaiting",
+            review_status="peer_reviewed"
+            if paper_in.source in ("aer", "aej_policy", "benchmark")
+            else "awaiting",
             domain_config_id=paper_in.domain_config_id,
         )
         db.add(paper)

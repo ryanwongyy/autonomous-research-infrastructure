@@ -30,6 +30,18 @@ class PaperResponse(PaperBase):
     created_at: datetime
     updated_at: datetime
 
+    # Funnel stage tracks the orchestrator's pipeline progress
+    # (idea / designed / locked / ingesting / analyzing / drafting /
+    # reviewing / candidate / killed). Surfaced for fire-and-poll
+    # clients that want to know how far the pipeline has progressed.
+    funnel_stage: str | None = None
+
+    # Parsed error string when status='error' (the orchestrator's
+    # ``_set_error`` writes ``{"error": "..."}`` to metadata_json).
+    # Surfaced so failed papers tell the operator what went wrong
+    # without needing backend log access.
+    error_message: str | None = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
