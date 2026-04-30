@@ -159,6 +159,7 @@ async def run_full_pipeline(
         report["stages"]["scout"] = stage_report
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_scout"
+            await _set_killed_at_stage(paper_id, "scout", stage_report.get("error"))
             return _finalise_report(report, pipeline_start)
 
         idea_card = stage_report.get("idea_card", {})
@@ -176,6 +177,7 @@ async def run_full_pipeline(
         report["stages"]["designer"] = stage_report
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_designer"
+            await _set_killed_at_stage(paper_id, "designer", stage_report.get("error"))
             return _finalise_report(report, pipeline_start)
 
         # ---------------------------------------------------------------
@@ -190,6 +192,9 @@ async def run_full_pipeline(
         report["stages"]["data_steward"] = stage_report
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_data_steward"
+            await _set_killed_at_stage(
+                paper_id, "data_steward", stage_report.get("error")
+            )
             return _finalise_report(report, pipeline_start)
 
         source_manifest = stage_report.get("source_manifest", {})
@@ -208,6 +213,7 @@ async def run_full_pipeline(
         report["stages"]["analyst"] = stage_report
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_analyst"
+            await _set_killed_at_stage(paper_id, "analyst", stage_report.get("error"))
             return _finalise_report(report, pipeline_start)
 
         code_content = stage_report.get("code_content", "")
@@ -228,6 +234,7 @@ async def run_full_pipeline(
         report["stages"]["drafter"] = stage_report
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_drafter"
+            await _set_killed_at_stage(paper_id, "drafter", stage_report.get("error"))
             return _finalise_report(report, pipeline_start)
 
         manuscript_latex = stage_report.get("manuscript_latex", "")
@@ -1207,6 +1214,55 @@ async def _set_error(paper_id: str, error: str) -> None:
             await db.commit()
     except Exception as e:
         logger.error("Failed to set error on paper %s: %s", paper_id, e)
+
+
+async def _set_killed_at_stage(
+    paper_id: str, stage_name: str, error: str | None
+) -> None:
+    """Flip a paper to terminal status='killed' after a stage failed.
+
+    Without this, the stage-failure path inside ``run_full_pipeline``
+    sets ``report["final_status"] = "killed_at_<stage>"`` and returns,
+    but ``Paper.status`` stays at ``"draft"`` forever — which makes the
+    GitHub Actions cron poll loop time out at 45 min waiting for a
+    terminal value (production paper apep_8dcbf99e: workflow waited
+    full 45 min while paper.status="draft" and last_heartbeat from
+    Scout was 4 seconds in).
+
+    Sets:
+      - status         = "killed"
+      - funnel_stage   = "killed"
+      - kill_reason    = "killed_at_<stage>: <error>"
+      - review_status  = "skipped" (so review-pending picks it up
+                         only as a no-op, not as work to do)
+
+    Uses its own short-lived session so a poisoned stage session
+    doesn't prevent the writeback.
+    """
+    reason = f"killed_at_{stage_name}"
+    if error:
+        reason = f"{reason}: {error[:300]}"
+    try:
+        async with async_session() as db:
+            stmt = (
+                update(Paper)
+                .where(Paper.id == paper_id)
+                .values(
+                    status="killed",
+                    funnel_stage="killed",
+                    kill_reason=reason,
+                    review_status="skipped",
+                )
+            )
+            await db.execute(stmt)
+            await db.commit()
+    except Exception as e:
+        logger.error(
+            "Failed to mark paper %s killed_at_%s: %s",
+            paper_id,
+            stage_name,
+            e,
+        )
 
 
 async def _write_heartbeat(paper_id: str, stage_name: str) -> None:
