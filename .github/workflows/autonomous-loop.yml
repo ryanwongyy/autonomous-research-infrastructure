@@ -66,51 +66,69 @@ jobs:
             echo "run_tournament=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Generate papers
+      - name: Generate papers (fire-and-poll)
         if: steps.context.outputs.run_generate == 'true'
         run: |
           COUNT="${{ inputs.count || '2' }}"
-          echo "Generating $COUNT papers..."
-          # /batch/generate returns NDJSON: heartbeat lines every ~15s
-          # while the pipeline runs, then a final result line.  The
-          # streaming response keeps Render's proxy from timing out
-          # at ~5-7 min of silence.  Use --no-buffer so curl doesn't
-          # buffer the stream.
-          HTTP_CODE=$(curl -s --no-buffer \
-            -o /tmp/generate_response.ndjson \
-            -w "%{http_code}" \
-            -X POST "$API_BASE/api/v1/batch/generate" \
+          echo "Spawning $COUNT paper-generation tasks..."
+          # POST returns immediately with paper_ids. The actual pipeline
+          # runs as a background task on the backend, so we poll
+          # GET /papers/{id} for status changes instead of holding the
+          # HTTP request open. This sidesteps Render's ~15-min request
+          # limit (production runs #25145786347 and #25146400252 hit
+          # this exact wall on the streaming endpoint).
+          RESPONSE=$(curl -sf -X POST "$API_BASE/api/v1/batch/generate-async" \
             -H "X-API-Key: $API_KEY" \
             -H "Content-Type: application/json" \
             -d "{\"count\": $COUNT}" \
-            --max-time 3600)
-          CURL_EXIT=$?
-          echo "HTTP status: $HTTP_CODE (curl exit $CURL_EXIT)"
-          echo "Stream lines (heartbeats + final result):"
-          # Print the streamed lines for visibility, then extract the
-          # last line (which is the actual result/error event).
-          cat /tmp/generate_response.ndjson
+            --max-time 60) || { echo "::error::POST /batch/generate-async failed"; exit 1; }
+          echo "$RESPONSE" | python3 -m json.tool
+          PAPER_IDS=$(echo "$RESPONSE" | python3 -c 'import sys,json; print(" ".join(json.load(sys.stdin)["paper_ids"]))')
+          echo "Polling paper IDs: $PAPER_IDS"
+          # Poll each paper every 30s until it reaches a terminal
+          # status. 45-min budget; the per-paper poll requests are
+          # tiny so they don't hit Render's 15-min request cap.
+          DEADLINE=$(($(date +%s) + 2700))
+          ALL_DONE=false
+          while [ $(date +%s) -lt $DEADLINE ]; do
+            ALL_DONE=true
+            for PID in $PAPER_IDS; do
+              STATUS=$(curl -sf "$API_BASE/api/v1/papers/$PID" \
+                -H "X-API-Key: $API_KEY" 2>/dev/null \
+                | python3 -c 'import sys,json; print(json.load(sys.stdin).get("status",""))' \
+                2>/dev/null || echo "")
+              echo "  $PID: $STATUS"
+              # Terminal: candidate (success), error, killed, rejected
+              case "$STATUS" in
+                candidate|published|error|killed|rejected) ;;
+                *) ALL_DONE=false ;;
+              esac
+            done
+            if [ "$ALL_DONE" = "true" ]; then
+              echo "All papers reached terminal status."
+              break
+            fi
+            sleep 30
+          done
+          if [ "$ALL_DONE" != "true" ]; then
+            echo "::warning::Timed out after 45 min waiting for terminal status."
+          fi
+          # Print the final state of each paper for visibility.
           echo "---"
-          if [ "$CURL_EXIT" -ne 0 ]; then
-            echo "::error::curl failed (exit=$CURL_EXIT) — likely network/timeout"
-            exit 1
-          fi
-          if [ "$HTTP_CODE" -ne 200 ]; then
-            echo "::error::backend returned HTTP $HTTP_CODE"
-            exit 1
-          fi
-          # Pull the final line and decode the result envelope.
-          tail -n 1 /tmp/generate_response.ndjson > /tmp/final_event.json
-          echo "Final event:"
-          python3 -m json.tool /tmp/final_event.json 2>/dev/null \
-            || cat /tmp/final_event.json
-          EVENT=$(python3 -c 'import sys,json; print(json.load(open("/tmp/final_event.json")).get("event",""))')
-          if [ "$EVENT" != "result" ]; then
-            echo "::error::final stream event was not 'result' (got: $EVENT)"
-            exit 1
-          fi
-          SUMMARY=$(python3 -c 'import sys,json; print(json.load(open("/tmp/final_event.json")).get("data",{}).get("summary",""))')
-          echo "summary=$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          echo "Final states:"
+          GENERATED=0
+          FAILED=0
+          for PID in $PAPER_IDS; do
+            BODY=$(curl -sf "$API_BASE/api/v1/papers/$PID" \
+              -H "X-API-Key: $API_KEY" || echo '{}')
+            echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+            STATUS=$(echo "$BODY" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("status",""))' 2>/dev/null || echo "")
+            case "$STATUS" in
+              candidate|published) GENERATED=$((GENERATED + 1)) ;;
+              error|killed|rejected) FAILED=$((FAILED + 1)) ;;
+            esac
+          done
+          echo "summary=Generated $GENERATED, failed $FAILED" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Review pending papers
         run: |
