@@ -40,7 +40,6 @@ from app.services.paper_generation.roles.packager import (
     build_package,
 )
 
-
 # ── Pure helper: artifact-writer ─────────────────────────────────────────────
 
 
@@ -177,7 +176,7 @@ async def packaged_paper(db_session, papers_dir_override):
 async def test_build_package_writes_manuscript_to_disk(packaged_paper):
     """build_package() puts a real manuscript.tex on disk and stores its
     path on the Paper row."""
-    paper, package, _ = packaged_paper
+    paper, _package, _ = packaged_paper
 
     assert paper.paper_tex_path is not None
     assert os.path.isfile(paper.paper_tex_path), (
@@ -193,7 +192,8 @@ async def test_build_package_writes_code_to_disk(packaged_paper):
     paper, _, _ = packaged_paper
     assert paper.code_path is not None
     assert os.path.isfile(paper.code_path)
-    assert open(paper.code_path).read() == "x = 1\n"
+    with open(paper.code_path) as f:
+        assert f.read() == "x = 1\n"
 
 
 @pytest.mark.asyncio
@@ -201,7 +201,8 @@ async def test_build_package_writes_data_manifest_to_disk(packaged_paper):
     paper, _, _ = packaged_paper
     assert paper.data_path is not None
     assert os.path.isfile(paper.data_path)
-    payload = json.loads(open(paper.data_path).read())
+    with open(paper.data_path) as f:
+        payload = json.loads(f.read())
     assert payload == {"sources": [{"id": "S1", "name": "Test source"}]}
 
 

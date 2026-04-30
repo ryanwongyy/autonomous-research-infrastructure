@@ -165,7 +165,7 @@ async def test_claim_linked_via_source_span_ref_only(seeded_paper, db_session):
     )
     await db_session.commit()
 
-    content, verdict = await _l1_issues(db_session, seeded_paper.id)
+    content, _verdict = await _l1_issues(db_session, seeded_paper.id)
     assert "central_claim_unlinked" not in content
     assert "claim_map_unlinked" not in content
     # No CRITICAL claim issues = L1 should pass on this dimension.
@@ -193,7 +193,7 @@ async def test_claim_with_no_pointers_is_flagged(seeded_paper, db_session):
         # all three pointer fields default None
     )
     await db_session.commit()
-    content, verdict = await _l1_issues(db_session, seeded_paper.id)
+    content, _verdict = await _l1_issues(db_session, seeded_paper.id)
     # Empirical → also central → both messages fire.
     assert "claim_map_unlinked" in content
     assert "central_claim_unlinked" in content
@@ -288,7 +288,7 @@ async def test_apep_144722c2_shape_does_not_fail_critical(
         )
     await db_session.commit()
 
-    content, verdict = await _l1_issues(db_session, seeded_paper.id)
+    content, _verdict = await _l1_issues(db_session, seeded_paper.id)
     assert "central_claim_unlinked" not in content, (
         "CRITICAL central_claim_unlinked must NOT fire when claims are "
         "soft-linked via source_span_ref. PR #36 added that field "
