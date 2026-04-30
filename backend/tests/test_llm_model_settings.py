@@ -181,3 +181,45 @@ async def test_list_models_endpoint_reflects_settings(client):
     assert settings.claude_opus_model in body["providers"]["anthropic"]["models"]
     assert settings.openai_main_model in body["providers"]["openai"]["models"]
     assert settings.google_main_model in body["providers"]["google"]["models"]
+
+
+# ── No hardcoded broken model ids in source ──────────────────────────────────
+
+
+def test_no_hardcoded_broken_model_ids_in_source():
+    """No file under app/ may contain the literal `claude-opus-4-6`,
+    `claude-sonnet-4-6`, or `claude-haiku-4-6` outside of comments. Those
+    names never existed publicly and silently 400'd every Scout call in
+    production. Comments are allowed (they explain the historical bug).
+    """
+    import pathlib
+    import re
+
+    bad_literals = ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-6"]
+    app_root = pathlib.Path(__file__).resolve().parent.parent / "app"
+    assert app_root.is_dir(), f"app/ not found at {app_root}"
+
+    offenders: list[tuple[str, int, str]] = []
+    for py_file in app_root.rglob("*.py"):
+        text = py_file.read_text(encoding="utf-8")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            stripped = line.lstrip()
+            # Allow these literals to appear in comments — config.py and
+            # domain_config.py reference them in explanatory notes.
+            if stripped.startswith("#"):
+                continue
+            # Allow them in docstring lines too (best-effort: any line
+            # whose only non-quote content is one of the bad literals
+            # surrounded by backticks / quotes is documentation).
+            doc_pattern = re.compile(r"^[\"' \t`]*claude-(opus|sonnet|haiku)-4-6")
+            if doc_pattern.match(stripped):
+                continue
+            for bad in bad_literals:
+                if bad in line:
+                    offenders.append((str(py_file.relative_to(app_root.parent)), lineno, line.strip()))
+
+    assert not offenders, (
+        "Hardcoded broken model ids found in source. Replace with "
+        "`settings.<>_model` lookups:\n"
+        + "\n".join(f"  {f}:{n}: {ln}" for f, n, ln in offenders)
+    )

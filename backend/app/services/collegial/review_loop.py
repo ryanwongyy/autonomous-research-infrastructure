@@ -22,6 +22,7 @@ import logging
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.colleague_profile import ColleagueProfile
 from app.models.collegial_session import CollegialSession
 from app.models.collegial_exchange import CollegialExchange
@@ -180,7 +181,7 @@ async def assess_submission_readiness(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     venue_context = (
         f"The target venue is: {target_venue}. "
@@ -351,7 +352,7 @@ async def run_colleague_feedback(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     claims_summary = "\n".join(
         f"- [{c.get('claim_type', 'unknown')}] {c.get('claim_text', '')[:200]}"
@@ -447,7 +448,7 @@ async def run_targeted_feedback(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     # Filter gaps relevant to this colleague's expertise
     expertise_relevance = {
@@ -576,7 +577,7 @@ async def run_drafter_response(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     feedback_summary_parts = []
     for fb in all_feedback:
@@ -735,7 +736,7 @@ async def run_followup_dialogue(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     rejection_text = "\n".join(
         f"- {d.get('section', 'General')}: You suggested a change, "
