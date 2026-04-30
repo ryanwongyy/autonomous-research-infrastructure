@@ -18,7 +18,6 @@ The convergence loop:
 
 import json
 import logging
-from datetime import datetime, timezone
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +28,7 @@ from app.models.collegial_exchange import CollegialExchange
 from app.models.acknowledgment_record import AcknowledgmentRecord
 from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
-from app.utils import safe_json_loads
+from app.utils import safe_json_loads, utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -111,9 +110,9 @@ DEFAULT_COLLEAGUES = [
 ]
 
 # Convergence thresholds
-QUALITY_READY_THRESHOLD = 7.0          # All dimensions >= 7 → ready
-QUALITY_MIN_OVERALL = 7.0              # Overall score >= 7 → ready
-PLATEAU_TOLERANCE = 0.3                # If score improves < 0.3 for 2 rounds → plateaued
+QUALITY_READY_THRESHOLD = 7.0  # All dimensions >= 7 → ready
+QUALITY_MIN_OVERALL = 7.0  # Overall score >= 7 → ready
+PLATEAU_TOLERANCE = 0.3  # If score improves < 0.3 for 2 rounds → plateaued
 DEFAULT_MAX_ROUNDS = 5
 
 
@@ -121,9 +120,12 @@ DEFAULT_MAX_ROUNDS = 5
 # Setup
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 async def ensure_default_colleagues(session: AsyncSession) -> list[ColleagueProfile]:
     """Ensure default colleague profiles exist. Create if missing."""
-    result = await session.execute(select(ColleagueProfile).where(ColleagueProfile.active.is_(True)))
+    result = await session.execute(
+        select(ColleagueProfile).where(ColleagueProfile.active.is_(True))
+    )
     existing = result.scalars().all()
 
     if len(existing) >= len(DEFAULT_COLLEAGUES):
@@ -150,6 +152,7 @@ async def ensure_default_colleagues(session: AsyncSession) -> list[ColleagueProf
 # ═══════════════════════════════════════════════════════════════════════════════
 # Quality Assessment — the venue-aware convergence gate
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 async def assess_submission_readiness(
     session: AsyncSession,
@@ -211,28 +214,28 @@ async def assess_submission_readiness(
         f"For any dimension scoring below 7, provide a specific remaining gap "
         f"that colleagues should address in the next round.\n\n"
         f"Return JSON:\n"
-        f'{{\n'
+        f"{{\n"
         f'  "dimensions": {{\n'
         f'    "methodology_rigor": <1-10>,\n'
         f'    "contribution_clarity": <1-10>,\n'
         f'    "literature_engagement": <1-10>,\n'
         f'    "argument_coherence": <1-10>,\n'
         f'    "venue_fit": <1-10>\n'
-        f'  }},\n'
+        f"  }},\n"
         f'  "overall_score": <float, average of dimensions>,\n'
         f'  "verdict": "ready|minor_revision|major_revision",\n'
         f'  "remaining_gaps": [\n'
-        f'    {{\n'
+        f"    {{\n"
         f'      "dimension": "string",\n'
         f'      "gap": "string (specific issue)",\n'
         f'      "priority": "high|medium|low",\n'
         f'      "section": "string (which section to fix)"\n'
-        f'    }}\n'
-        f'  ],\n'
+        f"    }}\n"
+        f"  ],\n"
         f'  "improvements_from_previous": ["string (what improved since last round)"],\n'
         f'  "assessor_note": "string (2-3 sentence editorial summary)"\n'
-        f'}}\n'
-        f'No markdown wrapper.'
+        f"}}\n"
+        f"No markdown wrapper."
     )
 
     response = await provider.complete(
@@ -283,6 +286,7 @@ async def assess_submission_readiness(
 # Session management
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 async def start_collegial_session(
     session: AsyncSession,
     paper_id: str,
@@ -311,7 +315,11 @@ async def start_collegial_session(
 
     logger.info(
         "[%s] Started collegial session %d (max %d rounds, venue=%s) with %d colleagues",
-        paper_id, cs.id, max_rounds, target_venue or "unspecified", len(colleague_ids),
+        paper_id,
+        cs.id,
+        max_rounds,
+        target_venue or "unspecified",
+        len(colleague_ids),
     )
     return cs
 
@@ -319,6 +327,7 @@ async def start_collegial_session(
 # ═══════════════════════════════════════════════════════════════════════════════
 # Colleague feedback — full review (round 1)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 async def run_colleague_feedback(
     session: AsyncSession,
@@ -356,21 +365,21 @@ async def run_colleague_feedback(
         f"3. Provide a concrete suggestion for how to improve it\n"
         f"4. Explain why this change would strengthen the paper\n\n"
         f"Return JSON:\n"
-        f'{{\n'
+        f"{{\n"
         f'  "overall_impression": "string (2-3 sentences)",\n'
         f'  "suggestions": [\n'
-        f'    {{\n'
+        f"    {{\n"
         f'      "section": "string (e.g., Introduction, Methodology)",\n'
         f'      "issue": "string (what you noticed)",\n'
         f'      "suggestion": "string (specific recommendation)",\n'
         f'      "rationale": "string (why this matters)",\n'
         f'      "priority": "high|medium|low",\n'
         f'      "type": "constructive_feedback|knowledge_injection|framing_advice"\n'
-        f'    }}\n'
-        f'  ],\n'
+        f"    }}\n"
+        f"  ],\n"
         f'  "strengths": ["string (what the paper does well)"]\n'
-        f'}}\n'
-        f'No markdown wrapper.'
+        f"}}\n"
+        f"No markdown wrapper."
     )
 
     response = await provider.complete(
@@ -411,6 +420,7 @@ async def run_colleague_feedback(
 # Targeted feedback — focused on remaining gaps (round 2+)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 async def run_targeted_feedback(
     session: AsyncSession,
     collegial_session: CollegialSession,
@@ -437,11 +447,16 @@ async def run_targeted_feedback(
         "domain": ["literature_engagement", "contribution_clarity"],
         "venue_strategy": ["venue_fit", "contribution_clarity", "argument_coherence"],
         "quantitative_methods": ["methodology_rigor", "argument_coherence"],
-        "theory": ["literature_engagement", "contribution_clarity", "argument_coherence"],
+        "theory": [
+            "literature_engagement",
+            "contribution_clarity",
+            "argument_coherence",
+        ],
     }
     relevant_dims = expertise_relevance.get(colleague.expertise_area, [])
     relevant_gaps = [
-        g for g in remaining_gaps
+        g
+        for g in remaining_gaps
         if g.get("dimension") in relevant_dims or not relevant_dims
     ]
 
@@ -451,7 +466,11 @@ async def run_targeted_feedback(
             "colleague_id": colleague.id,
             "colleague_name": colleague.name,
             "expertise": colleague.expertise_area,
-            "feedback": {"overall_impression": "No gaps in my area of expertise.", "suggestions": [], "strengths": []},
+            "feedback": {
+                "overall_impression": "No gaps in my area of expertise.",
+                "suggestions": [],
+                "strengths": [],
+            },
             "exchange_id": None,
             "skipped": True,
         }
@@ -476,10 +495,10 @@ async def run_targeted_feedback(
         f"that has already been addressed. Provide specific, actionable suggestions for "
         f"each gap.\n\n"
         f"Return JSON:\n"
-        f'{{\n'
+        f"{{\n"
         f'  "overall_impression": "string (progress assessment)",\n'
         f'  "suggestions": [\n'
-        f'    {{\n'
+        f"    {{\n"
         f'      "section": "string",\n'
         f'      "issue": "string",\n'
         f'      "suggestion": "string (specific fix)",\n'
@@ -487,11 +506,11 @@ async def run_targeted_feedback(
         f'      "priority": "high|medium|low",\n'
         f'      "type": "constructive_feedback|knowledge_injection|framing_advice",\n'
         f'      "addresses_gap": "string (which gap this addresses)"\n'
-        f'    }}\n'
-        f'  ],\n'
+        f"    }}\n"
+        f"  ],\n"
         f'  "improvements_noted": ["string (what got better since last round)"]\n'
-        f'}}\n'
-        f'No markdown wrapper.'
+        f"}}\n"
+        f"No markdown wrapper."
     )
 
     response = await provider.complete(
@@ -531,6 +550,7 @@ async def run_targeted_feedback(
 # ═══════════════════════════════════════════════════════════════════════════════
 # Drafter response — editorial agency
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 async def run_drafter_response(
     session: AsyncSession,
@@ -599,20 +619,20 @@ async def run_drafter_response(
         f"that would weaken the argument, or that you disagree with on substance. "
         f"When you reject, explain WHY — this is intellectual dialogue, not compliance.\n\n"
         f"Return JSON:\n"
-        f'{{\n'
+        f"{{\n"
         f'  "decisions": [\n'
-        f'    {{\n'
+        f"    {{\n"
         f'      "suggestion_from": "colleague name",\n'
         f'      "section": "string",\n'
         f'      "decision": "accept|reject|partial",\n'
         f'      "reason": "string (especially important for reject/partial)",\n'
         f'      "change_description": "string (what changed, if anything)"\n'
-        f'    }}\n'
-        f'  ],\n'
+        f"    }}\n"
+        f"  ],\n"
         f'  "revised_manuscript_latex": "string (the full revised manuscript)",\n'
         f'  "revision_summary": "string (2-3 sentences summarizing what changed)"\n'
-        f'}}\n'
-        f'No markdown wrapper.'
+        f"}}\n"
+        f"No markdown wrapper."
     )
 
     response = await provider.complete(
@@ -653,11 +673,15 @@ async def run_drafter_response(
     session.add(exchange)
 
     # Update cumulative session stats
-    collegial_session.suggestions_accepted = (collegial_session.suggestions_accepted or 0) + accepted
-    collegial_session.suggestions_rejected = (collegial_session.suggestions_rejected or 0) + rejected
+    collegial_session.suggestions_accepted = (
+        collegial_session.suggestions_accepted or 0
+    ) + accepted
+    collegial_session.suggestions_rejected = (
+        collegial_session.suggestions_rejected or 0
+    ) + rejected
     collegial_session.suggestions_partially_incorporated = (
-        (collegial_session.suggestions_partially_incorporated or 0) + partial
-    )
+        collegial_session.suggestions_partially_incorporated or 0
+    ) + partial
     collegial_session.total_exchanges = turn
     session.add(collegial_session)
     await session.flush()
@@ -676,6 +700,7 @@ async def run_drafter_response(
 # Followup dialogue for rejected suggestions
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 async def run_followup_dialogue(
     session: AsyncSession,
     collegial_session: CollegialSession,
@@ -691,7 +716,8 @@ async def run_followup_dialogue(
     Returns None if no followup is needed.
     """
     rejected = [
-        d for d in drafter_decisions
+        d
+        for d in drafter_decisions
         if d.get("decision") == "reject" and d.get("suggestion_from") == colleague.name
     ]
 
@@ -719,16 +745,16 @@ async def run_followup_dialogue(
         f"3. Push back if you believe the rejection is a mistake\n\n"
         f"Be collegial. This is dialogue, not argument.\n\n"
         f"Return JSON:\n"
-        f'{{\n'
+        f"{{\n"
         f'  "followups": [\n'
-        f'    {{\n'
+        f"    {{\n"
         f'      "original_section": "string",\n'
         f'      "response_type": "accept_rejection|refined_suggestion|pushback",\n'
         f'      "message": "string (your response)"\n'
-        f'    }}\n'
-        f'  ]\n'
-        f'}}\n'
-        f'No markdown wrapper.'
+        f"    }}\n"
+        f"  ]\n"
+        f"}}\n"
+        f"No markdown wrapper."
     )
 
     response = await provider.complete(
@@ -770,6 +796,7 @@ async def run_followup_dialogue(
 # Session completion & acknowledgments
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 async def complete_session(
     session: AsyncSession,
     collegial_session: CollegialSession,
@@ -780,7 +807,9 @@ async def complete_session(
 ) -> dict:
     """Complete the collegial session: generate summary and acknowledgment records."""
 
-    final_score = quality_trajectory[-1].get("overall_score", 0) if quality_trajectory else 0
+    final_score = (
+        quality_trajectory[-1].get("overall_score", 0) if quality_trajectory else 0
+    )
     total_rounds = collegial_session.current_round
 
     summary_parts = [
@@ -796,15 +825,20 @@ async def complete_session(
     if final_status == "converged":
         summary_parts.append("Manuscript assessed as ready for submission.")
     elif final_status == "max_rounds_reached":
-        summary_parts.append(f"Reached maximum of {collegial_session.max_rounds} rounds.")
+        summary_parts.append(
+            f"Reached maximum of {collegial_session.max_rounds} rounds."
+        )
     elif final_status == "plateaued":
-        summary_parts.append("Quality scores plateaued; further rounds unlikely to help.")
+        summary_parts.append(
+            "Quality scores plateaued; further rounds unlikely to help."
+        )
 
     session_summary = " ".join(summary_parts)
 
     collegial_session.status = final_status
     collegial_session.session_summary = session_summary
-    collegial_session.completed_at = datetime.now(timezone.utc)
+    # collegial_sessions.completed_at is TIMESTAMP WITHOUT TIME ZONE
+    collegial_session.completed_at = utcnow_naive()
     collegial_session.quality_trajectory_json = json.dumps(quality_trajectory)
     collegial_session.final_quality_score = final_score
     session.add(collegial_session)
@@ -862,12 +896,14 @@ async def complete_session(
             acknowledgment_text=ack_text,
         )
         session.add(ack)
-        acknowledgments.append({
-            "colleague_name": contrib["name"],
-            "contribution_type": contribution_type,
-            "contribution_summary": contribution_summary,
-            "acknowledgment_text": ack_text,
-        })
+        acknowledgments.append(
+            {
+                "colleague_name": contrib["name"],
+                "contribution_type": contribution_type,
+                "contribution_summary": contribution_summary,
+                "acknowledgment_text": ack_text,
+            }
+        )
 
     await session.flush()
 
@@ -886,6 +922,7 @@ async def complete_session(
 # ═══════════════════════════════════════════════════════════════════════════════
 # Main orchestrator — the convergence loop
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 async def run_full_collegial_review(
     session: AsyncSession,
@@ -922,7 +959,9 @@ async def run_full_collegial_review(
     # 1. Start session
     colleagues = await ensure_default_colleagues(session)
     collegial_session = await start_collegial_session(
-        session, paper_id, manuscript_latex,
+        session,
+        paper_id,
+        manuscript_latex,
         target_venue=target_venue,
         max_rounds=max_rounds,
     )
@@ -939,7 +978,9 @@ async def run_full_collegial_review(
         session.add(collegial_session)
         await session.flush()
 
-        logger.info("[%s] Starting collegial round %d/%d", paper_id, round_num, max_rounds)
+        logger.info(
+            "[%s] Starting collegial round %d/%d", paper_id, round_num, max_rounds
+        )
 
         # 2a. Get feedback from colleagues
         round_feedback: list[dict] = []
@@ -949,21 +990,37 @@ async def run_full_collegial_review(
             try:
                 if round_num == 1:
                     feedback = await run_colleague_feedback(
-                        session, collegial_session, colleague,
-                        manuscript, lock_yaml, claims, round_num, provider,
+                        session,
+                        collegial_session,
+                        colleague,
+                        manuscript,
+                        lock_yaml,
+                        claims,
+                        round_num,
+                        provider,
                     )
                 else:
                     feedback = await run_targeted_feedback(
-                        session, collegial_session, colleague,
-                        manuscript, lock_yaml, previous_gaps,
-                        round_num, provider,
+                        session,
+                        collegial_session,
+                        colleague,
+                        manuscript,
+                        lock_yaml,
+                        previous_gaps,
+                        round_num,
+                        provider,
                     )
                 if not feedback.get("skipped"):
                     round_feedback.append(feedback)
                     all_feedback_cumulative.append(feedback)
             except Exception as e:
-                logger.warning("[%s] Colleague %s failed in round %d: %s",
-                               paper_id, colleague.name, round_num, e)
+                logger.warning(
+                    "[%s] Colleague %s failed in round %d: %s",
+                    paper_id,
+                    colleague.name,
+                    round_num,
+                    e,
+                )
 
         if not round_feedback and round_num == 1:
             # No feedback at all in round 1 — abandon
@@ -980,8 +1037,12 @@ async def run_full_collegial_review(
         # 2b. Drafter incorporates feedback
         if round_feedback:
             drafter_response = await run_drafter_response(
-                session, collegial_session, round_feedback,
-                manuscript, round_num, provider,
+                session,
+                collegial_session,
+                round_feedback,
+                manuscript,
+                round_num,
+                provider,
             )
             manuscript = drafter_response["revised_manuscript"]
 
@@ -990,18 +1051,31 @@ async def run_full_collegial_review(
                 for colleague in colleagues:
                     try:
                         await run_followup_dialogue(
-                            session, collegial_session, colleague,
+                            session,
+                            collegial_session,
+                            colleague,
                             drafter_response.get("decisions", []),
-                            manuscript, round_num, provider,
+                            manuscript,
+                            round_num,
+                            provider,
                         )
                     except Exception as e:
-                        logger.warning("[%s] Followup for %s failed: %s",
-                                       paper_id, colleague.name, e)
+                        logger.warning(
+                            "[%s] Followup for %s failed: %s",
+                            paper_id,
+                            colleague.name,
+                            e,
+                        )
 
         # 2c. Quality assessment
         assessment = await assess_submission_readiness(
-            session, manuscript, target_venue, lock_yaml,
-            round_num, previous_gaps, provider,
+            session,
+            manuscript,
+            target_venue,
+            lock_yaml,
+            round_num,
+            previous_gaps,
+            provider,
         )
         quality_trajectory.append(assessment)
 
@@ -1021,7 +1095,9 @@ async def run_full_collegial_review(
 
         logger.info(
             "[%s] Round %d quality: %.1f/10, verdict=%s, gaps=%d",
-            paper_id, round_num, assessment.get("overall_score", 0),
+            paper_id,
+            round_num,
+            assessment.get("overall_score", 0),
             assessment.get("verdict", "unknown"),
             len(assessment.get("remaining_gaps", [])),
         )
@@ -1036,29 +1112,46 @@ async def run_full_collegial_review(
         # Check for plateau — no meaningful improvement for 2 consecutive rounds
         if len(quality_trajectory) >= 3:
             scores = [q.get("overall_score", 0) for q in quality_trajectory[-3:]]
-            if (scores[-1] - scores[-2]) < PLATEAU_TOLERANCE and \
-               (scores[-2] - scores[-3]) < PLATEAU_TOLERANCE:
+            if (scores[-1] - scores[-2]) < PLATEAU_TOLERANCE and (
+                scores[-2] - scores[-3]
+            ) < PLATEAU_TOLERANCE:
                 final_status = "plateaued"
-                logger.info("[%s] Quality plateaued at %.1f after %d rounds",
-                            paper_id, scores[-1], round_num)
+                logger.info(
+                    "[%s] Quality plateaued at %.1f after %d rounds",
+                    paper_id,
+                    scores[-1],
+                    round_num,
+                )
                 break
 
         # Prepare gaps for next round
         previous_gaps = assessment.get("remaining_gaps", [])
         if not previous_gaps and verdict != "ready":
             # Assessment said not ready but gave no gaps — force one more round
-            previous_gaps = [{"dimension": "general", "gap": "Overall quality needs improvement",
-                              "priority": "high", "section": "General"}]
+            previous_gaps = [
+                {
+                    "dimension": "general",
+                    "gap": "Overall quality needs improvement",
+                    "priority": "high",
+                    "section": "General",
+                }
+            ]
 
     # 3. Complete session
     result = await complete_session(
-        session, collegial_session, manuscript,
-        all_feedback_cumulative, final_status, quality_trajectory,
+        session,
+        collegial_session,
+        manuscript,
+        all_feedback_cumulative,
+        final_status,
+        quality_trajectory,
     )
 
     logger.info(
         "[%s] Collegial review finished: %s after %d rounds (score: %.1f)",
-        paper_id, final_status, collegial_session.current_round,
+        paper_id,
+        final_status,
+        collegial_session.current_round,
         result.get("final_quality_score", 0),
     )
 
@@ -1068,6 +1161,7 @@ async def run_full_collegial_review(
 # ═══════════════════════════════════════════════════════════════════════════════
 # Query helpers
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 async def get_session_for_paper(session: AsyncSession, paper_id: str) -> dict | None:
     """Get the latest collegial session for a paper."""
@@ -1091,8 +1185,7 @@ async def get_session_for_paper(session: AsyncSession, paper_id: str) -> dict | 
 
     # Load acknowledgments
     ack_result = await session.execute(
-        select(AcknowledgmentRecord)
-        .where(AcknowledgmentRecord.paper_id == paper_id)
+        select(AcknowledgmentRecord).where(AcknowledgmentRecord.paper_id == paper_id)
     )
     acks = ack_result.scalars().all()
 
@@ -1164,11 +1257,13 @@ async def get_colleague_profiles(session: AsyncSession) -> list[dict]:
 # Internal helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 async def _next_turn(session: AsyncSession, session_id: int) -> int:
     """Get the next turn number for a session."""
     result = await session.execute(
-        select(func.max(CollegialExchange.turn_number))
-        .where(CollegialExchange.session_id == session_id)
+        select(func.max(CollegialExchange.turn_number)).where(
+            CollegialExchange.session_id == session_id
+        )
     )
     max_turn = result.scalar() or 0
     return max_turn + 1
