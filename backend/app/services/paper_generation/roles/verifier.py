@@ -25,23 +25,25 @@ from app.services.llm.router import get_generation_provider
 
 logger = logging.getLogger(__name__)
 
-# Verifier batches claims into chunks of this size so the LLM prompt
-# stays manageable. Production paper apep_28011bda (50 claims sent in
-# one prompt) produced a truncated response with zero claim statuses
-# updated -- the LLM dropped most entries.
+# Verifier processes claims one-at-a-time. The LLM has a tendency to
+# return a "comfortable response size" of N entries regardless of how
+# many claims it was given:
 #
-# Production paper apep_80c3df8f (run 25187417178) showed that 15 was
-# still too large: of 25 claims sent in 2 batches (15 + 10), the LLM
-# returned only 11 verifications in batch 0 (skipping the first 4
-# claims) and 0 in batch 1 (returned no entries at all). 14 of 25
-# claims stayed pending.
+#   batch_size=15 → LLM returns ~11 entries (production apep_80c3df8f)
+#   batch_size=5  → LLM returns ~1-3 entries  (production apep_8f5c16b6)
 #
-# 5 keeps each prompt small enough that the LLM can't plausibly skip
-# entries while still bounding the total LLM call count (25 claims =
-# 5 batches; typical paper gets ~5-7 LLM calls in this stage). Each
-# batch's response is ~1-2K tokens — well under the 16K budget — so
-# truncation is no longer a risk and per-batch latency stays low.
-_VERIFIER_BATCH_SIZE = 5
+# Smaller batches DIDN'T help — the LLM cherry-picks regardless. With
+# batch_size=1 the LLM has exactly one task per call and can't drop
+# anything. Cost is more LLM calls (25 claims = 25 calls vs 2-5 with
+# batching) but each call is small + fast (~5-10s) so total Verifier
+# wall-clock stays under the 600s stage budget.
+#
+# Earlier sizes are kept in this comment for the historical record:
+#   - 50 (apep_28011bda): truncated, 0 statuses returned
+#   - 15 (apep_80c3df8f): 11/25 statuses, 14 pending
+#   - 5  (apep_8f5c16b6): 6/18 statuses, 12 pending
+#   - 1  (current):       expected ~100% coverage
+_VERIFIER_BATCH_SIZE = 1
 
 # ---------------------------------------------------------------------------
 # System prompts
