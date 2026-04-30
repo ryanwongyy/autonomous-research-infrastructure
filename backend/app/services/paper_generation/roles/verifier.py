@@ -25,6 +25,13 @@ from app.services.llm.router import get_generation_provider
 
 logger = logging.getLogger(__name__)
 
+# Verifier batches claims into chunks of this size so the LLM prompt
+# stays manageable. With 50 claims (production paper apep_28011bda),
+# sending them all in one prompt produced a truncated response and
+# zero claim statuses got updated. 15 fits comfortably in a single
+# 16K-token output budget.
+_VERIFIER_BATCH_SIZE = 15
+
 # ---------------------------------------------------------------------------
 # System prompts
 # ---------------------------------------------------------------------------
@@ -158,9 +165,11 @@ async def verify_manuscript(
         protocol_type = lock.lock_protocol_type
         inference_level = _determine_inference_level(protocol_type)
 
-    claims_yaml = yaml.dump(claims_data, default_flow_style=False, sort_keys=False)
-
-    # ── Phase 2: LLM call (no session held) ──────────────────────────
+    # ── Phase 2: LLM call(s) (no session held) ──────────────────────
+    # Batch claims into chunks so the LLM prompt stays manageable.
+    # Production paper apep_28011bda had 50 claims; sending all 50
+    # in one prompt caused the Verifier's response to be truncated
+    # and zero claim statuses got updated.
     if provider is None:
         provider, model = await get_generation_provider()
     else:
@@ -168,29 +177,79 @@ async def verify_manuscript(
 
         model = settings.claude_opus_model
 
-    prompt = VERIFY_USER_PROMPT.format(
-        paper_id=paper_id,
-        protocol_type=protocol_type,
-        inference_level=inference_level,
-        claims_yaml=claims_yaml,
-        source_tiers=source_tiers,
-        result_objects=(
-            json.dumps(result_manifest.get("result_objects", {}), indent=2)
-            if result_manifest
-            else "(no result objects available)"
-        ),
+    result_objects_str = (
+        json.dumps(result_manifest.get("result_objects", {}), indent=2)
+        if result_manifest
+        else "(no result objects available)"
     )
 
-    response = await provider.complete(
-        messages=[
-            {"role": "user", "content": prompt},
-        ],
-        model=model,
-        temperature=0.2,
-        max_tokens=16384,
-    )
+    aggregate_results: list[dict] = []
+    aggregate_summary = {
+        "total_claims": 0,
+        "passed": 0,
+        "failed": 0,
+        "warnings": 0,
+        "critical_violations": [],
+        "recommendation": "approve",
+    }
 
-    verification = _parse_json_object(response)
+    # Walk claims in chunks of up to _VERIFIER_BATCH_SIZE
+    for batch_start in range(0, len(claims_data), _VERIFIER_BATCH_SIZE):
+        batch = claims_data[batch_start : batch_start + _VERIFIER_BATCH_SIZE]
+        batch_yaml = yaml.dump(batch, default_flow_style=False, sort_keys=False)
+
+        prompt = VERIFY_USER_PROMPT.format(
+            paper_id=paper_id,
+            protocol_type=protocol_type,
+            inference_level=inference_level,
+            claims_yaml=batch_yaml,
+            source_tiers=source_tiers,
+            result_objects=result_objects_str,
+        )
+
+        response = await provider.complete(
+            messages=[
+                {"role": "user", "content": prompt},
+            ],
+            model=model,
+            temperature=0.2,
+            max_tokens=16384,
+        )
+
+        batch_verification = _parse_json_object(response)
+        batch_results = batch_verification.get("claim_verifications", [])
+        batch_summary = batch_verification.get("summary", {})
+
+        aggregate_results.extend(batch_results)
+        aggregate_summary["total_claims"] += batch_summary.get(
+            "total_claims", len(batch_results)
+        )
+        aggregate_summary["passed"] += batch_summary.get("passed", 0)
+        aggregate_summary["failed"] += batch_summary.get("failed", 0)
+        aggregate_summary["warnings"] += batch_summary.get("warnings", 0)
+        aggregate_summary["critical_violations"].extend(
+            batch_summary.get("critical_violations", [])
+        )
+        # Worst recommendation across batches wins.
+        rec_priority = {"reject": 0, "revise": 1, "approve": 2}
+        if rec_priority.get(
+            batch_summary.get("recommendation", "approve"), 99
+        ) < rec_priority.get(aggregate_summary["recommendation"], 99):
+            aggregate_summary["recommendation"] = batch_summary["recommendation"]
+
+        logger.info(
+            "Verifier batch %d/%d: %d claims, passed=%d failed=%d",
+            (batch_start // _VERIFIER_BATCH_SIZE) + 1,
+            (len(claims_data) + _VERIFIER_BATCH_SIZE - 1) // _VERIFIER_BATCH_SIZE,
+            len(batch),
+            batch_summary.get("passed", 0),
+            batch_summary.get("failed", 0),
+        )
+
+    verification = {
+        "claim_verifications": aggregate_results,
+        "summary": aggregate_summary,
+    }
 
     # ── Phase 3: writes (short-lived session) ────────────────────────
     claim_results = verification.get("claim_verifications", [])
