@@ -10,6 +10,7 @@ from app.models.source_card import SourceCard
 from app.models.source_snapshot import SourceSnapshot
 from app.models.claim_map import ClaimMap
 from app.models.paper_package import PaperPackage
+from app.models.pipeline_run import PipelineRun  # noqa: F401
 from app.models.lock_artifact import LockArtifact
 from app.models.significance_memo import SignificanceMemo
 from app.models.reliability_metric import ReliabilityMetric

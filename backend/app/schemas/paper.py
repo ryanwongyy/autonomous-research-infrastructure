@@ -42,6 +42,12 @@ class PaperResponse(PaperBase):
     # without needing backend log access.
     error_message: str | None = None
 
+    # Heartbeat fields populated by the orchestrator at each stage.
+    # Polling clients use these to detect stalled tasks
+    # (heartbeat >5 min stale = likely-dead background task).
+    last_heartbeat_at: datetime | None = None
+    last_heartbeat_stage: str | None = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
