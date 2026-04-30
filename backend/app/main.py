@@ -36,42 +36,38 @@ if settings.sentry_dsn:
     )
 
 
-async def _run_alembic_upgrade() -> None:
-    """Run ``alembic upgrade head`` in a subprocess so production
-    schema matches the latest migration on every deploy.
+async def _ensure_added_columns() -> None:
+    """Add any new columns that ``init_db()`` (Base.metadata.create_all)
+    can't add to existing tables.
 
-    Run as a subprocess (not in-process) because our ``alembic/env.py``
-    uses ``asyncio.run(run_async_migrations())`` which conflicts with
-    the already-running FastAPI event loop. The subprocess gets its
-    own loop and finishes cleanly.
+    ``create_all`` is idempotent for tables: it skips ones that already
+    exist. But when we ADD a column to an existing model, ``create_all``
+    silently leaves the column missing on the live table. The ORM then
+    queries it and we get a 500.
+
+    We were going to use ``alembic upgrade head`` here, but the initial
+    migration tries to ``create_index`` on indexes ``create_all`` already
+    made — duplicate index errors. Until we untangle the alembic state
+    on the live DB, do the safer thing: directly check for and add the
+    new columns we need with raw SQL. Idempotent (use IF NOT EXISTS on
+    Postgres / equivalent on SQLite).
     """
-    import sys
-    from pathlib import Path
+    from app.database import engine
 
-    backend_dir = Path(__file__).resolve().parent.parent
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-m",
-        "alembic",
-        "upgrade",
-        "head",
-        cwd=str(backend_dir),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    stdout, _ = await proc.communicate()
-    if proc.returncode != 0:
-        # Surface the alembic output so the operator can see the
-        # specific migration that failed.
-        raise RuntimeError(
-            f"alembic upgrade head failed (exit={proc.returncode}). "
-            f"Output:\n{stdout.decode('utf-8', errors='replace')[:2000]}"
-        )
-    if stdout.strip():
-        logger.info(
-            "alembic upgrade output: %s",
-            stdout.decode("utf-8", errors="replace")[:2000],
-        )
+    if engine.dialect.name == "sqlite":
+        # Tests use SQLite in-memory and create everything fresh — no-op.
+        return
+
+    # Postgres path. Each ALTER COLUMN is idempotent via IF NOT EXISTS.
+    statements = [
+        "ALTER TABLE papers ADD COLUMN IF NOT EXISTS last_heartbeat_at TIMESTAMP",
+        "ALTER TABLE papers ADD COLUMN IF NOT EXISTS last_heartbeat_stage VARCHAR(32)",
+    ]
+    from sqlalchemy import text
+
+    async with engine.begin() as conn:
+        for stmt in statements:
+            await conn.execute(text(stmt))
 
 
 @asynccontextmanager
@@ -83,23 +79,19 @@ async def lifespan(app: FastAPI):
         logger.critical("Database initialization timed out after 30s")
         raise
 
-    # Run pending Alembic migrations. ``init_db`` (above) calls
-    # ``Base.metadata.create_all`` which creates NEW tables but never
-    # ALTERs existing ones — so columns added in later migrations
-    # (e.g. ``papers.last_heartbeat_at`` from the pipeline_runs PR)
-    # never reach the production schema, and ORM queries against them
-    # raise 500. Run alembic upgrade head on every boot to close that
-    # gap. Wrapped in try/except so a migration failure doesn't block
-    # the app from coming up — better to serve stale schema than be
-    # down entirely while we diagnose.
+    # ``init_db`` (above) calls ``Base.metadata.create_all`` which
+    # creates NEW tables but never ALTERs existing ones — so columns
+    # added in later migrations (e.g. ``papers.last_heartbeat_at`` from
+    # PR #37) never reach the production schema, and ORM queries
+    # against them raise 500. Add them directly via raw SQL.
     try:
-        async with asyncio.timeout(120):
-            await _run_alembic_upgrade()
-            logger.info("Alembic migrations applied (or already current)")
+        async with asyncio.timeout(30):
+            await _ensure_added_columns()
+            logger.info("Schema columns ensured on existing tables")
     except TimeoutError:
-        logger.error("Alembic upgrade timed out after 120s — continuing")
+        logger.error("Schema-ensure timed out after 30s — continuing")
     except Exception as e:
-        logger.error("Alembic upgrade failed (non-fatal): %s", e, exc_info=True)
+        logger.error("Schema-ensure failed (non-fatal): %s", e, exc_info=True)
 
     # Seed source cards + families on startup. Both seed functions are
     # idempotent (insert-or-update for source cards, skip-if-present for
