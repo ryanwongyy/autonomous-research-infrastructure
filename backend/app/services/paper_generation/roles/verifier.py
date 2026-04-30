@@ -75,6 +75,7 @@ Return JSON:
 {{
   "claim_verifications": [
     {{
+      "claim_id": int,
       "claim_text": "string",
       "evidence_link": {{"status": "verified|missing|weak", "note": "string"}},
       "citation_accuracy": {{"status": "verified|fabricated|unsupported", "note": "string"}},
@@ -147,9 +148,16 @@ async def verify_manuscript(
                 },
             }
 
-        # Build claims YAML for the LLM (detach from session)
+        # Build claims YAML for the LLM (detach from session).
+        # IMPORTANT: include claim_id so the LLM's response can be matched
+        # back to the right ClaimMap row regardless of whether the LLM
+        # echoes claim_text verbatim. Production paper apep_6fc2020e had
+        # 25 claims but only 5 got their verification status updated
+        # because text-equality matching failed on 20 (LLM paraphrased
+        # or summarised the text). Matching by integer ID is robust.
         claims_data = [
             {
+                "claim_id": c.id,
                 "claim_text": c.claim_text,
                 "claim_type": c.claim_type,
                 "source_card_id": c.source_card_id,
@@ -327,21 +335,50 @@ async def _update_claim_statuses(
     claims: list[ClaimMap],
     verifications: list[dict[str, Any]],
 ) -> None:
-    """Update ClaimMap verification statuses based on verifier output."""
+    """Update ClaimMap verification statuses based on verifier output.
+
+    Matching strategy (in priority order):
+      1. By integer ``claim_id`` — robust regardless of text fidelity.
+         The verifier prompt now sends claim_id with each claim and
+         asks the LLM to echo it back.
+      2. By exact ``claim_text`` equality — fallback for older runs or
+         LLM responses that omitted claim_id.
+
+    Production paper apep_6fc2020e had 25 claims but only 5 got their
+    status updated because text matching failed on 20 (the LLM
+    paraphrased the text). With ID matching most claims should resolve
+    cleanly; the remaining "pending" rows then represent real LLM
+    omissions worth investigating.
+    """
     from app.utils import utcnow_naive
 
-    # Build a lookup by claim_text (best-effort matching)
-    verify_map: dict[str, dict] = {}
+    # Build dual lookups: by id (preferred), then by text (fallback).
+    by_id: dict[int, dict] = {}
+    by_text: dict[str, dict] = {}
     for v in verifications:
+        cid = v.get("claim_id")
+        if isinstance(cid, int):
+            by_id[cid] = v
         text = v.get("claim_text", "")
-        verify_map[text] = v
+        if text:
+            by_text[text] = v
 
     # claim_map.verified_at is TIMESTAMP WITHOUT TIME ZONE on Postgres;
     # asyncpg refuses to silently strip tzinfo. Use utcnow_naive().
     now = utcnow_naive()
+    matched_id = 0
+    matched_text = 0
+    unmatched = 0
     for claim in claims:
-        v = verify_map.get(claim.claim_text)
+        v = by_id.get(claim.id)
+        if v is not None:
+            matched_id += 1
+        else:
+            v = by_text.get(claim.claim_text)
+            if v is not None:
+                matched_text += 1
         if v is None:
+            unmatched += 1
             continue
 
         overall = v.get("overall", "warning")
@@ -355,6 +392,24 @@ async def _update_claim_statuses(
         claim.verified_by = "verifier_role"
         claim.verified_at = now
         session.add(claim)
+
+    if unmatched:
+        logger.warning(
+            "Verifier: paper %s had %d unmatched claim(s) (%d by id, "
+            "%d by text). Unmatched claims keep verification_status='pending'.",
+            paper_id,
+            unmatched,
+            matched_id,
+            matched_text,
+        )
+    else:
+        logger.info(
+            "Verifier: paper %s all %d claims matched (%d by id, %d by text)",
+            paper_id,
+            len(claims),
+            matched_id,
+            matched_text,
+        )
 
     await session.flush()
 
