@@ -50,7 +50,7 @@ HARD BOUNDARIES:
 """
 
 VERIFY_USER_PROMPT = """\
-Verify the following claims from paper {paper_id}.
+Verify the following {claim_count} claims from paper {paper_id}.
 
 Lock protocol type: {protocol_type}
 Permitted inference level: {inference_level}
@@ -71,12 +71,20 @@ For EACH claim, check:
 4. TIER COMPLIANCE: If the claim is central, is it anchored by Tier A or B (not Tier C)?
 5. SCOPE ACCURACY: Does the claim stay within the bounds of what the evidence supports?
 
+CRITICAL COMPLETENESS REQUIREMENT:
+- Your response's "claim_verifications" array MUST have EXACTLY {claim_count} entries.
+- Output ONE entry per claim above, in the SAME ORDER as the input list.
+- Each entry's "claim_id" MUST match the corresponding input claim's claim_id.
+- Do NOT skip claims, summarise multiple claims into one entry, or omit any claim_id.
+- If you are uncertain about a claim, still output an entry with overall="warning"
+  and a note explaining the uncertainty — do not omit the claim.
+
 Return JSON:
 {{
   "claim_verifications": [
     {{
       "claim_id": int,
-      "claim_text": "string",
+      "claim_text": "string (echo of the input verbatim is preferred)",
       "evidence_link": {{"status": "verified|missing|weak", "note": "string"}},
       "citation_accuracy": {{"status": "verified|fabricated|unsupported", "note": "string"}},
       "causal_language": {{"status": "appropriate|violation|not_applicable", "note": "string"}},
@@ -86,7 +94,7 @@ Return JSON:
     }}
   ],
   "summary": {{
-    "total_claims": int,
+    "total_claims": {claim_count},
     "passed": int,
     "failed": int,
     "warnings": int,
@@ -213,6 +221,7 @@ async def verify_manuscript(
             claims_yaml=batch_yaml,
             source_tiers=source_tiers,
             result_objects=result_objects_str,
+            claim_count=len(batch),
         )
 
         response = await provider.complete(
@@ -227,6 +236,23 @@ async def verify_manuscript(
         batch_verification = _parse_json_object(response)
         batch_results = batch_verification.get("claim_verifications", [])
         batch_summary = batch_verification.get("summary", {})
+
+        # Completeness check: production paper apep_3cdecd97 had 14/25
+        # claims stuck at "pending" because the LLM cherry-picked which
+        # ones to verify. The strengthened prompt asks for exactly
+        # `len(batch)` entries; warn here when the response falls short.
+        if len(batch_results) < len(batch):
+            missing = len(batch) - len(batch_results)
+            logger.warning(
+                "Verifier batch %d/%d: LLM returned %d of %d expected "
+                "verifications — %d claim(s) will stay 'pending' unless "
+                "matched by a later batch.",
+                (batch_start // _VERIFIER_BATCH_SIZE) + 1,
+                (len(claims_data) + _VERIFIER_BATCH_SIZE - 1) // _VERIFIER_BATCH_SIZE,
+                len(batch_results),
+                len(batch),
+                missing,
+            )
 
         aggregate_results.extend(batch_results)
         aggregate_summary["total_claims"] += batch_summary.get(
