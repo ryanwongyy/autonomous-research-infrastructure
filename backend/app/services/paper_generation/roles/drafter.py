@@ -24,6 +24,12 @@ from app.services.llm.router import get_generation_provider
 
 logger = logging.getLogger(__name__)
 
+# Soft cap on claims per paper. The Verifier sends ALL claims in one
+# LLM prompt; with 50 claims (production paper apep_28011bda) the
+# prompt becomes too large and verification silently no-ops. 25 is
+# comfortable for a single Verifier call (~6K tokens of claims YAML).
+_MAX_CLAIMS_PER_PAPER = 25
+
 # ---------------------------------------------------------------------------
 # System prompts
 # ---------------------------------------------------------------------------
@@ -187,23 +193,71 @@ async def compose_manuscript(
     claims_raw = parsed.get("claims", [])
     bibliography = parsed.get("bibliography_entries", [])
 
+    # Cap claims to keep the Verifier's downstream LLM call manageable.
+    # Production paper apep_28011bda generated 50 claims and the
+    # Verifier choked on the resulting prompt, leaving all 50 pending.
+    # 25 is comfortable for one Verifier call (~6K tokens of claims
+    # YAML) and still produces a substantive provenance footprint.
+    if len(claims_raw) > _MAX_CLAIMS_PER_PAPER:
+        logger.info(
+            "Drafter capped claim count: %d → %d for paper %s",
+            len(claims_raw),
+            _MAX_CLAIMS_PER_PAPER,
+            paper_id,
+        )
+        # Prefer empirical / doctrinal claims over theoretical ones —
+        # they're the ones provenance attribution matters most for.
+        priority = {"empirical": 0, "doctrinal": 1, "descriptive": 2}
+        claims_raw = sorted(
+            claims_raw,
+            key=lambda c: priority.get(c.get("claim_type", ""), 99),
+        )[:_MAX_CLAIMS_PER_PAPER]
+
     # ── Phase 3: writes (short-lived session, fresh connection) ──────
     claim_map_entries: list[dict[str, Any]] = []
     async with async_session() as s:
+        # Load registered source-card IDs so we can validate the LLM's
+        # source_ref. Without validation, the Drafter's INSERT into
+        # claim_maps blows up with a ForeignKeyViolationError when
+        # the LLM picks bogus IDs (production run #25144089527).
+        #
+        # Soft validation: if source_ref isn't a registered ID, store
+        # the raw value in source_span_ref instead of NULL'ing out the
+        # whole linkage. PR #31's strict NULL'ing destroyed Paper 2's
+        # provenance (48/50 claims with NULL source) when the LLM
+        # picked concept names like "Brussels Effect" instead of
+        # source_card IDs. Preserving the raw value lets the Verifier
+        # flag it as un-validated rather than the system pretending
+        # the claim has no evidence at all.
+        from app.models.source_card import SourceCard
+
+        sc_result = await s.execute(select(SourceCard.id).where(SourceCard.active.is_(True)))
+        registered_source_ids = {row[0] for row in sc_result.all()}
+
         for claim_data in claims_raw:
+            source_type = claim_data.get("source_type", "")
+            source_ref = claim_data.get("source_ref", "")
+
+            valid_source_card_id: str | None = None
+            soft_source_span_ref: str | None = None
+            if source_type == "source_span":
+                if source_ref in registered_source_ids:
+                    # Hard match — set FK
+                    valid_source_card_id = source_ref
+                elif source_ref:
+                    # Soft match — preserve in source_span_ref so the
+                    # Verifier can see what the LLM intended, even
+                    # though it didn't pick a registered ID.
+                    soft_source_span_ref = json.dumps({"name": source_ref, "registered": False})
+
             claim_map = ClaimMap(
                 paper_id=paper_id,
                 claim_text=claim_data.get("claim_text", ""),
                 claim_type=claim_data.get("claim_type", "descriptive"),
-                source_card_id=(
-                    claim_data.get("source_ref")
-                    if claim_data.get("source_type") == "source_span"
-                    else None
-                ),
+                source_card_id=valid_source_card_id,
+                source_span_ref=soft_source_span_ref,
                 result_object_ref=(
-                    json.dumps({"name": claim_data.get("source_ref")})
-                    if claim_data.get("source_type") == "result_object"
-                    else None
+                    json.dumps({"name": source_ref}) if source_type == "result_object" else None
                 ),
                 verification_status="pending",
             )
@@ -212,13 +266,21 @@ async def compose_manuscript(
                 {
                     "claim_text": claim_data.get("claim_text", ""),
                     "claim_type": claim_data.get("claim_type", "descriptive"),
-                    "source_type": claim_data.get("source_type", ""),
-                    "source_ref": claim_data.get("source_ref", ""),
+                    "source_type": source_type,
+                    "source_ref": source_ref,
                     "section": claim_data.get("section", ""),
                 }
             )
+        # Extract the manuscript title from the LaTeX so the paper
+        # record shows it instead of the placeholder "Generating...".
+        # Production paper apep_faf874ae completed but its title still
+        # showed the placeholder.
+        title = _extract_latex_title(manuscript_latex)
+
         paper = await _load_paper(s, paper_id)
         paper.funnel_stage = "drafting"
+        if title:
+            paper.title = title
         s.add(paper)
         await s.commit()
 
@@ -304,3 +366,31 @@ def _parse_json_object(response: str) -> dict:
             "claims": [],
             "bibliography_entries": [],
         }
+
+
+def _extract_latex_title(manuscript_latex: str) -> str | None:
+    """Pull the title out of a LaTeX manuscript via ``\\title{...}``.
+
+    Returns the title text (stripped of LaTeX braces and surrounding
+    whitespace) or None if no title block is found / the title is
+    empty. Used by ``compose_manuscript`` to update the ``papers.title``
+    column from its ``"Generating..."`` placeholder once the manuscript
+    is ready.
+    """
+    if not manuscript_latex:
+        return None
+    import re
+
+    # Match \title{...} allowing for nested braces (one level deep is
+    # plenty for typical academic titles like \title{Foo: \emph{Bar}}).
+    match = re.search(r"\\title\{((?:[^{}]|\{[^{}]*\})*)\}", manuscript_latex, re.DOTALL)
+    if not match:
+        return None
+    title = match.group(1).strip()
+    # Strip simple LaTeX commands that academic titles often include
+    # (e.g. \emph{...} -> ...). Conservative — a more sophisticated
+    # de-LaTeX is overkill for a DB column.
+    title = re.sub(r"\\[a-zA-Z]+\{([^{}]*)\}", r"\1", title)
+    title = title.strip()
+    # Cap at the column length (papers.title is String(512)).
+    return title[:512] if title else None

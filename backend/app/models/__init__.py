@@ -19,6 +19,7 @@ from app.models.novelty_check import NoveltyCheck
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
 from app.models.paper_package import PaperPackage
+from app.models.pipeline_run import PipelineRun  # noqa: F401
 from app.models.prompt_version import PromptVersion
 from app.models.rating import Rating
 from app.models.rating_snapshot import RatingSnapshot

@@ -141,6 +141,15 @@ async def generate_analysis_code(
         ],
         model=model,
         temperature=0.3,
+        # Hold at 16K to fit inside Render's ~15-min HTTP request
+        # limit. PR #32 bumped this to 32K to recover from a one-off
+        # truncation, but the bigger budget pushed total pipeline
+        # runtime past the wall (run #25145786347 streamed for 14m47s
+        # then was killed mid-stage). The salvage path added in PR #32
+        # still handles any truncation that does occur, so we don't
+        # actually lose work — partial code is recovered. Once we
+        # migrate to fire-and-poll (no held HTTP connection) this can
+        # be re-bumped.
         max_tokens=16384,
     )
 
@@ -359,13 +368,13 @@ def _parse_json_object(response: str) -> dict:
     # in case Claude was cut off mid-response.
     import re
 
+    # First try the well-terminated case (response has a closing quote).
     code_match = re.search(r'"code"\s*:\s*"((?:[^"\\]|\\.)*)"', response, re.DOTALL)
     if code_match:
         logger.warning(
-            "Salvaged ``code`` field from truncated JSON (%d chars).",
+            "Salvaged ``code`` field from JSON with closing quote (%d chars).",
             len(code_match.group(1)),
         )
-        # Decode escape sequences so the salvaged code is runnable.
         try:
             code = json.loads(f'"{code_match.group(1)}"')
         except json.JSONDecodeError:
@@ -375,6 +384,33 @@ def _parse_json_object(response: str) -> dict:
             "requirements": "numpy>=1.24.0\npandas>=2.0.0\nstatsmodels>=0.14.0\nscipy>=1.11.0\n",
             "expected_outputs": [],
         }
+
+    # Truncated mid-string case: response stops before the closing
+    # quote. Find the start of the ``code`` value and take everything
+    # to the end of the response (production run #25144668610 hit
+    # this — 56K chars, ended mid-function).
+    open_match = re.search(r'"code"\s*:\s*"', response)
+    if open_match:
+        raw = response[open_match.end() :]
+        # Trim a trailing markdown fence if present
+        raw = re.sub(r"\n?```\s*$", "", raw)
+        try:
+            code = json.loads(f'"{raw}"')
+        except json.JSONDecodeError:
+            try:
+                code = raw.encode().decode("unicode_escape")
+            except UnicodeDecodeError:
+                code = raw
+        if code:
+            logger.warning(
+                "Salvaged ``code`` field from truncated JSON (%d chars).",
+                len(code),
+            )
+            return {
+                "code": code,
+                "requirements": "numpy>=1.24.0\npandas>=2.0.0\nstatsmodels>=0.14.0\nscipy>=1.11.0\n",
+                "expected_outputs": [],
+            }
 
     return {"code": "", "requirements": "", "expected_outputs": []}
 

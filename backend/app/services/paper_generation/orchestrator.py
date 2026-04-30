@@ -748,9 +748,14 @@ async def _stage_collegial_review(
             select(PaperFamily).where(PaperFamily.id == paper.family_id).limit(1)
         )
         family = fam_result.scalar_one_or_none()
-        if family and family.venue_ladder_json:
+        # The PaperFamily column is named ``venue_ladder`` (Text holding
+        # JSON). Production run #25140732856 hit AttributeError on the
+        # incorrect ``venue_ladder_json`` name; the pipeline survived
+        # because collegial review is non-fatal, but the stage was a
+        # no-op.
+        if family and family.venue_ladder:
             try:
-                venues = json.loads(family.venue_ladder_json)
+                venues = json.loads(family.venue_ladder)
                 flagship = venues.get("flagship", [])
                 target_venue = flagship[0] if flagship else None
             except (ValueError, TypeError, IndexError):
@@ -862,8 +867,16 @@ async def _run_stage(
     cron payload — production run #25137481628 hit this exact pattern
     at the Analyst stage.
     """
+    from datetime import datetime as _dt
+
     start = time.monotonic()
+    started_at_dt = _dt.utcnow()  # naive UTC for Postgres TIMESTAMP cols
     logger.info("[%s] Starting stage: %s", paper.id, stage_name)
+
+    # Heartbeat: tell pollers the pipeline is alive at this stage.
+    # Uses a separate short-lived session so the work that follows
+    # doesn't depend on the heartbeat write succeeding.
+    await _write_heartbeat(paper.id, stage_name)
 
     try:
         result = await stage_fn(session, paper, **kwargs)
@@ -887,6 +900,9 @@ async def _run_stage(
     elapsed = time.monotonic() - start
     result["duration_sec"] = round(elapsed, 2)
     result["stage_name"] = stage_name
+
+    # Persist a PipelineRun row for post-mortem analysis.
+    await _persist_stage_run(paper.id, stage_name, result, started_at_dt, elapsed)
 
     logger.info(
         "[%s] Stage '%s' completed in %.1fs (status=%s)",
@@ -982,6 +998,94 @@ async def _set_error(paper_id: str, error: str) -> None:
             await db.commit()
     except Exception as e:
         logger.error("Failed to set error on paper %s: %s", paper_id, e)
+
+
+async def _write_heartbeat(paper_id: str, stage_name: str) -> None:
+    """Update the paper's heartbeat fields so polling clients can see
+    progress and detect stalls.
+
+    Uses a short-lived session that doesn't share state with the
+    stage's main work — heartbeat failures shouldn't kill the stage.
+    """
+    try:
+        from app.utils import utcnow_naive
+
+        async with async_session() as db:
+            stmt = (
+                update(Paper)
+                .where(Paper.id == paper_id)
+                .values(
+                    last_heartbeat_at=utcnow_naive(),
+                    last_heartbeat_stage=stage_name,
+                )
+            )
+            await db.execute(stmt)
+            await db.commit()
+    except Exception as e:
+        logger.warning(
+            "Heartbeat write failed for paper %s stage %s: %s",
+            paper_id,
+            stage_name,
+            e,
+        )
+
+
+async def _persist_stage_run(
+    paper_id: str,
+    stage_name: str,
+    result: dict[str, Any],
+    started_at,
+    duration_sec: float,
+) -> None:
+    """Persist a PipelineRun row for the stage that just finished.
+
+    Writes succeed-or-warn; never raises. The orchestrator's main flow
+    must not depend on the row being persisted.
+    """
+    try:
+        from app.models.pipeline_run import PipelineRun
+        from app.utils import utcnow_naive
+
+        # Capture stage-specific details (everything except infra keys).
+        infra_keys = {
+            "status",
+            "stage_name",
+            "duration_sec",
+            "error",
+            "reason",
+            "error_class",
+            "error_traceback",
+        }
+        details = {k: v for k, v in result.items() if k not in infra_keys}
+        # Truncate huge fields (manuscript_latex, code_content) to keep
+        # the DB row reasonable. Raw artifacts are stored in the
+        # artifact_store anyway.
+        for k, v in list(details.items()):
+            if isinstance(v, str) and len(v) > 2000:
+                details[k] = v[:2000] + f"... [truncated, original {len(v)} chars]"
+
+        async with async_session() as db:
+            run = PipelineRun(
+                paper_id=paper_id,
+                stage_name=stage_name,
+                status=result.get("status", "unknown"),
+                started_at=started_at,
+                finished_at=utcnow_naive(),
+                duration_sec=round(duration_sec, 2),
+                error_class=result.get("error_class"),
+                error_message=result.get("error") or result.get("reason"),
+                error_traceback=(result.get("error_traceback") or "")[:5000] or None,
+                details_json=json.dumps(details) if details else None,
+            )
+            db.add(run)
+            await db.commit()
+    except Exception as e:
+        logger.warning(
+            "PipelineRun persist failed for paper %s stage %s: %s",
+            paper_id,
+            stage_name,
+            e,
+        )
 
 
 def _finalise_report(report: dict, pipeline_start: float) -> dict:

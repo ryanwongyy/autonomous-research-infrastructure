@@ -18,9 +18,10 @@ import json
 import logging
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -86,7 +87,143 @@ async def _pick_underserved_families(count: int) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# POST /batch/generate
+# POST /batch/generate-async (fire-and-poll)
+# ---------------------------------------------------------------------------
+
+
+class AsyncGenerateResponse(BaseModel):
+    paper_ids: list[str]
+    family_ids: list[str]
+    started_at: str
+
+
+@router.post("/batch/generate-async", response_model=AsyncGenerateResponse)
+async def batch_generate_async(body: GenerateRequest, request: Request) -> AsyncGenerateResponse:
+    """Fire-and-poll generation entry point.
+
+    Validates the request, creates ``Paper`` rows with status="draft"
+    and review_status="awaiting", spawns ``asyncio.create_task`` per
+    paper to run the pipeline, and returns immediately with the IDs.
+
+    The client polls ``GET /papers/{id}`` for status updates. Terminal
+    states: ``status`` becomes ``"candidate"`` (success), ``"error"``
+    (failure), or ``"killed"`` (rejected by verifier).
+
+    This sidesteps Render's ~15-min HTTP request limit which the
+    streaming endpoint hits when the full pipeline (Scout + Designer +
+    Data Steward + Analyst + Drafter + Collegial + Verifier + Packager)
+    takes longer than the proxy's tolerance (production runs
+    #25145786347 and #25146400252 cut off at 14m48s).
+    """
+    from app.models.paper import Paper
+    from app.models.rating import Rating
+
+    # Resolve target families exactly like the streaming path does.
+    if body.family_id:
+        family_ids = [body.family_id] * body.count
+    else:
+        family_ids = await _pick_underserved_families(body.count)
+        if not family_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="No active families found. Create families first.",
+            )
+        while len(family_ids) < body.count:
+            family_ids.append(family_ids[len(family_ids) % len(family_ids)])
+
+    paper_ids: list[str] = []
+    started_at = datetime.now(UTC).isoformat()
+
+    # Create Paper records up-front so the client can poll them
+    # before the orchestrator gets to the _ensure_paper step. Each
+    # row gets a placeholder title that the Drafter overwrites.
+    async with async_session() as session:
+        for fid in family_ids[: body.count]:
+            paper_id = f"apep_{uuid.uuid4().hex[:8]}"
+            paper = Paper(
+                id=paper_id,
+                title="Generating...",
+                source="ape",
+                status="draft",
+                review_status="awaiting",
+                family_id=fid,
+                funnel_stage="idea",
+            )
+            session.add(paper)
+            rating = Rating(
+                paper_id=paper_id,
+                mu=25.0,
+                sigma=8.333,
+                conservative_rating=25.0 - 3 * 8.333,
+                elo=1500.0,
+            )
+            session.add(rating)
+            paper_ids.append(paper_id)
+        await session.commit()
+
+    # Spawn one fire-and-forget task per paper. The tasks run on the
+    # uvicorn event loop AFTER this response closes; Render's worker
+    # process keeps the loop alive between requests. We retain a
+    # reference to each task on app.state so they're not garbage
+    # collected mid-flight (RUF006 — Store a reference to the return
+    # value of asyncio.create_task). Tasks remove themselves from
+    # the set on completion.
+    if not hasattr(request.app.state, "background_tasks"):
+        request.app.state.background_tasks = set()
+    for paper_id, fid in zip(paper_ids, family_ids[: body.count], strict=False):
+        task = asyncio.create_task(
+            _run_pipeline_in_background(paper_id=paper_id, family_id=fid),
+            name=f"pipeline:{paper_id}",
+        )
+        request.app.state.background_tasks.add(task)
+        task.add_done_callback(request.app.state.background_tasks.discard)
+
+    logger.info(
+        "Fire-and-poll: spawned %d paper-generation tasks: %s",
+        len(paper_ids),
+        paper_ids,
+    )
+
+    return AsyncGenerateResponse(
+        paper_ids=paper_ids,
+        family_ids=list(family_ids[: body.count]),
+        started_at=started_at,
+    )
+
+
+async def _run_pipeline_in_background(paper_id: str, family_id: str) -> None:
+    """Run a single paper's pipeline as a fire-and-forget task.
+
+    Catches any exception so the task doesn't bubble to uvicorn's
+    "exception in async task" error handler. The orchestrator already
+    persists status="error" on the Paper row when it catches a failure
+    via ``_set_error``, so the client polling Paper.status sees the
+    terminal state regardless.
+    """
+    from app.services.paper_generation.orchestrator import run_full_pipeline
+
+    try:
+        report = await run_full_pipeline(family_id=family_id, paper_id=paper_id)
+        logger.info(
+            "Fire-and-poll: paper %s finished with status=%s in %.1fs",
+            paper_id,
+            report.get("final_status", "unknown"),
+            report.get("total_duration_sec", 0.0),
+        )
+    except Exception as e:
+        # ``run_full_pipeline`` already calls ``_set_error`` for
+        # uncaught exceptions, so this just logs and swallows so
+        # the task doesn't generate a "Task exception was never
+        # retrieved" warning.
+        logger.exception(
+            "Fire-and-poll: paper %s failed in background task: %s",
+            paper_id,
+            e,
+        )
+
+
+# ---------------------------------------------------------------------------
+# POST /batch/generate (streaming, kept for back-compat)
 # ---------------------------------------------------------------------------
 
 
@@ -219,7 +356,10 @@ async def _do_batch_generate(body: GenerateRequest) -> BatchResult:
                 # far the pipeline progressed before any crash.
                 "stages_completed": stages_completed,
             }
-            if final_status == "completed":
+            # Orchestrator's success path emits ``"completed (funnel_stage=...)"``
+            # not bare ``"completed"`` (production run #25140732856), so use a
+            # ``startswith`` check.
+            if final_status.startswith("completed"):
                 generated += 1
             elif final_status.startswith("killed_at_"):
                 killed[final_status] = killed.get(final_status, 0) + 1
@@ -237,7 +377,9 @@ async def _do_batch_generate(body: GenerateRequest) -> BatchResult:
             continue
 
         # --- Review (only if generation truly completed) ---
-        if entry["generation"]["status"] == "completed":
+        # Orchestrator emits "completed (funnel_stage=candidate)" — match
+        # the prefix so the review pipeline runs.
+        if entry["generation"]["status"].startswith("completed"):
             try:
                 async with async_session() as session:
                     review_report = await run_review_pipeline(session, paper_id)

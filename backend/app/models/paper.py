@@ -70,6 +70,12 @@ class Paper(Base):
         String(128)
     )  # for salami-slicing prevention
     domain_config_id: Mapped[str | None] = mapped_column(String(64))
+    # Heartbeat fields for fire-and-poll observability. The orchestrator
+    # updates these at each stage so polling clients can distinguish
+    # "task is alive at the verifier" from "task crashed silently".
+    # Stale heartbeat (>5 min since last update) signals a dead task.
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_heartbeat_stage: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()

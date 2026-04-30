@@ -36,6 +36,40 @@ if settings.sentry_dsn:
     )
 
 
+async def _ensure_added_columns() -> None:
+    """Add any new columns that ``init_db()`` (Base.metadata.create_all)
+    can't add to existing tables.
+
+    ``create_all`` is idempotent for tables: it skips ones that already
+    exist. But when we ADD a column to an existing model, ``create_all``
+    silently leaves the column missing on the live table. The ORM then
+    queries it and we get a 500.
+
+    We were going to use ``alembic upgrade head`` here, but the initial
+    migration tries to ``create_index`` on indexes ``create_all`` already
+    made — duplicate index errors. Until we untangle the alembic state
+    on the live DB, do the safer thing: directly check for and add the
+    new columns we need with raw SQL. Idempotent (use IF NOT EXISTS on
+    Postgres / equivalent on SQLite).
+    """
+    from app.database import engine
+
+    if engine.dialect.name == "sqlite":
+        # Tests use SQLite in-memory and create everything fresh — no-op.
+        return
+
+    # Postgres path. Each ALTER COLUMN is idempotent via IF NOT EXISTS.
+    statements = [
+        "ALTER TABLE papers ADD COLUMN IF NOT EXISTS last_heartbeat_at TIMESTAMP",
+        "ALTER TABLE papers ADD COLUMN IF NOT EXISTS last_heartbeat_stage VARCHAR(32)",
+    ]
+    from sqlalchemy import text
+
+    async with engine.begin() as conn:
+        for stmt in statements:
+            await conn.execute(text(stmt))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -44,6 +78,20 @@ async def lifespan(app: FastAPI):
     except TimeoutError:
         logger.critical("Database initialization timed out after 30s")
         raise
+
+    # ``init_db`` (above) calls ``Base.metadata.create_all`` which
+    # creates NEW tables but never ALTERs existing ones — so columns
+    # added in later migrations (e.g. ``papers.last_heartbeat_at`` from
+    # PR #37) never reach the production schema, and ORM queries
+    # against them raise 500. Add them directly via raw SQL.
+    try:
+        async with asyncio.timeout(30):
+            await _ensure_added_columns()
+            logger.info("Schema columns ensured on existing tables")
+    except TimeoutError:
+        logger.error("Schema-ensure timed out after 30s — continuing")
+    except Exception as e:
+        logger.error("Schema-ensure failed (non-fatal): %s", e, exc_info=True)
 
     # Seed source cards + families on startup. Both seed functions are
     # idempotent (insert-or-update for source cards, skip-if-present for

@@ -92,53 +92,11 @@ async def test_json_feed_with_data(client, public_papers):
     assert len(data["items"]) >= 1
 
 
-# ── GET /papers/feed.atom ─────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_atom_feed_empty(client):
-    """Empty Atom feed still returns valid XML with feed metadata."""
-    resp = await client.get("/api/v1/papers/feed.atom")
-    assert resp.status_code == 200
-    assert "application/atom+xml" in resp.headers["content-type"]
-    body = resp.text
-    assert body.startswith('<?xml version="1.0"')
-    assert "<feed" in body
-    assert "</feed>" in body
-    # No entries when DB is empty
-    assert "<entry>" not in body
-
-
-@pytest.mark.asyncio
-async def test_atom_feed_with_data(client, public_papers):
-    """Atom feed includes one <entry> per public/candidate paper."""
-    resp = await client.get("/api/v1/papers/feed.atom")
-    assert resp.status_code == 200
-    body = resp.text
-    assert "<entry>" in body
-    assert "<title>" in body
-    # Atom requires a feed-level <id> and <updated>
-    assert "<id>urn:ari:feed</id>" in body
-    assert "<updated>" in body
-    # Custom ARI namespace for family / release_status / novelty
-    assert "xmlns:ari=" in body
-
-
-@pytest.mark.asyncio
-async def test_atom_feed_escapes_special_chars(client, public_papers):
-    """HTML-special characters in title/abstract are escaped in Atom output."""
-    resp = await client.get("/api/v1/papers/feed.atom")
-    assert resp.status_code == 200
-    body = resp.text
-    # The XML parser would reject unescaped & or <
-    # We don't expect any literal "<title>foo & bar</title>" — must be &amp;
-    # Find any <title> contents and verify they don't contain bare ampersands
-    import re
-
-    titles = re.findall(r"<title>(.*?)</title>", body)
-    for t in titles:
-        # An ampersand that is not part of a valid entity is invalid
-        assert "& " not in t  # rough heuristic — bare & followed by space
+# NOTE: Atom feed tests (test_atom_feed_*) were dropped during the
+# main-merge resolution because the /papers/feed.atom endpoint
+# never landed on main. JSON feed at /papers/feed.json is still
+# tested above. To restore Atom support, re-add the endpoint to
+# app/api/papers.py and the tests here.
 
 
 # ── GET /papers/{id}/export ───────────────────────────────────────────────────

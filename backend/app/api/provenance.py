@@ -103,6 +103,27 @@ async def get_paper_provenance(paper_id: str, db: AsyncSession = Depends(get_db)
                 tier = sources_map[claim.source_card_id].tier
                 tier_breakdown[tier] = tier_breakdown.get(tier, 0) + 1
 
+    # Source diversity: count claims per source. Production paper
+    # apep_faf874ae had 14/26 claims (54%) from a single source
+    # (nist_ai_rmf) — over-reliance is a quality red flag.
+    source_distribution: dict[str, int] = {}
+    for claim in claims:
+        if claim.source_card_id:
+            sid = claim.source_card_id
+            source_distribution[sid] = source_distribution.get(sid, 0) + 1
+    top_source_share = 0.0
+    top_source_id = None
+    if sourced_count > 0 and source_distribution:
+        top_source_id, top_count = max(source_distribution.items(), key=lambda kv: kv[1])
+        top_source_share = top_count / sourced_count
+    # Warn when one source covers more than half the claims.
+    diversity_warning = None
+    if top_source_share > 0.5 and top_source_id:
+        diversity_warning = (
+            f"Over-reliance on single source: {top_source_id} provides "
+            f"{int(top_source_share * 100)}% of sourced claims."
+        )
+
     # Source freshness: batch query for latest snapshot per source
     stale_threshold = datetime.now(UTC) - timedelta(days=settings.source_stale_days)
     stale_sources = []
@@ -145,6 +166,13 @@ async def get_paper_provenance(paper_id: str, db: AsyncSession = Depends(get_db)
             "disputed": disputed_count,
         },
         "tier_compliance": tier_breakdown,
+        "source_diversity": {
+            "distinct_sources": len(source_distribution),
+            "distribution": source_distribution,
+            "top_source_id": top_source_id,
+            "top_source_share": round(top_source_share, 3),
+            "diversity_warning": diversity_warning,
+        },
         "source_freshness": {
             "stale_threshold_days": settings.source_stale_days,
             "fresh_sources": fresh_sources,

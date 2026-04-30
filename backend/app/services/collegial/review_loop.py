@@ -113,7 +113,15 @@ DEFAULT_COLLEAGUES = [
 QUALITY_READY_THRESHOLD = 7.0  # All dimensions >= 7 → ready
 QUALITY_MIN_OVERALL = 7.0  # Overall score >= 7 → ready
 PLATEAU_TOLERANCE = 0.3  # If score improves < 0.3 for 2 rounds → plateaued
-DEFAULT_MAX_ROUNDS = 5
+
+# Default capped at 2 rounds because Render's free-tier HTTP request
+# limit is ~15 min (production run #25145137906 was killed at 14.7 min
+# mid-collegial-review). With 3 colleagues x ~30s x 2 rounds = ~3 min
+# for collegial review, the full pipeline (~12 min total) fits inside
+# the limit. Operators wanting deeper revision can override this via
+# the ``max_rounds`` parameter once we move to a fire-and-poll job
+# pattern that doesn't hold an HTTP connection.
+DEFAULT_MAX_ROUNDS = 2
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
