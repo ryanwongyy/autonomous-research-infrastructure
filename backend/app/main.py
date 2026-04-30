@@ -36,6 +36,44 @@ if settings.sentry_dsn:
     )
 
 
+async def _run_alembic_upgrade() -> None:
+    """Run ``alembic upgrade head`` in a subprocess so production
+    schema matches the latest migration on every deploy.
+
+    Run as a subprocess (not in-process) because our ``alembic/env.py``
+    uses ``asyncio.run(run_async_migrations())`` which conflicts with
+    the already-running FastAPI event loop. The subprocess gets its
+    own loop and finishes cleanly.
+    """
+    import sys
+    from pathlib import Path
+
+    backend_dir = Path(__file__).resolve().parent.parent
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "alembic",
+        "upgrade",
+        "head",
+        cwd=str(backend_dir),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    stdout, _ = await proc.communicate()
+    if proc.returncode != 0:
+        # Surface the alembic output so the operator can see the
+        # specific migration that failed.
+        raise RuntimeError(
+            f"alembic upgrade head failed (exit={proc.returncode}). "
+            f"Output:\n{stdout.decode('utf-8', errors='replace')[:2000]}"
+        )
+    if stdout.strip():
+        logger.info(
+            "alembic upgrade output: %s",
+            stdout.decode("utf-8", errors="replace")[:2000],
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -44,6 +82,24 @@ async def lifespan(app: FastAPI):
     except TimeoutError:
         logger.critical("Database initialization timed out after 30s")
         raise
+
+    # Run pending Alembic migrations. ``init_db`` (above) calls
+    # ``Base.metadata.create_all`` which creates NEW tables but never
+    # ALTERs existing ones — so columns added in later migrations
+    # (e.g. ``papers.last_heartbeat_at`` from the pipeline_runs PR)
+    # never reach the production schema, and ORM queries against them
+    # raise 500. Run alembic upgrade head on every boot to close that
+    # gap. Wrapped in try/except so a migration failure doesn't block
+    # the app from coming up — better to serve stale schema than be
+    # down entirely while we diagnose.
+    try:
+        async with asyncio.timeout(120):
+            await _run_alembic_upgrade()
+            logger.info("Alembic migrations applied (or already current)")
+    except TimeoutError:
+        logger.error("Alembic upgrade timed out after 120s — continuing")
+    except Exception as e:
+        logger.error("Alembic upgrade failed (non-fatal): %s", e, exc_info=True)
 
     # Seed source cards + families on startup. Both seed functions are
     # idempotent (insert-or-update for source cards, skip-if-present for
