@@ -67,6 +67,14 @@ Target venue style: {venue_style}
 
 Family description: {family_description}
 
+REGISTERED SOURCE CARDS (the ONLY valid source_ref values when
+source_type="source_span"):
+{registered_source_ids}
+
+REGISTERED RESULT OBJECTS (the ONLY valid source_ref values when
+source_type="result_object"):
+{registered_result_object_names}
+
 Write the COMPLETE manuscript with these sections:
 1. Introduction (research question, contribution, roadmap)
 2. Literature Review (position paper relative to existing work)
@@ -79,6 +87,22 @@ Write the COMPLETE manuscript with these sections:
 For EACH central claim, include a comment indicating the evidence source:
   %% CLAIM: <claim_text> | SOURCE: <source_card_id or result_object_name>
 
+CRITICAL — claim source linkage (production papers consistently fail
+review when this is wrong):
+- Each claim's ``source_ref`` MUST be either:
+    - a SourceCard ID copied verbatim from REGISTERED SOURCE CARDS above
+      (when source_type="source_span"), or
+    - a result-object key copied verbatim from REGISTERED RESULT OBJECTS
+      (when source_type="result_object").
+- Do NOT invent source IDs (e.g. "29 CFR § 1607.4(d)" or
+  "Griggs v. Duke Power"). If a claim genuinely needs a source not in
+  the registered list, narrow the claim or drop it; do not paper over
+  the gap with a free-text reference.
+- Doctrinal/legal claims that cite specific authorities are fine in the
+  manuscript prose — but the corresponding ClaimMap entry's
+  ``source_ref`` must still resolve to a registered source card or
+  result object.
+
 Return JSON:
 {{
   "manuscript_latex": "<the full LaTeX document>",
@@ -87,7 +111,7 @@ Return JSON:
       "claim_text": "string",
       "claim_type": "empirical|descriptive|doctrinal|theoretical|historical",
       "source_type": "result_object|source_span",
-      "source_ref": "string (result object name or source card ID)",
+      "source_ref": "string (MUST be from the registered lists above)",
       "section": "string (which section contains this claim)"
     }}
   ],
@@ -158,6 +182,28 @@ async def compose_manuscript(
                 pass
         family_description = family.description if family else "AI governance research"
 
+        # Load registered SourceCard IDs so the prompt can present them
+        # as the closed set of valid source_ref values. Production paper
+        # apep_703f59f7 had 21/25 claims "soft-linked" because the LLM
+        # invented source references like "29 CFR § 1607.4(d)" that
+        # weren't in the registry. The Drafter prompt now lists the
+        # exact registered IDs and instructs the LLM to copy verbatim.
+        from app.models.source_card import SourceCard
+
+        sc_result = await s.execute(
+            select(SourceCard.id, SourceCard.name).where(SourceCard.active.is_(True))
+        )
+        # "<id> (<name>)" — name is helpful disambiguation but the LLM
+        # is told to use the ID portion as source_ref.
+        registered_source_pairs = [
+            f"  - {row[0]} ({row[1]})" for row in sc_result.all()
+        ]
+        registered_source_ids_str = (
+            "\n".join(registered_source_pairs)
+            if registered_source_pairs
+            else "  (no source cards registered yet)"
+        )
+
     # ── Phase 2: LLM call (no session held) ──────────────────────────
     if provider is None:
         provider, model = await get_generation_provider()
@@ -165,6 +211,18 @@ async def compose_manuscript(
         from app.config import settings
 
         model = settings.claude_opus_model
+
+    # Extract result-object names from the manifest so the prompt can
+    # show them as a closed set just like source IDs.
+    if result_manifest and isinstance(result_manifest.get("result_objects"), dict):
+        ro_names = list(result_manifest["result_objects"].keys())
+    else:
+        ro_names = []
+    registered_result_object_names_str = (
+        "\n".join(f"  - {n}" for n in ro_names)
+        if ro_names
+        else "  (no result objects registered yet)"
+    )
 
     prompt = DRAFT_USER_PROMPT.format(
         paper_id=paper_id,
@@ -183,6 +241,8 @@ async def compose_manuscript(
         ),
         venue_style=venue_style,
         family_description=family_description,
+        registered_source_ids=registered_source_ids_str,
+        registered_result_object_names=registered_result_object_names_str,
     )
 
     response = await provider.complete(
