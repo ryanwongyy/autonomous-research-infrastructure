@@ -19,14 +19,14 @@ The convergence loop:
 import json
 import logging
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.colleague_profile import ColleagueProfile
-from app.models.collegial_session import CollegialSession
-from app.models.collegial_exchange import CollegialExchange
 from app.models.acknowledgment_record import AcknowledgmentRecord
+from app.models.colleague_profile import ColleagueProfile
+from app.models.collegial_exchange import CollegialExchange
+from app.models.collegial_session import CollegialSession
 from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
 from app.utils import safe_json_loads, utcnow_naive
@@ -117,7 +117,7 @@ PLATEAU_TOLERANCE = 0.3  # If score improves < 0.3 for 2 rounds → plateaued
 
 # Default capped at 2 rounds because Render's free-tier HTTP request
 # limit is ~15 min (production run #25145137906 was killed at 14.7 min
-# mid-collegial-review). With 3 colleagues × ~30s × 2 rounds = ~3 min
+# mid-collegial-review). With 3 colleagues x ~30s x 2 rounds = ~3 min
 # for collegial review, the full pipeline (~12 min total) fits inside
 # the limit. Operators wanting deeper revision can override this via
 # the ``max_rounds`` parameter once we move to a fire-and-poll job
