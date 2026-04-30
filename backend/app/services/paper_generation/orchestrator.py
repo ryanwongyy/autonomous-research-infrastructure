@@ -307,41 +307,61 @@ async def _run_stage_with_session(
     stages must NOT hold a session across the LLM call or the
     connection dies and the final commit raises InterfaceError.
     """
-    async with async_session() as s:
-        paper = await _reload_paper(s, paper_id)
-        result = await _run_stage(stage_name, stage_fn, s, paper, **stage_kwargs)
-        # Commit even on stage failure so partial progress (paper
-        # record updates, kill_reason, etc.) persists. Each stage's
-        # exception handling is inside _run_stage; nothing here raises.
-        #
-        # If the session is in a "failed transaction" state (the inner
-        # work corrupted it without rolling back), commit raises
-        # ``InterfaceError`` AND rollback may also fail (production
-        # paper apep_bfb6d393 hit "Can't reconnect until invalid
-        # transaction is rolled back" because the rollback itself
-        # was on a poisoned session). Don't let those bubble out —
-        # the stage's ``result`` is still valid in memory; we just
-        # couldn't persist whatever was pending in the transaction.
-        try:
-            await s.commit()
-        except Exception as commit_err:
-            logger.warning(
-                "Stage '%s' wrapper commit failed: %s. Attempting rollback.",
-                stage_name,
-                commit_err,
-            )
+    # Outer try/except so wrapper-level exceptions (e.g. paper-reload
+    # blew up because connection pool is corrupted) never propagate
+    # past this helper. The caller always gets a dict.
+    try:
+        async with async_session() as s:
+            paper = await _reload_paper(s, paper_id)
+            result = await _run_stage(stage_name, stage_fn, s, paper, **stage_kwargs)
+            # Commit even on stage failure so partial progress (paper
+            # record updates, kill_reason, etc.) persists. Each stage's
+            # exception handling is inside _run_stage; nothing here raises.
+            #
+            # If the session is in a "failed transaction" state (the inner
+            # work corrupted it without rolling back), commit raises
+            # ``InterfaceError`` AND rollback may also fail (production
+            # paper apep_bfb6d393 hit "Can't reconnect until invalid
+            # transaction is rolled back" because the rollback itself
+            # was on a poisoned session). Don't let those bubble out —
+            # the stage's ``result`` is still valid in memory; we just
+            # couldn't persist whatever was pending in the transaction.
             try:
-                await s.rollback()
-            except Exception as rb_err:
+                await s.commit()
+            except Exception as commit_err:
                 logger.warning(
-                    "Stage '%s' wrapper rollback also failed: %s. "
-                    "Dropping session — pending writes lost.",
+                    "Stage '%s' wrapper commit failed: %s. Attempting rollback.",
                     stage_name,
-                    rb_err,
+                    commit_err,
                 )
-            # Mark this in the result so the caller can see persistence failed.
-            result["wrapper_commit_failed"] = str(commit_err)[:500]
-    return result
+                try:
+                    await s.rollback()
+                except Exception as rb_err:
+                    logger.warning(
+                        "Stage '%s' wrapper rollback also failed: %s. "
+                        "Dropping session — pending writes lost.",
+                        stage_name,
+                        rb_err,
+                    )
+                result["wrapper_commit_failed"] = str(commit_err)[:500]
+        return result
+    except Exception as wrapper_err:
+        logger.error(
+            "Stage '%s' wrapper hit fatal exception (paper=%s): %s",
+            stage_name,
+            paper_id,
+            wrapper_err,
+            exc_info=True,
+        )
+        return {
+            "status": "failed",
+            "stage_name": stage_name,
+            "duration_sec": 0.0,
+            "error": f"{type(wrapper_err).__name__}: {wrapper_err}",
+            "error_class": type(wrapper_err).__name__,
+            "error_traceback": traceback.format_exc(),
+            "wrapper_fatal": True,
+        }
 
 
 async def _run_stage_no_outer_session(
@@ -367,13 +387,34 @@ async def _run_stage_no_outer_session(
          role functions each open short-lived sessions for read /
          LLM-call / write phases.
     """
-    # Quick session for paper reload
-    async with async_session() as s:
-        paper = await _reload_paper(s, paper_id)
-    # Session closed; connection returned to the pool.
+    # Outer try/except so wrapper-level exceptions never propagate
+    # past this helper. The caller always gets a dict.
+    try:
+        # Quick session for paper reload
+        async with async_session() as s:
+            paper = await _reload_paper(s, paper_id)
+        # Session closed; connection returned to the pool.
 
-    # Stage runs WITHOUT an outer session. It manages its own DB.
-    return await _run_stage(stage_name, stage_fn, None, paper, **stage_kwargs)
+        # Stage runs WITHOUT an outer session. It manages its own DB.
+        return await _run_stage(stage_name, stage_fn, None, paper, **stage_kwargs)
+    except Exception as wrapper_err:
+        logger.error(
+            "Stage '%s' (no-outer-session) wrapper hit fatal exception "
+            "(paper=%s): %s",
+            stage_name,
+            paper_id,
+            wrapper_err,
+            exc_info=True,
+        )
+        return {
+            "status": "failed",
+            "stage_name": stage_name,
+            "duration_sec": 0.0,
+            "error": f"{type(wrapper_err).__name__}: {wrapper_err}",
+            "error_class": type(wrapper_err).__name__,
+            "error_traceback": traceback.format_exc(),
+            "wrapper_fatal": True,
+        }
 
 
 # ---------------------------------------------------------------------------
