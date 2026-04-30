@@ -19,13 +19,14 @@ The convergence loop:
 import json
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.acknowledgment_record import AcknowledgmentRecord
+from app.config import settings
 from app.models.colleague_profile import ColleagueProfile
-from app.models.collegial_exchange import CollegialExchange
 from app.models.collegial_session import CollegialSession
+from app.models.collegial_exchange import CollegialExchange
+from app.models.acknowledgment_record import AcknowledgmentRecord
 from app.services.llm.provider import LLMProvider
 from app.services.llm.router import get_generation_provider
 from app.utils import safe_json_loads, utcnow_naive
@@ -116,7 +117,7 @@ PLATEAU_TOLERANCE = 0.3  # If score improves < 0.3 for 2 rounds → plateaued
 
 # Default capped at 2 rounds because Render's free-tier HTTP request
 # limit is ~15 min (production run #25145137906 was killed at 14.7 min
-# mid-collegial-review). With 3 colleagues x ~30s x 2 rounds = ~3 min
+# mid-collegial-review). With 3 colleagues × ~30s × 2 rounds = ~3 min
 # for collegial review, the full pipeline (~12 min total) fits inside
 # the limit. Operators wanting deeper revision can override this via
 # the ``max_rounds`` parameter once we move to a fire-and-poll job
@@ -180,7 +181,7 @@ async def assess_submission_readiness(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     venue_context = (
         f"The target venue is: {target_venue}. "
@@ -193,7 +194,8 @@ async def assess_submission_readiness(
     previous_context = ""
     if previous_gaps:
         gap_text = "\n".join(
-            f"- [{g.get('dimension', 'general')}] {g.get('gap', '')}" for g in previous_gaps
+            f"- [{g.get('dimension', 'general')}] {g.get('gap', '')}"
+            for g in previous_gaps
         )
         previous_context = (
             f"\n\nIn the previous round, these gaps were identified:\n{gap_text}\n"
@@ -275,7 +277,9 @@ async def assess_submission_readiness(
     # Determine verdict if not provided or override based on scores
     if dims:
         all_above_threshold = all(
-            v >= QUALITY_READY_THRESHOLD for v in dims.values() if isinstance(v, (int, float))
+            v >= QUALITY_READY_THRESHOLD
+            for v in dims.values()
+            if isinstance(v, (int, float))
         )
         overall = parsed.get("overall_score", 0)
         if all_above_threshold and overall >= QUALITY_MIN_OVERALL:
@@ -348,10 +352,11 @@ async def run_colleague_feedback(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     claims_summary = "\n".join(
-        f"- [{c.get('claim_type', 'unknown')}] {c.get('claim_text', '')[:200]}" for c in claims[:20]
+        f"- [{c.get('claim_type', 'unknown')}] {c.get('claim_text', '')[:200]}"
+        for c in claims[:20]
     )
 
     venue_note = ""
@@ -443,7 +448,7 @@ async def run_targeted_feedback(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     # Filter gaps relevant to this colleague's expertise
     expertise_relevance = {
@@ -459,7 +464,9 @@ async def run_targeted_feedback(
     }
     relevant_dims = expertise_relevance.get(colleague.expertise_area, [])
     relevant_gaps = [
-        g for g in remaining_gaps if g.get("dimension") in relevant_dims or not relevant_dims
+        g
+        for g in remaining_gaps
+        if g.get("dimension") in relevant_dims or not relevant_dims
     ]
 
     if not relevant_gaps:
@@ -570,7 +577,7 @@ async def run_drafter_response(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     feedback_summary_parts = []
     for fb in all_feedback:
@@ -729,7 +736,7 @@ async def run_followup_dialogue(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     rejection_text = "\n".join(
         f"- {d.get('section', 'General')}: You suggested a change, "
@@ -809,7 +816,9 @@ async def complete_session(
 ) -> dict:
     """Complete the collegial session: generate summary and acknowledgment records."""
 
-    final_score = quality_trajectory[-1].get("overall_score", 0) if quality_trajectory else 0
+    final_score = (
+        quality_trajectory[-1].get("overall_score", 0) if quality_trajectory else 0
+    )
     total_rounds = collegial_session.current_round
 
     summary_parts = [
@@ -825,9 +834,13 @@ async def complete_session(
     if final_status == "converged":
         summary_parts.append("Manuscript assessed as ready for submission.")
     elif final_status == "max_rounds_reached":
-        summary_parts.append(f"Reached maximum of {collegial_session.max_rounds} rounds.")
+        summary_parts.append(
+            f"Reached maximum of {collegial_session.max_rounds} rounds."
+        )
     elif final_status == "plateaued":
-        summary_parts.append("Quality scores plateaued; further rounds unlikely to help.")
+        summary_parts.append(
+            "Quality scores plateaued; further rounds unlikely to help."
+        )
 
     session_summary = " ".join(summary_parts)
 
@@ -974,7 +987,9 @@ async def run_full_collegial_review(
         session.add(collegial_session)
         await session.flush()
 
-        logger.info("[%s] Starting collegial round %d/%d", paper_id, round_num, max_rounds)
+        logger.info(
+            "[%s] Starting collegial round %d/%d", paper_id, round_num, max_rounds
+        )
 
         # 2a. Get feedback from colleagues
         round_feedback: list[dict] = []
@@ -1231,7 +1246,9 @@ async def get_session_for_paper(session: AsyncSession, paper_id: str) -> dict | 
 
 async def get_colleague_profiles(session: AsyncSession) -> list[dict]:
     """Get all colleague profiles."""
-    result = await session.execute(select(ColleagueProfile).order_by(ColleagueProfile.id))
+    result = await session.execute(
+        select(ColleagueProfile).order_by(ColleagueProfile.id)
+    )
     profiles = result.scalars().all()
     return [
         {

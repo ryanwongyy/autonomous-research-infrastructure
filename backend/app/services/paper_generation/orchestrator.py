@@ -305,18 +305,61 @@ async def _run_stage_with_session(
     stages must NOT hold a session across the LLM call or the
     connection dies and the final commit raises InterfaceError.
     """
-    async with async_session() as s:
-        paper = await _reload_paper(s, paper_id)
-        result = await _run_stage(stage_name, stage_fn, s, paper, **stage_kwargs)
-        # Commit even on stage failure so partial progress (paper
-        # record updates, kill_reason, etc.) persists. Each stage's
-        # exception handling is inside _run_stage; nothing here raises.
-        try:
-            await s.commit()
-        except Exception:
-            await s.rollback()
-            raise
-    return result
+    # Outer try/except so wrapper-level exceptions (e.g. paper-reload
+    # blew up because connection pool is corrupted) never propagate
+    # past this helper. The caller always gets a dict.
+    try:
+        async with async_session() as s:
+            paper = await _reload_paper(s, paper_id)
+            result = await _run_stage(stage_name, stage_fn, s, paper, **stage_kwargs)
+            # Commit even on stage failure so partial progress (paper
+            # record updates, kill_reason, etc.) persists. Each stage's
+            # exception handling is inside _run_stage; nothing here raises.
+            #
+            # If the session is in a "failed transaction" state (the inner
+            # work corrupted it without rolling back), commit raises
+            # ``InterfaceError`` AND rollback may also fail (production
+            # paper apep_bfb6d393 hit "Can't reconnect until invalid
+            # transaction is rolled back" because the rollback itself
+            # was on a poisoned session). Don't let those bubble out —
+            # the stage's ``result`` is still valid in memory; we just
+            # couldn't persist whatever was pending in the transaction.
+            try:
+                await s.commit()
+            except Exception as commit_err:
+                logger.warning(
+                    "Stage '%s' wrapper commit failed: %s. Attempting rollback.",
+                    stage_name,
+                    commit_err,
+                )
+                try:
+                    await s.rollback()
+                except Exception as rb_err:
+                    logger.warning(
+                        "Stage '%s' wrapper rollback also failed: %s. "
+                        "Dropping session — pending writes lost.",
+                        stage_name,
+                        rb_err,
+                    )
+                result["wrapper_commit_failed"] = str(commit_err)[:500]
+        return result
+    except Exception as wrapper_err:
+        logger.error(
+            "Stage '%s' wrapper hit fatal exception (paper=%s): %s",
+            stage_name,
+            paper_id,
+            wrapper_err,
+            exc_info=True,
+        )
+        return {
+            "status": "failed",
+            "stage_name": stage_name,
+            "duration_sec": 0.0,
+            "error": f"{type(wrapper_err).__name__}: {wrapper_err}",
+            "error_class": type(wrapper_err).__name__,
+            "error_traceback": traceback.format_exc(),
+            "wrapper_fatal": True,
+        }
 
 
 async def _run_stage_no_outer_session(
@@ -342,13 +385,34 @@ async def _run_stage_no_outer_session(
          role functions each open short-lived sessions for read /
          LLM-call / write phases.
     """
-    # Quick session for paper reload
-    async with async_session() as s:
-        paper = await _reload_paper(s, paper_id)
-    # Session closed; connection returned to the pool.
+    # Outer try/except so wrapper-level exceptions never propagate
+    # past this helper. The caller always gets a dict.
+    try:
+        # Quick session for paper reload
+        async with async_session() as s:
+            paper = await _reload_paper(s, paper_id)
+        # Session closed; connection returned to the pool.
 
-    # Stage runs WITHOUT an outer session. It manages its own DB.
-    return await _run_stage(stage_name, stage_fn, None, paper, **stage_kwargs)
+        # Stage runs WITHOUT an outer session. It manages its own DB.
+        return await _run_stage(stage_name, stage_fn, None, paper, **stage_kwargs)
+    except Exception as wrapper_err:
+        logger.error(
+            "Stage '%s' (no-outer-session) wrapper hit fatal exception "
+            "(paper=%s): %s",
+            stage_name,
+            paper_id,
+            wrapper_err,
+            exc_info=True,
+        )
+        return {
+            "status": "failed",
+            "stage_name": stage_name,
+            "duration_sec": 0.0,
+            "error": f"{type(wrapper_err).__name__}: {wrapper_err}",
+            "error_class": type(wrapper_err).__name__,
+            "error_traceback": traceback.format_exc(),
+            "wrapper_fatal": True,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -761,28 +825,66 @@ async def _stage_collegial_review(
             except (ValueError, TypeError, IndexError):
                 pass
 
-    result = await run_full_collegial_review(
-        session=session,
-        paper_id=paper.id,
-        manuscript_latex=manuscript_latex,
-        lock_yaml=lock_yaml,
-        claims=claims,
-        target_venue=target_venue,
-        provider=provider,
-    )
-
-    return {
-        "status": "completed",
-        "session_id": result.get("session_id"),
-        "suggestions_accepted": result.get("acknowledgments", [{}])[0].get(
-            "accepted_suggestions", 0
+    # Wrap collegial review in a try/except so a session-corruption
+    # error doesn't kill the pipeline. ``run_full_collegial_review``
+    # holds the outer session across many inner LLM calls; if any of
+    # those raises mid-transaction (e.g. an asyncpg InterfaceError
+    # mid-stream), the session enters a "failed transaction" state
+    # and subsequent operations fail with:
+    #   "Can't reconnect until invalid transaction is rolled back"
+    # (production paper apep_bfb6d393 hit this exact error).
+    #
+    # Collegial review is non-fatal by design: the pipeline continues
+    # to Verifier even if collegial does nothing. Catch exceptions
+    # here and downgrade to ``completed_with_errors`` so the stage
+    # wrapper's later ``await s.commit()`` doesn't blow up on the
+    # poisoned transaction.
+    try:
+        result = await run_full_collegial_review(
+            session=session,
+            paper_id=paper.id,
+            manuscript_latex=manuscript_latex,
+            lock_yaml=lock_yaml,
+            claims=claims,
+            target_venue=target_venue,
+            provider=provider,
         )
-        if result.get("acknowledgments")
-        else 0,
-        "acknowledgments_count": len(result.get("acknowledgments", [])),
-        "revised_manuscript": result.get("revised_manuscript"),
-        "session_summary": result.get("summary", ""),
-    }
+        return {
+            "status": "completed",
+            "session_id": result.get("session_id"),
+            "suggestions_accepted": result.get("acknowledgments", [{}])[0].get(
+                "accepted_suggestions", 0
+            )
+            if result.get("acknowledgments")
+            else 0,
+            "acknowledgments_count": len(result.get("acknowledgments", [])),
+            "revised_manuscript": result.get("revised_manuscript"),
+            "session_summary": result.get("summary", ""),
+        }
+    except Exception as e:
+        logger.warning(
+            "[%s] Collegial review failed: %s — pipeline continues to verifier",
+            paper.id,
+            e,
+            exc_info=True,
+        )
+        # Roll back the session so the wrapper's commit succeeds and
+        # the next stage (verifier) gets a clean session via
+        # _run_stage_no_outer_session.
+        try:
+            await session.rollback()
+        except Exception as rb_err:
+            logger.warning(
+                "[%s] Collegial-review rollback also failed: %s",
+                paper.id,
+                rb_err,
+            )
+        return {
+            "status": "completed_with_errors",
+            "error_class": type(e).__name__,
+            "error_message": str(e) or "(empty exception message)",
+            "revised_manuscript": None,  # caller falls back to original manuscript
+        }
 
 
 async def _stage_verifier(

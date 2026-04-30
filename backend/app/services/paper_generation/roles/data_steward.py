@@ -121,7 +121,7 @@ async def build_source_manifest(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     prompt = MANIFEST_USER_PROMPT.format(
         paper_id=paper_id,

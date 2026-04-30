@@ -15,6 +15,7 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
@@ -113,7 +114,7 @@ async def create_research_design(
     if provider is None:
         provider, model = await get_generation_provider()
     else:
-        model = "claude-opus-4-6"
+        model = settings.claude_opus_model
 
     prompt = DESIGN_USER_PROMPT.format(
         paper_id=paper_id,

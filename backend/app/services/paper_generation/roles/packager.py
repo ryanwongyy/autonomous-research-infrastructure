@@ -141,7 +141,7 @@ async def build_package(
     ai_contribution_log = json.dumps(
         {
             "pipeline_version": "phase_3_bounded_roles",
-            "model": "claude-opus-4-6",
+            "model": settings.claude_opus_model,
             "stages": {
                 "scout": {
                     "role": "Idea generation and screening",
