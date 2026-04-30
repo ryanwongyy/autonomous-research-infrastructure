@@ -221,6 +221,95 @@ async def export_paper(
     )
 
 
+@router.post(
+    "/admin/papers/{paper_id}/backfill-title",
+    response_model=PaperResponse,
+    dependencies=[Depends(admin_key_required)],
+)
+async def backfill_paper_title(paper_id: str, db: AsyncSession = Depends(get_db)):
+    """Re-derive paper.title from the saved manuscript LaTeX.
+
+    Necessary for papers created before PR #30 landed the
+    title-extraction fix. Production paper apep_faf874ae completed
+    end-to-end (8 stages, 26 sourced claims) but its title still
+    reads ``"Generating..."`` because the Drafter ran with the
+    placeholder code. This endpoint re-extracts ``\\title{...}`` from
+    the manuscript stored on the PaperPackage's package_path.
+
+    Idempotent — running it on a paper whose title is already
+    populated is a no-op (returns the existing record).
+    """
+    from pathlib import Path
+
+    from sqlalchemy.orm import selectinload
+
+    from app.services.paper_generation.roles.drafter import _extract_latex_title
+
+    paper = (
+        await db.execute(
+            select(Paper)
+            .where(Paper.id == paper_id)
+            .options(selectinload(Paper.package))
+        )
+    ).scalar_one_or_none()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    if paper.title and paper.title != "Generating...":
+        # Already has a real title — nothing to do.
+        return PaperResponse.model_validate(paper)
+
+    if paper.package is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Paper {paper_id} has no PaperPackage record — "
+                "manuscript artifact location unknown."
+            ),
+        )
+
+    package_path = Path(paper.package.package_path)
+    candidates = [
+        package_path / "manuscript.tex",
+        package_path / "paper.tex",
+        package_path / "main.tex",
+    ]
+    manuscript_path = next((p for p in candidates if p.is_file()), None)
+    if manuscript_path is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No manuscript file found at {package_path} "
+                f"(tried: {[p.name for p in candidates]}). "
+                "Artifact may have been wiped during a Render redeploy."
+            ),
+        )
+
+    manuscript_latex = manuscript_path.read_text(encoding="utf-8", errors="replace")
+    title = _extract_latex_title(manuscript_latex)
+    if not title:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Manuscript file exists but contains no extractable \\title{...} block."
+            ),
+        )
+
+    paper.title = title
+    db.add(paper)
+    await db.commit()
+    await db.refresh(paper)
+
+    logger.info(
+        "Backfilled title for paper %s from %s: %r",
+        paper_id,
+        manuscript_path,
+        title,
+    )
+
+    return PaperResponse.model_validate(paper)
+
+
 @router.post("/papers", response_model=PaperResponse)
 async def create_paper(paper_in: PaperCreate, db: AsyncSession = Depends(get_db)):
     paper_id = paper_in.id or generate_paper_id()
