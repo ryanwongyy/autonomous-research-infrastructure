@@ -278,9 +278,38 @@ async def build_package(
     session.add(package)
 
     # -----------------------------------------------------------------------
-    # 8. Update paper funnel stage
+    # 8. Persist artifacts to disk + update Paper.{paper_tex_path,
+    #    code_path, data_path} so L1 structural review can find them.
+    #
+    # Production run #25163518619 reached Packager but L1 then reported
+    # CRITICAL "Required artifact missing: manuscript" because the Paper
+    # row had `paper_tex_path = None` — content was hashed and stored on
+    # PaperPackage but never written to disk. L1 reads `paper.paper_tex_path`
+    # / `paper.code_path` / `paper.data_path` (see l1_structural.py:94-96)
+    # so each must point at a real file.
+    #
+    # Writes are best-effort: a filesystem error here doesn't kill the
+    # pipeline (the package record still has the hashes). But on the
+    # happy path the files exist and L1 advances past artifact_missing.
+    # -----------------------------------------------------------------------
+    artifact_paths = _write_package_artifacts(
+        package_path=package_path,
+        manuscript_latex=manuscript_latex,
+        code_content=code_content,
+        source_manifest=source_manifest,
+        result_manifest=result_manifest,
+    )
+
+    # -----------------------------------------------------------------------
+    # 9. Update paper funnel stage + artifact path columns
     # -----------------------------------------------------------------------
     paper.funnel_stage = "candidate"
+    if artifact_paths.get("manuscript"):
+        paper.paper_tex_path = artifact_paths["manuscript"]
+    if artifact_paths.get("code"):
+        paper.code_path = artifact_paths["code"]
+    if artifact_paths.get("data"):
+        paper.data_path = artifact_paths["data"]
     session.add(paper)
     await session.flush()
 
@@ -319,3 +348,83 @@ async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifac
     )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
+
+
+def _write_package_artifacts(
+    *,
+    package_path: str,
+    manuscript_latex: str | None,
+    code_content: str | None,
+    source_manifest: dict[str, Any] | None,
+    result_manifest: dict[str, Any] | None,
+) -> dict[str, str]:
+    """Persist generated artifacts to disk under ``package_path``.
+
+    Writes manuscript.tex / code/analysis.py / data/manifest.json /
+    results/results.json so the L1 structural reviewer (and any external
+    consumer) can read content from a real filesystem path. Returns a
+    mapping of ``{artifact_name: relative_path_to_papers_dir_or_absolute}``
+    that the caller stores on the Paper row.
+
+    Best-effort: any IO error logs and continues. The PaperPackage record
+    still has hashes for every component, so a missing file is recoverable
+    from the DB; the L1 review will just complain on this particular run.
+    """
+    out: dict[str, str] = {}
+
+    try:
+        os.makedirs(package_path, exist_ok=True)
+    except OSError as e:
+        logger.warning(
+            "Packager: failed to create package dir %s: %s — skipping artifact writes",
+            package_path,
+            e,
+        )
+        return out
+
+    if manuscript_latex:
+        manuscript_file = os.path.join(package_path, "manuscript.tex")
+        try:
+            with open(manuscript_file, "w", encoding="utf-8") as f:
+                f.write(manuscript_latex)
+            out["manuscript"] = manuscript_file
+        except OSError as e:
+            logger.warning(
+                "Packager: failed to write manuscript.tex: %s", e
+            )
+
+    if code_content:
+        code_dir = os.path.join(package_path, "code")
+        try:
+            os.makedirs(code_dir, exist_ok=True)
+            code_file = os.path.join(code_dir, "analysis.py")
+            with open(code_file, "w", encoding="utf-8") as f:
+                f.write(code_content)
+            out["code"] = code_file
+        except OSError as e:
+            logger.warning("Packager: failed to write analysis.py: %s", e)
+
+    if source_manifest is not None:
+        data_dir = os.path.join(package_path, "data")
+        try:
+            os.makedirs(data_dir, exist_ok=True)
+            data_file = os.path.join(data_dir, "manifest.json")
+            with open(data_file, "w", encoding="utf-8") as f:
+                json.dump(source_manifest, f, indent=2, sort_keys=True)
+            out["data"] = data_file
+        except OSError as e:
+            logger.warning("Packager: failed to write data manifest: %s", e)
+
+    if result_manifest is not None:
+        results_dir = os.path.join(package_path, "results")
+        try:
+            os.makedirs(results_dir, exist_ok=True)
+            results_file = os.path.join(results_dir, "results.json")
+            with open(results_file, "w", encoding="utf-8") as f:
+                json.dump(result_manifest, f, indent=2, sort_keys=True)
+            # Not stored on Paper — this is supplementary, not what L1 checks.
+            out["results"] = results_file
+        except OSError as e:
+            logger.warning("Packager: failed to write results.json: %s", e)
+
+    return out
