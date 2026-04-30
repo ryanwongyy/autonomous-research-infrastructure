@@ -119,17 +119,40 @@ async def run_structural_review(session: AsyncSession, paper_id: str) -> Review:
             "message": "No claim map entries found. Every central claim needs a ClaimMap entry.",
         })
     else:
-        # Check for unlinked claims (no source card AND no result object ref).
-        unlinked = [
-            c for c in claims
-            if c.source_card_id is None and c.result_object_ref is None
-        ]
+        # A claim is considered "linked" if it has ANY of three pointers:
+        #
+        #   - ``source_card_id`` — hard FK to a registered SourceCard.
+        #     Strongest provenance; the source has been pre-vetted.
+        #   - ``result_object_ref`` — JSON pointer to an Analyst result.
+        #     Means the claim is grounded in this paper's own analysis.
+        #   - ``source_span_ref`` — JSON pointer to an LLM-named source
+        #     that wasn't pre-registered as a SourceCard. Weaker than a
+        #     hard FK but still real provenance: the Drafter did name a
+        #     source (e.g. a CFR section, a Supreme Court case) and the
+        #     downstream Verifier can audit the name. PR #36 added this
+        #     fallback path specifically so LLM-hallucinated source IDs
+        #     don't destroy the entire link record.
+        #
+        # The previous L1 check only inspected the first two fields,
+        # which silently disagreed with PR #36's intent and made every
+        # paper with soft-linked claims fail L1 with CRITICAL
+        # ``central_claim_unlinked`` (production paper apep_144722c2:
+        # 21/25 claims soft-linked, all flagged as unlinked).
+        def _is_linked(claim: ClaimMap) -> bool:
+            return (
+                claim.source_card_id is not None
+                or claim.result_object_ref is not None
+                or claim.source_span_ref is not None
+            )
+
+        unlinked = [c for c in claims if not _is_linked(c)]
         if unlinked:
             issues.append({
                 "check": "claim_map_unlinked",
                 "severity": "warning",
                 "message": (
-                    f"{len(unlinked)} claim(s) have no source card or result object link."
+                    f"{len(unlinked)} claim(s) have no source card, "
+                    f"source span, or result object link."
                 ),
                 "claim_ids": [c.id for c in unlinked],
             })
@@ -137,20 +160,39 @@ async def run_structural_review(session: AsyncSession, paper_id: str) -> Review:
         # Check for central claims specifically.
         central_types = {"empirical", "doctrinal"}
         central_claims = [c for c in claims if c.claim_type.lower() in central_types]
-        unlinked_central = [
-            c for c in central_claims
-            if c.source_card_id is None and c.result_object_ref is None
-        ]
+        unlinked_central = [c for c in central_claims if not _is_linked(c)]
         if unlinked_central:
             issues.append({
                 "check": "central_claim_unlinked",
                 "severity": "critical",
                 "message": (
                     f"{len(unlinked_central)} central claim(s) "
-                    f"(empirical/doctrinal) have no source or result link."
+                    f"(empirical/doctrinal) have no source, span, or "
+                    f"result link."
                 ),
                 "claim_ids": [c.id for c in unlinked_central],
             })
+
+        # Quality signal: how many claims are linked ONLY via the soft
+        # source_span_ref path? High soft-link rates mean the Drafter is
+        # naming sources the system doesn't know about — useful for
+        # operators to track without being a structural failure. Logged
+        # at INFO; not added to issues.
+        soft_linked = [
+            c for c in claims
+            if c.source_card_id is None
+            and c.result_object_ref is None
+            and c.source_span_ref is not None
+        ]
+        if soft_linked:
+            logger.info(
+                "L1: paper %s has %d/%d soft-linked claims "
+                "(source_span_ref only, no registered FK). Drafter is "
+                "naming sources outside the SourceCard registry.",
+                paper_id,
+                len(soft_linked),
+                len(claims),
+            )
 
     # ------------------------------------------------------------------
     # 4. Orphan tables/figures check
