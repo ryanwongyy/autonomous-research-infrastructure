@@ -241,6 +241,13 @@ async def run_full_pipeline(
                 paper = await _reload_paper(s, paper_id)
                 paper.funnel_stage = "killed"
                 paper.kill_reason = "Verifier recommended rejection"
+                # Flip Paper.status so external observers (cron poll loop,
+                # frontend) see the terminal state. Without this the paper
+                # row stays at status="draft" forever and the GitHub Actions
+                # workflow times out at 45 min waiting for a status change
+                # (production run #25163518619). The poll loop's terminal
+                # set is {candidate, published, error, killed, rejected}.
+                paper.status = "killed"
                 s.add(paper)
                 await s.commit()
             report["final_status"] = "rejected_by_verifier"
@@ -266,6 +273,15 @@ async def run_full_pipeline(
         # ---------------------------------------------------------------
         async with async_session() as s:
             paper = await _reload_paper(s, paper_id)
+            # Flip Paper.status from "draft" → "candidate" so external
+            # observers (cron poll loop, frontend) see the terminal state.
+            # Production run #25163518619 timed out at 45 min because the
+            # workflow polls Paper.status while the orchestrator only
+            # advanced funnel_stage. Both should reflect "candidate" when
+            # generation completes successfully.
+            paper.status = "candidate"
+            s.add(paper)
+            await s.commit()
             report["final_status"] = f"completed (funnel_stage={paper.funnel_stage})"
         logger.info("Pipeline completed for paper %s", paper_id)
 
