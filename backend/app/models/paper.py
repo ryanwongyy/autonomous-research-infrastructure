@@ -43,6 +43,14 @@ class Paper(Base):
     paper_tex_path: Mapped[str | None] = mapped_column(Text)
     code_path: Mapped[str | None] = mapped_column(Text)
     data_path: Mapped[str | None] = mapped_column(Text)
+    # Durable copy of the LaTeX manuscript. Render's filesystem is
+    # ephemeral — files written under settings.papers_dir are wiped
+    # on every redeploy. The path columns above still record where
+    # the file was, but the file may not be there anymore. This
+    # column holds the actual content so the export endpoint, L1
+    # review, and any future downstream consumer can read the
+    # manuscript even after the disk artifact is gone.
+    manuscript_latex: Mapped[str | None] = mapped_column(Text)
     metadata_json: Mapped[str | None] = mapped_column(
         Text
     )  # JSON blob for domain-specific metadata
