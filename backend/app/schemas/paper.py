@@ -42,6 +42,23 @@ class PaperResponse(PaperBase):
     # without needing backend log access.
     error_message: str | None = None
 
+    # Reason a paper was killed. Set by the orchestrator's
+    # ``_set_killed_at_stage`` (per-stage failure) or the verifier-
+    # rejection path. Format: ``"killed_at_<stage>: <error>"``.
+    # Surfaced separately from ``error_message`` because killed papers
+    # are typically a quality outcome (Drafter failed, Verifier
+    # rejected) rather than a system error. Without this, operators
+    # see status='killed' but can't tell why.
+    kill_reason: str | None = None
+
+    # Manuscript path columns. ``paper_tex_path`` etc. are populated
+    # by Packager (PR #44) and used by L1 review and the export
+    # endpoint. Surfaced so operators can see whether artifacts were
+    # written even when the on-disk file has been wiped by a deploy.
+    paper_tex_path: str | None = None
+    code_path: str | None = None
+    data_path: str | None = None
+
     # Heartbeat fields populated by the orchestrator at each stage.
     # Polling clients use these to detect stalled tasks
     # (heartbeat >5 min stale = likely-dead background task).
