@@ -163,6 +163,40 @@ that don't actually contain the empirical finding):
       (this should be descriptive + cited from openalex literature
       review)
 
+CRITICAL — claim_text must be source-defensible (production paper
+apep_9afaf116 had 11 of 16 verified-or-failed claims FAIL because
+claim_text overstated what the source actually contains):
+- claim_text is what the Verifier checks against the source excerpt.
+  It MUST be a statement that a reader can confirm by reading the
+  source itself. Not a paper-prose interpretation. Not a scope-
+  broadening generalization. Not the argument the paper is building.
+- The argument lives in the manuscript prose. The CLAIM is the
+  evidence underneath it. Keep the two separated.
+- VERIFIED examples from apep_9afaf116 (these passed the Verifier):
+    * "The Federal Register is the official daily publication for
+      rules, proposed rules, and notices of federal agencies" +
+      source="federal_register"   ← describes what the source IS
+    * "USAspending.gov is the official source for federal spending
+      data mandated by FFATA" + source="usaspending"   ← literal
+      source description
+    * "The NIST AI RMF organizes risk management around four
+      functions: Govern, Map, Measure, Manage" + source="nist_ai_rmf"
+      ← directly stated in the framework document
+- FAILED examples from apep_9afaf116 (these failed the Verifier):
+    * "Federal agencies deploy AI systems for consequential public
+      functions including benefits adjudication" + source="usaspending"
+      ← USAspending has spending records, not narrative claims about
+      AI deployment patterns. This is a paper-argument, not source
+      evidence.
+    * "Algorithmic systems introduce novel accountability deficits
+      including opacity and systematic bias" + source="openalex"
+      ← OpenAlex is a bibliographic database; it doesn't make the
+      substantive claim. This should cite SPECIFIC papers.
+- The fix: write claim_text that describes either (a) the source's
+  own content/structure or (b) a SPECIFIC cited work within the
+  source. Do NOT write claim_text that asserts a world-fact "via" a
+  database that merely contains records.
+
 Return JSON:
 {{
   "manuscript_latex": "<the full LaTeX document>",
