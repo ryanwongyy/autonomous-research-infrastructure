@@ -103,6 +103,25 @@ review when this is wrong):
   ``source_ref`` must still resolve to a registered source card or
   result object.
 
+CRITICAL — claim_type vs source TIER pairing (production paper
+apep_3ddffa34 failed L2 with 14 tier_violations of this exact form):
+- Empirical and doctrinal claims are CENTRAL — they carry the paper's
+  argumentative weight. They MUST be anchored by a Tier A or Tier B
+  source from the listing above.
+- Tier C sources (incident logs, popular-press archives, opinion
+  columns) can ONLY anchor:
+    - claim_type="descriptive" (background context, scoping)
+    - claim_type="theoretical" (illustrative example, not evidence)
+    - claim_type="historical" (event-occurrence reporting)
+- If you have a strong empirical claim that you can only support
+  with a Tier C source, REWRITE it as descriptive or omit it. Do
+  NOT pair empirical/doctrinal with Tier C — the L2 reviewer will
+  fire CRITICAL tier_violation and the paper will fail.
+- Use a MIX of claim_types where the evidence supports it: an all-
+  empirical paper is suspicious. Background facts, framework
+  descriptions, and event reporting should typically be descriptive
+  or historical.
+
 Return JSON:
 {{
   "manuscript_latex": "<the full LaTeX document>",
@@ -186,22 +205,44 @@ async def compose_manuscript(
         # as the closed set of valid source_ref values. Production paper
         # apep_703f59f7 had 21/25 claims "soft-linked" because the LLM
         # invented source references like "29 CFR § 1607.4(d)" that
-        # weren't in the registry. The Drafter prompt now lists the
-        # exact registered IDs and instructs the LLM to copy verbatim.
+        # weren't in the registry. PR #51 added the closed-set listing.
+        #
+        # Production paper apep_3ddffa34 (run 25202085464) then revealed
+        # the next gap: the Drafter ignored source TIER when picking a
+        # source for empirical claims. 8/25 claims were anchored to a
+        # Tier C source ("OECD AI Incidents Monitor"), generating 14
+        # CRITICAL ``tier_violation`` issues at L2 because Tier C
+        # sources cannot anchor central (empirical/doctrinal) claims.
+        #
+        # PR #55 groups sources by tier so the Drafter sees the tier
+        # constraint structurally. Tier A/B sources are the ONLY valid
+        # anchors for empirical/doctrinal claims; Tier C is for
+        # auxiliary/descriptive only.
         from app.models.source_card import SourceCard
 
         sc_result = await s.execute(
-            select(SourceCard.id, SourceCard.name).where(SourceCard.active.is_(True))
+            select(SourceCard.id, SourceCard.name, SourceCard.tier).where(
+                SourceCard.active.is_(True)
+            )
         )
-        # "<id> (<name>)" — name is helpful disambiguation but the LLM
-        # is told to use the ID portion as source_ref.
-        registered_source_pairs = [
-            f"  - {row[0]} ({row[1]})" for row in sc_result.all()
-        ]
+        sources_by_tier: dict[str, list[str]] = {"A": [], "B": [], "C": []}
+        for row in sc_result.all():
+            tier = (row[2] or "C").upper()
+            sources_by_tier.setdefault(tier, []).append(f"  - {row[0]} ({row[1]})")
+
+        def _format_tier(letter: str) -> str:
+            entries = sources_by_tier.get(letter, [])
+            return "\n".join(entries) if entries else f"  (no Tier {letter} sources registered)"
+
         registered_source_ids_str = (
-            "\n".join(registered_source_pairs)
-            if registered_source_pairs
-            else "  (no source cards registered yet)"
+            "TIER A — primary, audited; SUITABLE for empirical/doctrinal:\n"
+            f"{_format_tier('A')}\n"
+            "\nTIER B — high-quality secondary; SUITABLE for empirical/doctrinal:\n"
+            f"{_format_tier('B')}\n"
+            "\nTIER C — auxiliary/contextual; ONLY for descriptive or "
+            "supporting claims (NEVER as the anchor of an empirical or "
+            "doctrinal claim — that's a CRITICAL tier_violation at review):\n"
+            f"{_format_tier('C')}"
         )
 
     # ── Phase 2: LLM call (no session held) ──────────────────────────

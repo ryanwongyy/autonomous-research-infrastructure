@@ -99,10 +99,16 @@ def test_compose_manuscript_passes_both_lists_to_format():
 def test_compose_manuscript_handles_empty_source_registry():
     """When no SourceCards are registered (fresh deployment), the
     prompt must still format successfully — show a clear placeholder
-    instead of crashing."""
+    instead of crashing. PR #55 changed the format to per-tier
+    placeholders ("no Tier A sources registered" etc)."""
     src = inspect.getsource(compose_manuscript)
-    # Look for the placeholder fallback string.
-    assert "no source cards registered yet" in src or "(no source cards" in src
+    # Look for the placeholder fallback string (any of the per-tier
+    # variants since PR #55).
+    assert (
+        "no source cards registered yet" in src
+        or "(no source cards" in src
+        or "no Tier" in src
+    )
 
 
 def test_compose_manuscript_handles_empty_result_manifest():
