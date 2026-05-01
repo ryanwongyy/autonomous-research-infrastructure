@@ -2,6 +2,7 @@ import asyncio
 import base64
 import logging
 
+import httpx
 import openai
 from openai import AsyncOpenAI
 
@@ -10,12 +11,17 @@ from app.services.llm.provider import _RETRYABLE_EXCEPTIONS, LLMProvider, _llm_r
 
 logger = logging.getLogger(__name__)
 
-# Add OpenAI-specific transient errors to retryable set
-_RETRYABLE_EXCEPTIONS += (
+# Add OpenAI-specific transient errors to retryable set. Use .extend()
+# so the mutation reaches provider.py's list (see provider.py for the
+# bug-history note on `+=`).
+# httpx.TransportError covers raw transport failures the SDK doesn't
+# wrap.
+_RETRYABLE_EXCEPTIONS.extend([
     openai.APIConnectionError,
     openai.RateLimitError,
     openai.InternalServerError,
-)
+    httpx.TransportError,
+])
 
 
 class OpenAIProvider(LLMProvider):

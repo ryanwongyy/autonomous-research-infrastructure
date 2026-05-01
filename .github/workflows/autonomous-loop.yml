@@ -43,6 +43,28 @@ jobs:
           # Final check
           curl -sf "$API_BASE/health" || { echo "Server failed to wake up"; exit 1; }
 
+      - name: Reap orphan papers from prior runs
+        run: |
+          # PR #60: detect papers stuck at non-terminal status with stale
+          # heartbeats and flip them to status=killed. Catches the case
+          # where the Render worker was killed mid-stage and PR #46/48's
+          # in-process cleanup never ran (paper apep_f237bfc0 is the
+          # canonical example: 3-min heartbeat then 42-min silence,
+          # workflow timed out, paper stayed status=draft forever).
+          #
+          # Threshold 30 min: Drafter is the longest legitimate stage at
+          # 15 min so 30 min gives 2x safety margin. Won't false-reap
+          # in-flight papers from a concurrent workflow.
+          #
+          # Failure here is non-fatal — log and continue so a transient
+          # reaper error doesn't block the rest of the cron.
+          echo "Reaping any orphan papers from prior runs..."
+          REAP=$(curl -s -X POST "$API_BASE/api/v1/admin/papers/reap-orphans?stale_minutes=30" \
+            -H "X-API-Key: $API_KEY" --max-time 60) || REAP="{}"
+          echo "$REAP" | python3 -m json.tool 2>/dev/null || echo "$REAP"
+          REAPED=$(echo "$REAP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("reaped_count", 0))' 2>/dev/null || echo "?")
+          echo "Reaped $REAPED orphan paper(s)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Determine schedule context
         id: context
         run: |
@@ -129,6 +151,28 @@ jobs:
             esac
           done
           echo "summary=Generated $GENERATED, failed $FAILED" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Re-verify pending claims (fill Verifier coverage gap)
+        run: |
+          # PR #62: the Verifier LLM consistently leaves ~70% of claims
+          # at status='pending' (PRs #50/52/53 documented this). PR #56
+          # added /admin/papers/{id}/re-verify and PR #62 added the
+          # batch endpoint to process every paper with high pending
+          # ratio in one call.
+          #
+          # Without this step, every paper L2-fails on
+          # ``coverage_incomplete CRITICAL`` (production paper
+          # apep_1b62de0c was the canonical example: 19 Tier A + 6 B
+          # sources, L1 PASS, but L2 failed at 28% verified).
+          #
+          # Failure here is non-fatal — log and continue so a transient
+          # LLM error doesn't block tournaments / promote.
+          echo "Re-verifying papers with high pending count..."
+          REV=$(curl -s -X POST "$API_BASE/api/v1/admin/papers/re-verify-batch?min_pending_ratio=0.2&limit=10" \
+            -H "X-API-Key: $API_KEY" --max-time 1800) || REV="{}"
+          echo "$REV" | python3 -m json.tool 2>/dev/null || echo "$REV"
+          PROCESSED=$(echo "$REV" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("processed_count", 0))' 2>/dev/null || echo "?")
+          echo "Re-verified $PROCESSED paper(s)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Review pending papers
         run: |

@@ -54,17 +54,43 @@ Protocol type: {protocol_type}
 Source data schemas:
 {source_schemas}
 
+AVAILABLE PYTHON ENVIRONMENT (your script can import these without
+adding to requirements):
+- Standard library: csv, json, re, math, statistics, datetime, pathlib,
+  collections, itertools, functools (everything in Python 3.11+ stdlib)
+- Data-science stack: numpy (as np), pandas (as pd), scipy (scipy.stats
+  for tests, scipy.optimize for fitting)
+- HTTP / data fetching: httpx (use httpx.Client, not requests)
+- Parsing: pyyaml (for YAML), json (for JSON)
+
+DO NOT import:
+- requests (use httpx instead)
+- matplotlib, seaborn, plotly (no figure generation in this stage —
+  describe figures as dicts in result_manifest, the Drafter renders
+  LaTeX-native tables)
+- scikit-learn, tensorflow, pytorch, transformers (out of scope for
+  this stage; if you need ML, fall back to scipy.stats / numpy)
+- nltk (use re + manual text processing for token-level work)
+- Any package not listed above (the subprocess will fail with
+  ModuleNotFoundError — production paper apep_1b62de0c hit exactly
+  this with `import krippendorff`)
+
+If you genuinely need a statistic that isn't in numpy/scipy.stats,
+implement it from primitives — Krippendorff's alpha is ~30 lines of
+numpy. Don't fabricate library calls.
+
 Write a complete, executable Python script that:
 1. Loads the source data from CSV files
 2. Cleans and prepares variables according to the locked design
 3. Implements the specified method/identification strategy
 4. Runs the main analysis
 5. Performs at least two robustness checks
-6. Generates result objects (tables and figures as dicts/descriptions)
+6. Generates result objects (tables as dicts/lists)
 7. Saves a result_manifest.json with all outputs
 8. Uses numpy random seed 42 for reproducibility
 
-Also provide a requirements.txt with pinned package versions.
+Also provide a requirements.txt with pinned package versions (use
+ONLY the packages listed in AVAILABLE PYTHON ENVIRONMENT above).
 
 Return JSON:
 {{
@@ -460,8 +486,17 @@ except Exception as e:
             f.write(runner)
 
         try:
+            # Use ``sys.executable`` (the venv's Python) instead of bare
+            # ``python3`` so the subprocess inherits the same packages
+            # the backend has — numpy / pandas / scipy from PR #63.
+            # Bare ``python3`` resolves via PATH to the system Python on
+            # Render, which has only stdlib. Production paper
+            # apep_1b62de0c hit "ANALYSIS_ERROR: No module named 'numpy'"
+            # for exactly this reason.
+            import sys
+
             proc = await asyncio.create_subprocess_exec(
-                "python3",
+                sys.executable,
                 runner_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

@@ -400,6 +400,239 @@ async def backfill_manuscript_latex(paper_id: str, db: AsyncSession = Depends(ge
 
 
 @router.post(
+    "/admin/papers/reap-orphans",
+    dependencies=[Depends(admin_key_required)],
+)
+async def reap_orphan_papers(
+    stale_minutes: int = Query(
+        30, ge=5, le=240,
+        description="Heartbeat staleness threshold in minutes. Default 30.",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Find papers stuck at non-terminal status with stale heartbeats and
+    flip them to ``status='killed'``.
+
+    Production paper apep_f237bfc0 (autonomous-loop run 25207115248) is
+    the canonical case: created at 07:51:27, last_heartbeat from
+    Analyst at 07:54:35, then 42 minutes of silence until the workflow
+    timed out. The Analyst stage's 900s asyncio.timeout (PR #46) should
+    have fired and PR #48's ``_set_killed_at_stage`` should have flipped
+    status to killed — but neither did, almost certainly because the
+    Render worker process was killed entirely (no Python alive to run
+    cleanup).
+
+    PR #46 + #48 require the Python process to survive. This reaper
+    closes the gap from the OUTSIDE: at /admin invocation it scans for
+    papers whose heartbeat is older than the threshold AND whose status
+    is non-terminal. Each match is flipped to ``status='killed'`` with
+    ``kill_reason="reaped: stale heartbeat (last seen at <stage> N min ago)"``.
+
+    The cron / a periodic job can call this on every workflow run to
+    keep the status field honest.
+
+    Terminal statuses (not reaped):
+        candidate, published, error, killed, rejected
+
+    Threshold default 30 min. Drafter is the longest legitimate stage
+    at 15 min so 30 min gives 2x safety margin.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=stale_minutes)
+    cutoff_naive = cutoff.replace(tzinfo=None)
+
+    # Find candidates: non-terminal status with stale (or missing) heartbeat.
+    # Papers without any heartbeat at all are also candidates if they're old
+    # enough — i.e. the worker died before even writing a heartbeat.
+    terminal_statuses = ("candidate", "published", "error", "killed", "rejected")
+    stmt = select(Paper).where(
+        Paper.status.notin_(terminal_statuses),
+        Paper.created_at < cutoff_naive,
+    )
+    candidates = (await db.execute(stmt)).scalars().all()
+
+    reaped: list[dict] = []
+    for paper in candidates:
+        # If there's a heartbeat, only reap if it's stale.
+        if paper.last_heartbeat_at is not None:
+            hb = paper.last_heartbeat_at
+            if hb.tzinfo is None:
+                hb = hb.replace(tzinfo=timezone.utc)
+            hb_naive = hb.replace(tzinfo=None)
+            if hb_naive >= cutoff_naive:
+                # Heartbeat is fresh — don't reap.
+                continue
+            stage = paper.last_heartbeat_stage or "unknown"
+            staleness_min = int((cutoff_naive - hb_naive).total_seconds() / 60)
+            reason = (
+                f"reaped: stale heartbeat (last seen at {stage} "
+                f"~{staleness_min + stale_minutes} min ago)"
+            )
+        else:
+            # No heartbeat at all — worker probably died before writing one.
+            age_min = int((cutoff_naive - paper.created_at).total_seconds() / 60)
+            reason = f"reaped: no heartbeat after {age_min} min"
+
+        paper.status = "killed"
+        paper.funnel_stage = "killed"
+        paper.kill_reason = reason
+        paper.review_status = "skipped"
+        db.add(paper)
+        reaped.append(
+            {
+                "paper_id": paper.id,
+                "previous_status": "draft",  # by predicate
+                "previous_funnel_stage": paper.funnel_stage,
+                "last_heartbeat_stage": paper.last_heartbeat_stage,
+                "kill_reason": reason,
+            }
+        )
+
+    if reaped:
+        await db.commit()
+        logger.warning(
+            "Reaped %d orphan paper(s) with stale heartbeats (>%d min)",
+            len(reaped),
+            stale_minutes,
+        )
+
+    return {
+        "stale_threshold_minutes": stale_minutes,
+        "candidates_examined": len(candidates),
+        "reaped_count": len(reaped),
+        "reaped": reaped,
+    }
+
+
+@router.post(
+    "/admin/papers/re-verify-batch",
+    dependencies=[Depends(admin_key_required)],
+)
+async def re_verify_batch(
+    min_pending_ratio: float = Query(
+        0.2, ge=0.0, le=1.0,
+        description="Only re-verify papers with at least this fraction of "
+        "claims still at pending status. Default 0.2 (20%).",
+    ),
+    limit: int = Query(
+        10, ge=1, le=50,
+        description="Maximum number of papers to re-verify in one call.",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run the re-verify operation on every paper with high pending count.
+
+    Production observation: every paper that completes generation has
+    ~70% of claims stuck at ``verification_status='pending'`` because
+    the Verifier LLM cherry-picks per batch (PRs #50/52/53 documented
+    this; PR #56 added the per-paper re-verify endpoint as the
+    operational workaround).
+
+    Without this batch endpoint, the cron has to query each paper and
+    call /re-verify individually. With it, the cron makes one call
+    that finds and processes every relevant paper in sequence.
+
+    Selection criteria:
+      - status='reviewing' (just completed generation, awaiting review)
+      - OR status='candidate' (passed Packager but not yet reviewed)
+      - AND pending claim count / total > min_pending_ratio
+      - Ordered by created_at DESC (newest first)
+      - Capped at ``limit`` papers
+
+    Each paper's re-verify is run sequentially (not in parallel) so
+    the LLM concurrency limits don't kick in. Slow but bounded:
+    ~2-5 min per paper × ``limit``.
+
+    Returns a summary of papers processed + before/after pending counts.
+    """
+    from app.models.claim_map import ClaimMap
+    from app.services.paper_generation.roles.verifier import verify_manuscript
+
+    candidates = (
+        await db.execute(
+            select(Paper)
+            .where(Paper.status.in_(("reviewing", "candidate")))
+            .order_by(Paper.created_at.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    eligible: list[Paper] = []
+    for paper in candidates:
+        # Compute pending ratio for this paper.
+        claim_rows = (
+            await db.execute(
+                select(ClaimMap.verification_status).where(
+                    ClaimMap.paper_id == paper.id
+                )
+            )
+        ).scalars().all()
+        if not claim_rows:
+            continue
+        pending = sum(1 for s in claim_rows if s == "pending")
+        ratio = pending / len(claim_rows)
+        if ratio >= min_pending_ratio:
+            eligible.append(paper)
+
+    results: list[dict] = []
+    for paper in eligible:
+        before_pending = (
+            await db.execute(
+                select(ClaimMap).where(
+                    ClaimMap.paper_id == paper.id,
+                    ClaimMap.verification_status == "pending",
+                )
+            )
+        ).scalars().all()
+        before_count = len(before_pending)
+
+        try:
+            await verify_manuscript(paper_id=paper.id, status_filter="pending")
+        except ValueError as e:
+            results.append({
+                "paper_id": paper.id,
+                "before_pending": before_count,
+                "after_pending": before_count,
+                "error": str(e),
+            })
+            continue
+        except Exception as e:
+            logger.exception("Re-verify-batch failed for paper %s", paper.id)
+            results.append({
+                "paper_id": paper.id,
+                "before_pending": before_count,
+                "after_pending": before_count,
+                "error": f"internal: {type(e).__name__}",
+            })
+            continue
+
+        after_pending = (
+            await db.execute(
+                select(ClaimMap).where(
+                    ClaimMap.paper_id == paper.id,
+                    ClaimMap.verification_status == "pending",
+                )
+            )
+        ).scalars().all()
+        results.append({
+            "paper_id": paper.id,
+            "before_pending": before_count,
+            "after_pending": len(after_pending),
+            "delta": before_count - len(after_pending),
+        })
+
+    return {
+        "min_pending_ratio": min_pending_ratio,
+        "limit": limit,
+        "candidates_examined": len(candidates),
+        "eligible_count": len(eligible),
+        "processed_count": len(results),
+        "results": results,
+    }
+
+
+@router.post(
     "/admin/papers/{paper_id}/re-verify",
     dependencies=[Depends(admin_key_required)],
 )

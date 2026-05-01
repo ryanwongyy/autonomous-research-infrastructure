@@ -3,18 +3,30 @@ import base64
 import logging
 
 import anthropic
+import httpx
 
 from app.config import settings
 from app.services.llm.provider import _RETRYABLE_EXCEPTIONS, LLMProvider, _llm_retry
 
 logger = logging.getLogger(__name__)
 
-# Add Anthropic-specific transient errors to retryable set
-_RETRYABLE_EXCEPTIONS += (
+# Add Anthropic-specific transient errors to retryable set.
+# Use ``.extend()`` (mutate in place) — earlier ``+=`` rebound the
+# local name and the augmentation never reached the retry decorator.
+# Bare httpx transport errors aren't always wrapped by the Anthropic
+# SDK — production paper apep_53ebda2e (run 25212118657) died at the
+# Drafter LLM call with a raw ``httpx.RemoteProtocolError: peer
+# closed connection without sending complete message body (incomplete
+# chunked read)``. ``httpx.TransportError`` is the parent of
+# RemoteProtocolError / ReadError / ReadTimeout / ConnectError /
+# ConnectTimeout / WriteError / WriteTimeout — every flavor of "the
+# connection broke partway through".
+_RETRYABLE_EXCEPTIONS.extend([
     anthropic.APIConnectionError,
     anthropic.RateLimitError,
     anthropic.InternalServerError,
-)
+    httpx.TransportError,
+])
 
 
 class AnthropicProvider(LLMProvider):
