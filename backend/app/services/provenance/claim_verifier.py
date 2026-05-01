@@ -128,7 +128,30 @@ async def verify_paper_claims(session: AsyncSession, paper_id: str) -> dict:
                             "days_stale": staleness["days_stale"],
                         })
 
-    coverage_ratio = verified / total_claims if total_claims > 0 else 0.0
+    # ``coverage_ratio`` measures how many claims the Verifier actually
+    # processed — i.e. (verified + failed) / total. Claims that the
+    # Verifier never reached stay at status='pending' and don't count.
+    #
+    # Previously this was ``verified / total``, conflating two distinct
+    # axes:
+    #   1. did Verifier process every claim?  (process completeness)
+    #   2. of those processed, what % passed? (verification pass rate)
+    #
+    # The L2 review's ``coverage_incomplete`` check uses this number to
+    # decide whether to fire CRITICAL. With the old formula, a paper
+    # where Verifier processed all 25 claims and 12 failed (a real
+    # quality signal) was indistinguishable from one where Verifier
+    # only reached 13 of 25 (a Verifier completeness issue). Both got
+    # CRITICAL `coverage_incomplete`.
+    #
+    # The new formula isolates Verifier completeness so L2 fires only
+    # when Verifier failed to process claims, not when it processed
+    # them and found problems. Quality issues surface separately via
+    # the failed count and the `tier_violations` / `unlinked_claims`
+    # lists.
+    processed = verified + failed
+    coverage_ratio = processed / total_claims if total_claims > 0 else 0.0
+    pass_rate = verified / processed if processed > 0 else 0.0
 
     return {
         "paper_id": paper_id,
@@ -137,6 +160,7 @@ async def verify_paper_claims(session: AsyncSession, paper_id: str) -> dict:
         "failed": failed,
         "pending": pending,
         "coverage_ratio": round(coverage_ratio, 4),
+        "pass_rate": round(pass_rate, 4),
         "unlinked_claims": unlinked_claims,
         "tier_violations": tier_violations,
         "stale_sources": stale_sources,

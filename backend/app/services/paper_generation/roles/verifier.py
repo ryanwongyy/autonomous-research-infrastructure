@@ -25,25 +25,26 @@ from app.services.llm.router import get_generation_provider
 
 logger = logging.getLogger(__name__)
 
-# Verifier processes claims one-at-a-time. The LLM has a tendency to
-# return a "comfortable response size" of N entries regardless of how
-# many claims it was given:
+# Verifier batches claims into chunks of this size. Production data
+# on the LLM's response coverage at various sizes:
 #
-#   batch_size=15 → LLM returns ~11 entries (production apep_80c3df8f)
-#   batch_size=5  → LLM returns ~1-3 entries  (production apep_8f5c16b6)
-#
-# Smaller batches DIDN'T help — the LLM cherry-picks regardless. With
-# batch_size=1 the LLM has exactly one task per call and can't drop
-# anything. Cost is more LLM calls (25 claims = 25 calls vs 2-5 with
-# batching) but each call is small + fast (~5-10s) so total Verifier
-# wall-clock stays under the 600s stage budget.
-#
-# Earlier sizes are kept in this comment for the historical record:
 #   - 50 (apep_28011bda): truncated, 0 statuses returned
-#   - 15 (apep_80c3df8f): 11/25 statuses, 14 pending
-#   - 5  (apep_8f5c16b6): 6/18 statuses, 12 pending
-#   - 1  (current):       expected ~100% coverage
-_VERIFIER_BATCH_SIZE = 1
+#   - 15 (apep_80c3df8f): 11/25 statuses, 14 pending  (44%)
+#   - 5  (apep_8f5c16b6): 6/18 statuses, 12 pending   (33%)
+#   - 1  (apep_de279513): 1/19 statuses, 18 pending   (5% — REGRESSED)
+#
+# Going to batch=1 (per-claim verification) was hypothesised to be
+# the structural fix — eliminate cherry-picking by giving the LLM
+# exactly one task per call. Empirically it made things WORSE, likely
+# because (a) the prompt becomes mostly context with very little
+# task, and (b) Anthropic may rate-limit aggressive sequential calls.
+#
+# 5 is the best partial-working state we've observed. The downstream
+# L2 coverage check is updated to count both verified AND failed as
+# "covered" (they were processed by Verifier), so partial-but-real
+# verification doesn't punish papers as hard as it did when only
+# `verified` counted.
+_VERIFIER_BATCH_SIZE = 5
 
 # ---------------------------------------------------------------------------
 # System prompts
