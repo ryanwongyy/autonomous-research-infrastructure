@@ -36,7 +36,7 @@ import httpx
 # Importing anthropic_provider triggers the .extend() that registers
 # its SDK-specific exceptions on _RETRYABLE_EXCEPTIONS. Without this
 # import, the list contains only the original 3 base classes.
-from app.services.llm import anthropic_provider as anthropic_provider_mod  # noqa: F401
+from app.services.llm import anthropic_provider as anthropic_provider_mod
 from app.services.llm.provider import _RETRYABLE_EXCEPTIONS
 
 

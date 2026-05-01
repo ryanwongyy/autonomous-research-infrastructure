@@ -1,5 +1,6 @@
 import logging
 import uuid
+from datetime import UTC
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -405,7 +406,9 @@ async def backfill_manuscript_latex(paper_id: str, db: AsyncSession = Depends(ge
 )
 async def reap_orphan_papers(
     stale_minutes: int = Query(
-        30, ge=5, le=240,
+        30,
+        ge=5,
+        le=240,
         description="Heartbeat staleness threshold in minutes. Default 30.",
     ),
     db: AsyncSession = Depends(get_db),
@@ -437,9 +440,9 @@ async def reap_orphan_papers(
     Threshold default 30 min. Drafter is the longest legitimate stage
     at 15 min so 30 min gives 2x safety margin.
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=stale_minutes)
+    cutoff = datetime.now(UTC) - timedelta(minutes=stale_minutes)
     cutoff_naive = cutoff.replace(tzinfo=None)
 
     # Find candidates: non-terminal status with stale (or missing) heartbeat.
@@ -458,7 +461,7 @@ async def reap_orphan_papers(
         if paper.last_heartbeat_at is not None:
             hb = paper.last_heartbeat_at
             if hb.tzinfo is None:
-                hb = hb.replace(tzinfo=timezone.utc)
+                hb = hb.replace(tzinfo=UTC)
             hb_naive = hb.replace(tzinfo=None)
             if hb_naive >= cutoff_naive:
                 # Heartbeat is fresh — don't reap.
@@ -511,12 +514,16 @@ async def reap_orphan_papers(
 )
 async def re_verify_batch(
     min_pending_ratio: float = Query(
-        0.2, ge=0.0, le=1.0,
+        0.2,
+        ge=0.0,
+        le=1.0,
         description="Only re-verify papers with at least this fraction of "
         "claims still at pending status. Default 0.2 (20%).",
     ),
     limit: int = Query(
-        10, ge=1, le=50,
+        10,
+        ge=1,
+        le=50,
         description="Maximum number of papers to re-verify in one call.",
     ),
     db: AsyncSession = Depends(get_db),
@@ -542,7 +549,7 @@ async def re_verify_batch(
 
     Each paper's re-verify is run sequentially (not in parallel) so
     the LLM concurrency limits don't kick in. Slow but bounded:
-    ~2-5 min per paper × ``limit``.
+    ~2-5 min per paper x ``limit``.
 
     Returns a summary of papers processed + before/after pending counts.
     """
@@ -550,24 +557,30 @@ async def re_verify_batch(
     from app.services.paper_generation.roles.verifier import verify_manuscript
 
     candidates = (
-        await db.execute(
-            select(Paper)
-            .where(Paper.status.in_(("reviewing", "candidate")))
-            .order_by(Paper.created_at.desc())
-            .limit(limit)
+        (
+            await db.execute(
+                select(Paper)
+                .where(Paper.status.in_(("reviewing", "candidate")))
+                .order_by(Paper.created_at.desc())
+                .limit(limit)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     eligible: list[Paper] = []
     for paper in candidates:
         # Compute pending ratio for this paper.
         claim_rows = (
-            await db.execute(
-                select(ClaimMap.verification_status).where(
-                    ClaimMap.paper_id == paper.id
+            (
+                await db.execute(
+                    select(ClaimMap.verification_status).where(ClaimMap.paper_id == paper.id)
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if not claim_rows:
             continue
         pending = sum(1 for s in claim_rows if s == "pending")
@@ -578,49 +591,63 @@ async def re_verify_batch(
     results: list[dict] = []
     for paper in eligible:
         before_pending = (
-            await db.execute(
-                select(ClaimMap).where(
-                    ClaimMap.paper_id == paper.id,
-                    ClaimMap.verification_status == "pending",
+            (
+                await db.execute(
+                    select(ClaimMap).where(
+                        ClaimMap.paper_id == paper.id,
+                        ClaimMap.verification_status == "pending",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         before_count = len(before_pending)
 
         try:
             await verify_manuscript(paper_id=paper.id, status_filter="pending")
         except ValueError as e:
-            results.append({
-                "paper_id": paper.id,
-                "before_pending": before_count,
-                "after_pending": before_count,
-                "error": str(e),
-            })
+            results.append(
+                {
+                    "paper_id": paper.id,
+                    "before_pending": before_count,
+                    "after_pending": before_count,
+                    "error": str(e),
+                }
+            )
             continue
         except Exception as e:
             logger.exception("Re-verify-batch failed for paper %s", paper.id)
-            results.append({
-                "paper_id": paper.id,
-                "before_pending": before_count,
-                "after_pending": before_count,
-                "error": f"internal: {type(e).__name__}",
-            })
+            results.append(
+                {
+                    "paper_id": paper.id,
+                    "before_pending": before_count,
+                    "after_pending": before_count,
+                    "error": f"internal: {type(e).__name__}",
+                }
+            )
             continue
 
         after_pending = (
-            await db.execute(
-                select(ClaimMap).where(
-                    ClaimMap.paper_id == paper.id,
-                    ClaimMap.verification_status == "pending",
+            (
+                await db.execute(
+                    select(ClaimMap).where(
+                        ClaimMap.paper_id == paper.id,
+                        ClaimMap.verification_status == "pending",
+                    )
                 )
             )
-        ).scalars().all()
-        results.append({
-            "paper_id": paper.id,
-            "before_pending": before_count,
-            "after_pending": len(after_pending),
-            "delta": before_count - len(after_pending),
-        })
+            .scalars()
+            .all()
+        )
+        results.append(
+            {
+                "paper_id": paper.id,
+                "before_pending": before_count,
+                "after_pending": len(after_pending),
+                "delta": before_count - len(after_pending),
+            }
+        )
 
     return {
         "min_pending_ratio": min_pending_ratio,

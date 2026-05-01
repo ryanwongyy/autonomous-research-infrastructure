@@ -28,7 +28,7 @@ This file locks in:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -38,7 +38,7 @@ from app.models.paper_family import PaperFamily
 
 def _utcnow_naive() -> datetime:
     """TIMESTAMP WITHOUT TIME ZONE expects naive datetimes."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 @pytest.fixture(autouse=True)
@@ -262,9 +262,7 @@ async def test_kill_reason_includes_stage(authed_client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_endpoint_requires_admin_auth_when_admin_key_set(
-    db_engine, monkeypatch
-):
+async def test_endpoint_requires_admin_auth_when_admin_key_set(db_engine, monkeypatch):
     """Reaper is destructive — must require admin auth."""
     from collections.abc import AsyncGenerator
 
@@ -275,9 +273,7 @@ async def test_endpoint_requires_admin_auth_when_admin_key_set(
     from app.main import app
 
     monkeypatch.setattr("app.config.settings.ape_admin_key", "secret-admin")
-    session_factory = async_sessionmaker(
-        db_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def _test_db() -> AsyncGenerator[AsyncSession, None]:
         async with session_factory() as session:

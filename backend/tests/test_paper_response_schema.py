@@ -35,9 +35,7 @@ def test_paper_response_exposes_artifact_paths():
     can see whether artifacts were written even after a Render redeploy
     wiped the on-disk file."""
     for field in ("paper_tex_path", "code_path", "data_path"):
-        assert field in PaperResponse.model_fields, (
-            f"{field} should be in PaperResponse"
-        )
+        assert field in PaperResponse.model_fields, f"{field} should be in PaperResponse"
         assert field in PaperWithRating.model_fields
 
 

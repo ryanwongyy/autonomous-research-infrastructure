@@ -16,12 +16,14 @@ logger = logging.getLogger(__name__)
 # bug-history note on `+=`).
 # httpx.TransportError covers raw transport failures the SDK doesn't
 # wrap.
-_RETRYABLE_EXCEPTIONS.extend([
-    openai.APIConnectionError,
-    openai.RateLimitError,
-    openai.InternalServerError,
-    httpx.TransportError,
-])
+_RETRYABLE_EXCEPTIONS.extend(
+    [
+        openai.APIConnectionError,
+        openai.RateLimitError,
+        openai.InternalServerError,
+        httpx.TransportError,
+    ]
+)
 
 
 class OpenAIProvider(LLMProvider):

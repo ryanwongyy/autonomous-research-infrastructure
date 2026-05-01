@@ -21,12 +21,14 @@ logger = logging.getLogger(__name__)
 # RemoteProtocolError / ReadError / ReadTimeout / ConnectError /
 # ConnectTimeout / WriteError / WriteTimeout — every flavor of "the
 # connection broke partway through".
-_RETRYABLE_EXCEPTIONS.extend([
-    anthropic.APIConnectionError,
-    anthropic.RateLimitError,
-    anthropic.InternalServerError,
-    httpx.TransportError,
-])
+_RETRYABLE_EXCEPTIONS.extend(
+    [
+        anthropic.APIConnectionError,
+        anthropic.RateLimitError,
+        anthropic.InternalServerError,
+        httpx.TransportError,
+    ]
+)
 
 
 class AnthropicProvider(LLMProvider):

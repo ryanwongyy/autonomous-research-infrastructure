@@ -32,22 +32,24 @@ import inspect
 
 from app.services.paper_generation.roles import analyst as analyst_mod
 
-
 # ── Backend venv has the data-science stack ─────────────────────────────────
 
 
 def test_numpy_importable():
     import numpy
+
     assert numpy.__version__.split(".")[0] >= "2"
 
 
 def test_pandas_importable():
     import pandas
+
     assert pandas.__version__.split(".")[0] >= "2"
 
 
 def test_scipy_importable():
     import scipy
+
     assert scipy.__version__
 
 
@@ -55,6 +57,7 @@ def test_scipy_stats_importable():
     """scipy.stats specifically — analysis code needs distributions
     and tests, not just the bare scipy package."""
     from scipy import stats
+
     assert stats is not None
 
 
@@ -125,9 +128,8 @@ def test_pyproject_includes_data_science_stack():
     """Source check: pyproject.toml lists numpy/pandas/scipy in the
     main dependencies (not just dev)."""
     import pathlib
-    pyproject = (
-        pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
-    )
+
+    pyproject = pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
     text = pyproject.read_text()
 
     # Find the [project] dependencies block — must contain all three

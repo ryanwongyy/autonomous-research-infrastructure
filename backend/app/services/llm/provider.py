@@ -1,12 +1,12 @@
-from abc import ABC, abstractmethod
 import logging
+from abc import ABC, abstractmethod
 
 from tenacity import (
+    before_sleep_log,
     retry,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception,
-    before_sleep_log,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,9 +45,7 @@ def _llm_retry():
         # Evaluated at retry-decision-time so we pick up the live
         # value of _RETRYABLE_EXCEPTIONS (which providers extend at
         # module load).
-        retry=retry_if_exception(
-            lambda e: isinstance(e, tuple(_RETRYABLE_EXCEPTIONS))
-        ),
+        retry=retry_if_exception(lambda e: isinstance(e, tuple(_RETRYABLE_EXCEPTIONS))),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
     )
