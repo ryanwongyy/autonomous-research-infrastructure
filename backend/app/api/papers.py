@@ -186,7 +186,19 @@ async def export_paper(
     format: str = Query("pdf", pattern="^(pdf|tex)$"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Download the compiled PDF or TeX source for a paper."""
+    """Download the compiled PDF or TeX source for a paper.
+
+    For ``format=tex`` the resolution order is:
+      1. ``Paper.manuscript_latex`` column — durable copy added in PR #58.
+         Used preferentially because Render's ephemeral filesystem wipes
+         the .tex file at ``paper_tex_path`` on every redeploy.
+      2. ``paper_tex_path`` file on disk — fallback for pre-PR-58 papers.
+
+    For ``format=pdf`` only the disk path is checked (PDFs aren't
+    generated yet in this pipeline; reserved for future use).
+    """
+    from fastapi.responses import Response
+
     paper = (
         await db.execute(select(Paper).where(Paper.id == paper_id))
     ).scalar_one_or_none()
@@ -194,30 +206,54 @@ async def export_paper(
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
 
-    if format == "pdf":
-        path = paper.paper_pdf_path
-        media_type = "application/pdf"
-    else:
-        path = paper.paper_tex_path
-        media_type = "application/x-tex"
+    # TeX: prefer the durable DB column; fall back to disk.
+    if format == "tex":
+        if paper.manuscript_latex:
+            return Response(
+                content=paper.manuscript_latex,
+                media_type="application/x-tex",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{paper_id}.tex"'
+                },
+            )
 
-    if not path:
+        # Fallback: read from disk for pre-PR-58 papers.
+        if paper.paper_tex_path:
+            file_path = Path(paper.paper_tex_path)
+            if file_path.is_file():
+                return FileResponse(
+                    path=str(file_path),
+                    media_type="application/x-tex",
+                    filename=f"{paper_id}.tex",
+                )
+
         raise HTTPException(
             status_code=404,
-            detail=f"No {format.upper()} artifact available for this paper",
+            detail=(
+                "No TEX artifact available for this paper. "
+                "DB copy is empty and the on-disk file is missing "
+                "(likely wiped by a Render redeploy)."
+            ),
         )
 
-    file_path = Path(path)
+    # PDF: only the disk path is checked.
+    if not paper.paper_pdf_path:
+        raise HTTPException(
+            status_code=404,
+            detail="No PDF artifact available for this paper",
+        )
+
+    file_path = Path(paper.paper_pdf_path)
     if not file_path.is_file():
         raise HTTPException(
             status_code=404,
-            detail=f"{format.upper()} file not found on disk",
+            detail="PDF file not found on disk",
         )
 
     return FileResponse(
         path=str(file_path),
-        media_type=media_type,
-        filename=f"{paper_id}.{format}",
+        media_type="application/pdf",
+        filename=f"{paper_id}.pdf",
     )
 
 
@@ -308,6 +344,76 @@ async def backfill_paper_title(paper_id: str, db: AsyncSession = Depends(get_db)
     )
 
     return PaperResponse.model_validate(paper)
+
+
+@router.post(
+    "/admin/papers/{paper_id}/backfill-manuscript",
+    dependencies=[Depends(admin_key_required)],
+)
+async def backfill_manuscript_latex(
+    paper_id: str, db: AsyncSession = Depends(get_db)
+):
+    """Read manuscript content from disk and copy it into ``Paper.manuscript_latex``.
+
+    Useful for papers generated before PR #58 deployed — they have
+    ``paper_tex_path`` set but ``manuscript_latex`` is NULL. This
+    endpoint reads from the path (if the file still exists) and stores
+    the content in the DB column so it survives future Render redeploys.
+
+    Idempotent: papers that already have ``manuscript_latex`` populated
+    return immediately. Papers with no on-disk file return 404 — the
+    artifact is unrecoverable (wiped by a prior redeploy before this
+    endpoint existed).
+    """
+    paper = (
+        await db.execute(select(Paper).where(Paper.id == paper_id))
+    ).scalar_one_or_none()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    if paper.manuscript_latex:
+        return {
+            "paper_id": paper_id,
+            "status": "already_populated",
+            "length": len(paper.manuscript_latex),
+        }
+
+    if not paper.paper_tex_path:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No paper_tex_path on this paper — manuscript was never "
+                "written to disk."
+            ),
+        )
+
+    file_path = Path(paper.paper_tex_path)
+    if not file_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Manuscript file not found on disk (likely wiped by a "
+                "prior Render redeploy). Content is unrecoverable; the "
+                "paper would have to be regenerated."
+            ),
+        )
+
+    content = file_path.read_text(encoding="utf-8", errors="replace")
+    paper.manuscript_latex = content
+    db.add(paper)
+    await db.commit()
+
+    logger.info(
+        "Backfilled manuscript_latex for paper %s from %s (%d chars)",
+        paper_id,
+        file_path,
+        len(content),
+    )
+    return {
+        "paper_id": paper_id,
+        "status": "backfilled",
+        "length": len(content),
+    }
 
 
 @router.post(

@@ -394,6 +394,13 @@ async def compose_manuscript(
         paper.funnel_stage = "drafting"
         if title:
             paper.title = title
+        # PR #58: persist the manuscript content so it survives Render
+        # redeploys (the disk file at paper_tex_path can be wiped).
+        # Stored on Paper rather than PaperPackage because PaperPackage
+        # is created later by the Packager — by then we want the
+        # manuscript to already be queryable.
+        if manuscript_latex:
+            paper.manuscript_latex = manuscript_latex
         s.add(paper)
         await s.commit()
 
