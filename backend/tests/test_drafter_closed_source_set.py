@@ -103,11 +103,7 @@ def test_compose_manuscript_handles_empty_source_registry():
     src = inspect.getsource(compose_manuscript)
     # Look for the placeholder fallback string (any of the per-tier
     # variants since PR #55).
-    assert (
-        "no source cards registered yet" in src
-        or "(no source cards" in src
-        or "no Tier" in src
-    )
+    assert "no source cards registered yet" in src or "(no source cards" in src or "no Tier" in src
 
 
 def test_compose_manuscript_handles_empty_result_manifest():

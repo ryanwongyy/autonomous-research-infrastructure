@@ -120,17 +120,11 @@ async def validate_claim_against_source(
     # When a source's lists have NO overlap, we treat them as topic-shaped
     # and skip the claim-type comparison. This preserves the type-gating
     # contract for any future source that ships actual claim_types.
-    permissions_are_typed = any(
-        p.lower() in KNOWN_CLAIM_TYPES for p in permissions
-    )
-    prohibitions_are_typed = any(
-        p.lower() in KNOWN_CLAIM_TYPES for p in prohibitions
-    )
+    permissions_are_typed = any(p.lower() in KNOWN_CLAIM_TYPES for p in permissions)
+    prohibitions_are_typed = any(p.lower() in KNOWN_CLAIM_TYPES for p in prohibitions)
 
     # -- Rule 2: Explicit prohibition --
-    if prohibitions_are_typed and claim_type.lower() in [
-        p.lower() for p in prohibitions
-    ]:
+    if prohibitions_are_typed and claim_type.lower() in [p.lower() for p in prohibitions]:
         return {
             "valid": False,
             "reason": (

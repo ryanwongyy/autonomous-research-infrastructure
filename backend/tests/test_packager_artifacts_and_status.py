@@ -213,9 +213,7 @@ async def test_build_package_paths_under_papers_dir(packaged_paper):
     paper, _, papers_dir = packaged_paper
     for path_attr in ("paper_tex_path", "code_path", "data_path"):
         path = getattr(paper, path_attr)
-        assert path.startswith(str(papers_dir)), (
-            f"{path_attr}={path} not under {papers_dir}"
-        )
+        assert path.startswith(str(papers_dir)), f"{path_attr}={path} not under {papers_dir}"
 
 
 @pytest.mark.asyncio

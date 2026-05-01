@@ -31,8 +31,7 @@ def test_coverage_ratio_uses_verified_plus_failed():
     src = inspect.getsource(verify_paper_claims)
     # Old formula was `verified / total_claims` — must be gone.
     assert "verified / total_claims" not in src, (
-        "Old coverage formula (verified-only) must not appear; PR #54 "
-        "changed to processed/total."
+        "Old coverage formula (verified-only) must not appear; PR #54 changed to processed/total."
     )
     # New formula must add verified + failed (in that order or
     # symmetric).

@@ -215,10 +215,11 @@ def test_no_hardcoded_broken_model_ids_in_source():
                 continue
             for bad in bad_literals:
                 if bad in line:
-                    offenders.append((str(py_file.relative_to(app_root.parent)), lineno, line.strip()))
+                    offenders.append(
+                        (str(py_file.relative_to(app_root.parent)), lineno, line.strip())
+                    )
 
     assert not offenders, (
         "Hardcoded broken model ids found in source. Replace with "
-        "`settings.<>_model` lookups:\n"
-        + "\n".join(f"  {f}:{n}: {ln}" for f, n, ln in offenders)
+        "`settings.<>_model` lookups:\n" + "\n".join(f"  {f}:{n}: {ln}" for f, n, ln in offenders)
     )

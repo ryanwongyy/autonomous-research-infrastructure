@@ -192,9 +192,7 @@ async def run_full_pipeline(
         report["stages"]["data_steward"] = stage_report
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_data_steward"
-            await _set_killed_at_stage(
-                paper_id, "data_steward", stage_report.get("error")
-            )
+            await _set_killed_at_stage(paper_id, "data_steward", stage_report.get("error"))
             return _finalise_report(report, pipeline_start)
 
         source_manifest = stage_report.get("source_manifest", {})
@@ -372,9 +370,7 @@ async def _run_stage_with_session(
         async with asyncio.timeout(timeout_sec):
             async with async_session() as s:
                 paper = await _reload_paper(s, paper_id)
-                result = await _run_stage(
-                    stage_name, stage_fn, s, paper, **stage_kwargs
-                )
+                result = await _run_stage(stage_name, stage_fn, s, paper, **stage_kwargs)
                 # Commit even on stage failure so partial progress (paper
                 # record updates, kill_reason, etc.) persists. Each stage's
                 # exception handling is inside _run_stage; nothing here raises.
@@ -476,13 +472,10 @@ async def _run_stage_no_outer_session(
             # Session closed; connection returned to the pool.
 
             # Stage runs WITHOUT an outer session. It manages its own DB.
-            return await _run_stage(
-                stage_name, stage_fn, None, paper, **stage_kwargs
-            )
+            return await _run_stage(stage_name, stage_fn, None, paper, **stage_kwargs)
     except TimeoutError:
         logger.error(
-            "Stage '%s' (no-outer-session) exceeded timeout %ds — aborting "
-            "(paper=%s)",
+            "Stage '%s' (no-outer-session) exceeded timeout %ds — aborting (paper=%s)",
             stage_name,
             timeout_sec,
             paper_id,
@@ -497,8 +490,7 @@ async def _run_stage_no_outer_session(
         }
     except Exception as wrapper_err:
         logger.error(
-            "Stage '%s' (no-outer-session) wrapper hit fatal exception "
-            "(paper=%s): %s",
+            "Stage '%s' (no-outer-session) wrapper hit fatal exception (paper=%s): %s",
             stage_name,
             paper_id,
             wrapper_err,
@@ -1202,9 +1194,7 @@ async def _set_error(paper_id: str, error: str) -> None:
         logger.error("Failed to set error on paper %s: %s", paper_id, e)
 
 
-async def _set_killed_at_stage(
-    paper_id: str, stage_name: str, error: str | None
-) -> None:
+async def _set_killed_at_stage(paper_id: str, stage_name: str, error: str | None) -> None:
     """Flip a paper to terminal status='killed' after a stage failed.
 
     Without this, the stage-failure path inside ``run_full_pipeline``

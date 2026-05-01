@@ -68,8 +68,13 @@ async def seeded_paper(db_session):
 
 
 def _add_claim(
-    session, paper_id, *, claim_type, source_card_id=None,
-    result_object_ref=None, source_span_ref=None,
+    session,
+    paper_id,
+    *,
+    claim_type,
+    source_card_id=None,
+    result_object_ref=None,
+    source_span_ref=None,
 ):
     """Add a ClaimMap row. ``result_object_ref`` and ``source_span_ref``
     are stored as JSON strings (TEXT columns); accept dict for ergonomics
@@ -133,7 +138,9 @@ async def test_claim_linked_via_source_card_id_only(seeded_paper, db_session):
     await db_session.flush()
 
     _add_claim(
-        db_session, seeded_paper.id, claim_type="empirical",
+        db_session,
+        seeded_paper.id,
+        claim_type="empirical",
         source_card_id="SC_TEST_FK",
     )
     await db_session.commit()
@@ -174,7 +181,9 @@ async def test_claim_linked_via_source_span_ref_only(seeded_paper, db_session):
 @pytest.mark.asyncio
 async def test_claim_linked_via_result_object_ref_only(seeded_paper, db_session):
     _add_claim(
-        db_session, seeded_paper.id, claim_type="empirical",
+        db_session,
+        seeded_paper.id,
+        claim_type="empirical",
         result_object_ref={"name": "regression_table_1"},
     )
     await db_session.commit()
@@ -189,7 +198,9 @@ async def test_claim_linked_via_result_object_ref_only(seeded_paper, db_session)
 @pytest.mark.asyncio
 async def test_claim_with_no_pointers_is_flagged(seeded_paper, db_session):
     _add_claim(
-        db_session, seeded_paper.id, claim_type="empirical",
+        db_session,
+        seeded_paper.id,
+        claim_type="empirical",
         # all three pointer fields default None
     )
     await db_session.commit()
@@ -200,13 +211,13 @@ async def test_claim_with_no_pointers_is_flagged(seeded_paper, db_session):
 
 
 @pytest.mark.asyncio
-async def test_descriptive_claim_with_no_pointers_only_warns(
-    seeded_paper, db_session
-):
+async def test_descriptive_claim_with_no_pointers_only_warns(seeded_paper, db_session):
     """A non-central (descriptive) claim with no pointers fires only
     the WARNING claim_map_unlinked, not the CRITICAL central_*."""
     _add_claim(
-        db_session, seeded_paper.id, claim_type="descriptive",
+        db_session,
+        seeded_paper.id,
+        claim_type="descriptive",
     )
     await db_session.commit()
     content, _ = await _l1_issues(db_session, seeded_paper.id)
@@ -218,23 +229,27 @@ async def test_descriptive_claim_with_no_pointers_only_warns(
 
 
 @pytest.mark.asyncio
-async def test_soft_linked_claims_emit_info_log(
-    seeded_paper, db_session, caplog
-):
+async def test_soft_linked_claims_emit_info_log(seeded_paper, db_session, caplog):
     """When a paper has soft-linked claims, L1 logs an INFO message
     with the count. Operators reading logs can spot Drafter naming
     sources outside the SourceCard registry without it being treated
     as a structural failure."""
     _add_claim(
-        db_session, seeded_paper.id, claim_type="doctrinal",
+        db_session,
+        seeded_paper.id,
+        claim_type="doctrinal",
         source_span_ref={"name": "Some unregistered source"},
     )
     _add_claim(
-        db_session, seeded_paper.id, claim_type="empirical",
+        db_session,
+        seeded_paper.id,
+        claim_type="empirical",
         source_span_ref={"name": "Another"},
     )
     _add_claim(
-        db_session, seeded_paper.id, claim_type="empirical",
+        db_session,
+        seeded_paper.id,
+        claim_type="empirical",
         result_object_ref={"name": "result_x"},  # NOT soft-linked
     )
     await db_session.commit()
@@ -242,10 +257,7 @@ async def test_soft_linked_claims_emit_info_log(
     with caplog.at_level(logging.INFO, logger="app.services.review_pipeline.l1_structural"):
         await run_structural_review(db_session, seeded_paper.id)
 
-    soft_logs = [
-        r for r in caplog.records
-        if "soft-linked" in r.getMessage()
-    ]
+    soft_logs = [r for r in caplog.records if "soft-linked" in r.getMessage()]
     assert soft_logs, "Expected an INFO log mentioning soft-linked claims"
     msg = soft_logs[0].getMessage()
     # Pattern: "...has 2/3 soft-linked claims..."
@@ -256,9 +268,7 @@ async def test_soft_linked_claims_emit_info_log(
 
 
 @pytest.mark.asyncio
-async def test_apep_144722c2_shape_does_not_fail_critical(
-    seeded_paper, db_session
-):
+async def test_apep_144722c2_shape_does_not_fail_critical(seeded_paper, db_session):
     """Mirror the production paper's claim breakdown:
       * 4 result-linked (analyst output)
       * 21 soft-linked (LLM-named legal authorities)
@@ -271,19 +281,24 @@ async def test_apep_144722c2_shape_does_not_fail_critical(
     # 4 result-linked (a mix of empirical + descriptive)
     for i in range(4):
         _add_claim(
-            db_session, seeded_paper.id,
+            db_session,
+            seeded_paper.id,
             claim_type="empirical" if i < 2 else "descriptive",
             result_object_ref={"name": f"result_{i}"},
         )
     # 21 soft-linked: 15 doctrinal central + 6 descriptive
     for i in range(15):
         _add_claim(
-            db_session, seeded_paper.id, claim_type="doctrinal",
+            db_session,
+            seeded_paper.id,
+            claim_type="doctrinal",
             source_span_ref={"name": f"29 CFR § 1607.{i}"},
         )
     for i in range(6):
         _add_claim(
-            db_session, seeded_paper.id, claim_type="descriptive",
+            db_session,
+            seeded_paper.id,
+            claim_type="descriptive",
             source_span_ref={"name": f"general literature {i}"},
         )
     await db_session.commit()

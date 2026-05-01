@@ -389,9 +389,7 @@ def _write_package_artifacts(
                 f.write(manuscript_latex)
             out["manuscript"] = manuscript_file
         except OSError as e:
-            logger.warning(
-                "Packager: failed to write manuscript.tex: %s", e
-            )
+            logger.warning("Packager: failed to write manuscript.tex: %s", e)
 
     if code_content:
         code_dir = os.path.join(package_path, "code")

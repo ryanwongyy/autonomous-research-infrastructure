@@ -48,8 +48,7 @@ def test_run_stage_no_outer_session_has_outer_try_except():
 
     src = inspect.getsource(_run_stage_no_outer_session)
     assert "wrapper_fatal" in src, (
-        "_run_stage_no_outer_session must also annotate wrapper-fatal "
-        "results."
+        "_run_stage_no_outer_session must also annotate wrapper-fatal results."
     )
     assert "except Exception as wrapper_err" in src, (
         "Must catch wrapper-level exceptions in the no-outer variant too."
