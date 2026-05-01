@@ -51,6 +51,8 @@ HARD BOUNDARIES:
 DRAFT_USER_PROMPT = """\
 Compose a complete LaTeX manuscript for paper {paper_id}.
 
+{framing_directive}
+
 Locked research design:
 {lock_yaml}
 
@@ -271,7 +273,11 @@ async def compose_manuscript(
 
         def _format_tier(letter: str) -> str:
             entries = sources_by_tier.get(letter, [])
-            return "\n".join(entries) if entries else f"  (no Tier {letter} sources registered)"
+            return (
+                "\n".join(entries)
+                if entries
+                else f"  (no Tier {letter} sources registered)"
+            )
 
         registered_source_ids_str = (
             "TIER A — primary, audited; SUITABLE for empirical/doctrinal:\n"
@@ -304,8 +310,25 @@ async def compose_manuscript(
         else "  (no result objects registered yet)"
     )
 
+    # Production paper apep_9afaf116 (autonomous-loop run 25217093244):
+    # the Analyst failed (unterminated string literal in the generated
+    # code), so result_objects was empty. PR #66's claim-level rule
+    # rewrote individual empirical claims as descriptive — but the
+    # ABSTRACT and CONCLUSION still framed the paper as completed
+    # empirical work ("we employ a difference-in-differences design to
+    # estimate the causal effect"). The Verifier (PR #65) caught the
+    # claim-level mismatch but the paper-level falsehood remained.
+    #
+    # The framing_directive switches based on whether the Analyst
+    # produced anything. When result_objects is empty, the directive
+    # forbids "we find / we estimate / we show" framing entirely and
+    # requires the paper to be reframed as a research design or
+    # measurement protocol.
+    framing_directive = _build_framing_directive(ro_names, protocol_type)
+
     prompt = DRAFT_USER_PROMPT.format(
         paper_id=paper_id,
+        framing_directive=framing_directive,
         lock_yaml=lock_yaml,
         protocol_type=protocol_type,
         inference_level=inference_level,
@@ -399,10 +422,7 @@ async def compose_manuscript(
             # just count and log the rate. The Verifier will still
             # downstream-fail these, but this log gives the operator
             # an early signal that the Drafter is mis-anchoring.
-            if (
-                claim_type.lower() == "empirical"
-                and source_type == "source_span"
-            ):
+            if claim_type.lower() == "empirical" and source_type == "source_span":
                 empirical_with_source_span += 1
 
             valid_source_card_id: str | None = None
@@ -483,6 +503,22 @@ async def compose_manuscript(
             len(claim_map_entries),
         )
 
+    # Diagnostic: when no result_objects were available, the prompt
+    # forbids "we find / we estimate" empirical framing. Production
+    # paper apep_9afaf116 ignored this in the abstract despite an
+    # honest Results section that admitted the Analyst failed. Scan
+    # the manuscript for forbidden phrases so operators see drift.
+    if not ro_names and manuscript_latex:
+        forbidden_framing_hits = _count_empirical_framing_violations(manuscript_latex)
+        if forbidden_framing_hits > 0:
+            logger.warning(
+                "Drafter: paper %s has no result_objects but uses %d empirical "
+                "framing phrases ('we find', 'we estimate', etc.) — the "
+                "paper claims findings the Analyst never produced.",
+                paper_id,
+                forbidden_framing_hits,
+            )
+
     return {
         "manuscript_latex": manuscript_latex,
         "claims": claim_map_entries,
@@ -524,6 +560,114 @@ async def _load_family(session: AsyncSession, family_id: str) -> PaperFamily | N
     stmt = select(PaperFamily).where(PaperFamily.id == family_id)
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
+
+
+def _build_framing_directive(ro_names: list[str], protocol_type: str) -> str:
+    """Return the FRAMING DIRECTIVE block for the Drafter prompt.
+
+    When the Analyst stage produced no result objects, an empirical
+    paper is impossible — the abstract and conclusion must NOT claim
+    "we find" or "we estimate" anything. Production paper apep_9afaf116
+    (autonomous-loop run 25217093244) had an honest Results section
+    that admitted the Analyst failed, but the abstract still said "we
+    employ a difference-in-differences design to estimate the causal
+    effect" — a paper-level falsehood the Verifier could not catch
+    because the abstract has no claim_id.
+
+    The directive is a pre-emptive prompt-level guard. It tells the
+    LLM, before any other rules, that paper framing must match what
+    was actually computed.
+    """
+    if ro_names:
+        return (
+            "FRAMING DIRECTIVE — analyst results available\n"
+            f"The Analyst registered {len(ro_names)} result object(s). The "
+            "paper may be framed as completed empirical research. The "
+            "abstract, results, and conclusion may report findings that "
+            "reference these result_objects. Empirical claims MUST be "
+            "anchored via source_type=result_object as detailed below."
+        )
+    # No result objects. Force a non-empirical framing.
+    return (
+        "FRAMING DIRECTIVE — NO ANALYST RESULTS, REFRAMING REQUIRED\n"
+        "The Analyst stage produced no result objects (the result_manifest\n"
+        "below shows '(no results yet)' or has no result_objects entries).\n"
+        "This paper CANNOT be framed as completed empirical research.\n\n"
+        "FORBIDDEN phrases anywhere in the manuscript (abstract, results,\n"
+        "conclusion, anywhere):\n"
+        "  - 'We find that ...'\n"
+        "  - 'We estimate that ...' / 'we estimate the causal effect'\n"
+        "  - 'Our results show ...' / 'Our results indicate'\n"
+        "  - 'The coefficient on X is ...' (no coefficients exist)\n"
+        "  - 'The treatment effect is ...' (no analysis was run)\n"
+        "  - Any verb tense or phrasing that asserts a quantitative\n"
+        "    finding from THIS study.\n\n"
+        "REQUIRED reframing — choose ONE based on the locked protocol:\n"
+        "  - Research design / measurement protocol paper:\n"
+        "    'This paper develops a research design for examining ...'\n"
+        "    'We propose a measurement framework to assess ...'\n"
+        "    'We construct a coding protocol that future work can apply ...'\n"
+        "  - Doctrinal / interpretive analysis:\n"
+        "    'This paper offers a doctrinal analysis of ...'\n"
+        "    'We synthesize the existing legal framework governing ...'\n"
+        "  - Conceptual / framework-building:\n"
+        "    'This paper develops a typology of ...'\n"
+        "    'We propose a framework for understanding ...'\n\n"
+        f"The locked protocol_type is '{protocol_type}'. If the locked\n"
+        "protocol is empirical_causal but no results exist, REFRAME THE\n"
+        "CONTRIBUTION as the design itself, not findings from it. An\n"
+        "honest research-design paper is a legitimate contribution; a\n"
+        "fabricated empirical paper is not.\n\n"
+        "Production paper apep_9afaf116 violated this rule: its Results\n"
+        "section honestly admitted the Analyst failed, but the abstract\n"
+        "still claimed 'we employ a difference-in-differences design to\n"
+        "estimate the causal effect.' The paper was killed at Verifier."
+    )
+
+
+# Phrase patterns that indicate completed-empirical framing. Used by
+# _count_empirical_framing_violations to scan a manuscript when no
+# result_objects exist. Patterns are matched case-insensitively against
+# the manuscript LaTeX text.
+_FORBIDDEN_EMPIRICAL_PHRASES = (
+    "we find that",
+    "we find ",
+    "we estimate ",
+    "our results show",
+    "our results indicate",
+    "our findings show",
+    "our findings indicate",
+    "our analysis shows",
+    "our analysis reveals",
+    "our analysis indicates",
+    "the coefficient on",
+    "the treatment effect is",
+    "the effect is statistically significant",
+    # apep_9afaf116-style "we employ X to estimate Y" abstract framing.
+    # "we estimate" alone misses these because the verb is gated behind
+    # "design to" or "approach to". Catch the result-claim instead.
+    "estimate the causal effect",
+    "estimate the effect of",
+    "to estimate the impact",
+    "design to estimate",
+)
+
+
+def _count_empirical_framing_violations(manuscript_latex: str) -> int:
+    """Count occurrences of empirical-framing phrases in a manuscript.
+
+    Used as a Phase 3 diagnostic when no result_objects were registered:
+    if the count is non-zero, the Drafter ignored the FRAMING DIRECTIVE
+    and wrote findings the paper never computed.
+
+    Match is case-insensitive substring; not a parser. False positives
+    are acceptable for a diagnostic warning — the operator inspects the
+    paper if the count is non-zero.
+    """
+    if not manuscript_latex:
+        return 0
+    haystack = manuscript_latex.lower()
+    return sum(haystack.count(phrase) for phrase in _FORBIDDEN_EMPIRICAL_PHRASES)
 
 
 def _determine_inference_level(protocol_type: str) -> str:
