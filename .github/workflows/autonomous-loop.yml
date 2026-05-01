@@ -43,6 +43,28 @@ jobs:
           # Final check
           curl -sf "$API_BASE/health" || { echo "Server failed to wake up"; exit 1; }
 
+      - name: Reap orphan papers from prior runs
+        run: |
+          # PR #60: detect papers stuck at non-terminal status with stale
+          # heartbeats and flip them to status=killed. Catches the case
+          # where the Render worker was killed mid-stage and PR #46/48's
+          # in-process cleanup never ran (paper apep_f237bfc0 is the
+          # canonical example: 3-min heartbeat then 42-min silence,
+          # workflow timed out, paper stayed status=draft forever).
+          #
+          # Threshold 30 min: Drafter is the longest legitimate stage at
+          # 15 min so 30 min gives 2x safety margin. Won't false-reap
+          # in-flight papers from a concurrent workflow.
+          #
+          # Failure here is non-fatal — log and continue so a transient
+          # reaper error doesn't block the rest of the cron.
+          echo "Reaping any orphan papers from prior runs..."
+          REAP=$(curl -s -X POST "$API_BASE/api/v1/admin/papers/reap-orphans?stale_minutes=30" \
+            -H "X-API-Key: $API_KEY" --max-time 60) || REAP="{}"
+          echo "$REAP" | python3 -m json.tool 2>/dev/null || echo "$REAP"
+          REAPED=$(echo "$REAP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("reaped_count", 0))' 2>/dev/null || echo "?")
+          echo "Reaped $REAPED orphan paper(s)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Determine schedule context
         id: context
         run: |
