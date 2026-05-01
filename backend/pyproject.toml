@@ -23,6 +23,15 @@ dependencies = [
     "slowapi>=0.1.9",
     "tenacity>=9.0.0",
     "sentry-sdk[fastapi]>=2.0.0",
+    # Data-science stack used by Analyst-generated code. Production
+    # paper apep_1b62de0c failed at the Results section with
+    # "ANALYSIS_ERROR: No module named 'numpy'" because the Analyst's
+    # subprocess didn't have access to these. PR #63 adds them so
+    # LLM-generated analysis code can compute real statistics
+    # (Krippendorff's alpha, descriptive stats, regression).
+    "numpy>=2.0.0",
+    "pandas>=2.2.0",
+    "scipy>=1.14.0",
 ]
 
 [project.optional-dependencies]
