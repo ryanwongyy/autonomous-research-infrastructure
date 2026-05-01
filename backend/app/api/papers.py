@@ -310,6 +310,113 @@ async def backfill_paper_title(paper_id: str, db: AsyncSession = Depends(get_db)
     return PaperResponse.model_validate(paper)
 
 
+@router.post(
+    "/admin/papers/{paper_id}/re-verify",
+    dependencies=[Depends(admin_key_required)],
+)
+async def re_verify_paper_pending_claims(
+    paper_id: str, db: AsyncSession = Depends(get_db)
+):
+    """Re-run the Verifier on claims still at ``verification_status='pending'``.
+
+    Empirical observation across 5 production runs: the Verifier LLM
+    cherry-picks which claims to verify regardless of batch size or
+    prompt instructions, leaving ~70% of claims at ``pending`` after
+    the first pass (PRs #50, #52, #53 documented this behavior).
+    PR #54 made partial coverage acceptable by changing L2's
+    ``coverage_ratio`` formula, but coverage stays low forever for
+    that paper.
+
+    This endpoint provides the missing step: run the Verifier again,
+    but only on the claims it dropped on the prior pass. Repeated
+    invocations approach 100% coverage incrementally.
+
+    Returns the Verifier's standard report shape (``claim_verifications``
+    + ``summary``) plus a ``before`` / ``after`` snapshot of the
+    pending count so the operator can see the delta.
+
+    Idempotent in spirit — running it on a paper with zero pending
+    claims is a no-op that returns immediately.
+    """
+    from app.models.claim_map import ClaimMap
+    from app.services.paper_generation.roles.verifier import verify_manuscript
+
+    paper = (
+        await db.execute(select(Paper).where(Paper.id == paper_id))
+    ).scalar_one_or_none()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    pending_before = (
+        await db.execute(
+            select(ClaimMap).where(
+                ClaimMap.paper_id == paper_id,
+                ClaimMap.verification_status == "pending",
+            )
+        )
+    ).scalars().all()
+
+    if not pending_before:
+        return {
+            "paper_id": paper_id,
+            "before": {"pending": 0},
+            "after": {"pending": 0},
+            "verification": {
+                "claim_verifications": [],
+                "summary": {
+                    "total_claims": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "warnings": 0,
+                    "critical_violations": [],
+                    "recommendation": "approve",
+                },
+            },
+            "message": "No pending claims to re-verify.",
+        }
+
+    pending_count_before = len(pending_before)
+
+    try:
+        report = await verify_manuscript(
+            paper_id=paper_id, status_filter="pending"
+        )
+    except ValueError as e:
+        # Most common: no active lock artifact for this paper.
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Re-verify failed for paper %s", paper_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Verifier re-run encountered an internal error",
+        )
+
+    pending_after_count = (
+        await db.execute(
+            select(ClaimMap).where(
+                ClaimMap.paper_id == paper_id,
+                ClaimMap.verification_status == "pending",
+            )
+        )
+    )
+    pending_count_after = len(pending_after_count.scalars().all())
+
+    logger.info(
+        "Re-verified paper %s: pending %d → %d (delta=%d)",
+        paper_id,
+        pending_count_before,
+        pending_count_after,
+        pending_count_before - pending_count_after,
+    )
+
+    return {
+        "paper_id": paper_id,
+        "before": {"pending": pending_count_before},
+        "after": {"pending": pending_count_after},
+        "verification": report,
+    }
+
+
 @router.post("/papers", response_model=PaperResponse)
 async def create_paper(paper_in: PaperCreate, db: AsyncSession = Depends(get_db)):
     paper_id = paper_in.id or generate_paper_id()
