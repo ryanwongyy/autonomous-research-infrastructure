@@ -523,6 +523,133 @@ async def reap_orphan_papers(
 
 
 @router.post(
+    "/admin/papers/re-verify-batch",
+    dependencies=[Depends(admin_key_required)],
+)
+async def re_verify_batch(
+    min_pending_ratio: float = Query(
+        0.2, ge=0.0, le=1.0,
+        description="Only re-verify papers with at least this fraction of "
+        "claims still at pending status. Default 0.2 (20%).",
+    ),
+    limit: int = Query(
+        10, ge=1, le=50,
+        description="Maximum number of papers to re-verify in one call.",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run the re-verify operation on every paper with high pending count.
+
+    Production observation: every paper that completes generation has
+    ~70% of claims stuck at ``verification_status='pending'`` because
+    the Verifier LLM cherry-picks per batch (PRs #50/52/53 documented
+    this; PR #56 added the per-paper re-verify endpoint as the
+    operational workaround).
+
+    Without this batch endpoint, the cron has to query each paper and
+    call /re-verify individually. With it, the cron makes one call
+    that finds and processes every relevant paper in sequence.
+
+    Selection criteria:
+      - status='reviewing' (just completed generation, awaiting review)
+      - OR status='candidate' (passed Packager but not yet reviewed)
+      - AND pending claim count / total > min_pending_ratio
+      - Ordered by created_at DESC (newest first)
+      - Capped at ``limit`` papers
+
+    Each paper's re-verify is run sequentially (not in parallel) so
+    the LLM concurrency limits don't kick in. Slow but bounded:
+    ~2-5 min per paper × ``limit``.
+
+    Returns a summary of papers processed + before/after pending counts.
+    """
+    from app.models.claim_map import ClaimMap
+    from app.services.paper_generation.roles.verifier import verify_manuscript
+
+    candidates = (
+        await db.execute(
+            select(Paper)
+            .where(Paper.status.in_(("reviewing", "candidate")))
+            .order_by(Paper.created_at.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    eligible: list[Paper] = []
+    for paper in candidates:
+        # Compute pending ratio for this paper.
+        claim_rows = (
+            await db.execute(
+                select(ClaimMap.verification_status).where(
+                    ClaimMap.paper_id == paper.id
+                )
+            )
+        ).scalars().all()
+        if not claim_rows:
+            continue
+        pending = sum(1 for s in claim_rows if s == "pending")
+        ratio = pending / len(claim_rows)
+        if ratio >= min_pending_ratio:
+            eligible.append(paper)
+
+    results: list[dict] = []
+    for paper in eligible:
+        before_pending = (
+            await db.execute(
+                select(ClaimMap).where(
+                    ClaimMap.paper_id == paper.id,
+                    ClaimMap.verification_status == "pending",
+                )
+            )
+        ).scalars().all()
+        before_count = len(before_pending)
+
+        try:
+            await verify_manuscript(paper_id=paper.id, status_filter="pending")
+        except ValueError as e:
+            results.append({
+                "paper_id": paper.id,
+                "before_pending": before_count,
+                "after_pending": before_count,
+                "error": str(e),
+            })
+            continue
+        except Exception as e:
+            logger.exception("Re-verify-batch failed for paper %s", paper.id)
+            results.append({
+                "paper_id": paper.id,
+                "before_pending": before_count,
+                "after_pending": before_count,
+                "error": f"internal: {type(e).__name__}",
+            })
+            continue
+
+        after_pending = (
+            await db.execute(
+                select(ClaimMap).where(
+                    ClaimMap.paper_id == paper.id,
+                    ClaimMap.verification_status == "pending",
+                )
+            )
+        ).scalars().all()
+        results.append({
+            "paper_id": paper.id,
+            "before_pending": before_count,
+            "after_pending": len(after_pending),
+            "delta": before_count - len(after_pending),
+        })
+
+    return {
+        "min_pending_ratio": min_pending_ratio,
+        "limit": limit,
+        "candidates_examined": len(candidates),
+        "eligible_count": len(eligible),
+        "processed_count": len(results),
+        "results": results,
+    }
+
+
+@router.post(
     "/admin/papers/{paper_id}/re-verify",
     dependencies=[Depends(admin_key_required)],
 )
