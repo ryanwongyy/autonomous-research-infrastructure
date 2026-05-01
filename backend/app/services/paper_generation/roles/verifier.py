@@ -75,15 +75,25 @@ Claims to verify:
 Available source cards and their tiers:
 {source_tiers}
 
+Source excerpts (the actual fetched text from each cited source —
+use these to verify CITATION ACCURACY and SCOPE ACCURACY rather than
+refusing to assess on grounds that you "haven't read the source"):
+{source_excerpts}
+
 Result objects from analysis:
 {result_objects}
 
 For EACH claim, check:
 1. EVIDENCE LINK: Does the claim have a valid source span or result object reference?
 2. CITATION ACCURACY: If citing a source, does the source actually support the claim?
+   Check against the source excerpt above. If the excerpt clearly supports the
+   claim → "verified". If it contradicts the claim → "fabricated". If the
+   excerpt is silent on the claim's specific point → "unsupported".
 3. CAUSAL LANGUAGE: Does the claim use causal language? Is that permitted by the protocol?
 4. TIER COMPLIANCE: If the claim is central, is it anchored by Tier A or B (not Tier C)?
 5. SCOPE ACCURACY: Does the claim stay within the bounds of what the evidence supports?
+   Compare the claim's specificity against the excerpt: claims that are broader
+   than the source warrants are "overstated".
 
 CRITICAL COMPLETENESS REQUIREMENT:
 - Your response's "claim_verifications" array MUST have EXACTLY {claim_count} entries.
@@ -207,6 +217,13 @@ async def verify_manuscript(
         claim_ids = [c.id for c in claims]
 
         source_tiers = await _build_source_tier_map(s)
+        # Load source excerpts for every source cited by the claims
+        # we're verifying. PR #65 — gives the LLM actual text to
+        # check claims against rather than just source IDs.
+        cited_source_ids: set[str] = {
+            c.source_card_id for c in claims if c.source_card_id
+        }
+        source_excerpts = await _load_source_excerpts(s, cited_source_ids)
         protocol_type = lock.lock_protocol_type
         inference_level = _determine_inference_level(protocol_type)
 
@@ -249,6 +266,7 @@ async def verify_manuscript(
             inference_level=inference_level,
             claims_yaml=batch_yaml,
             source_tiers=source_tiers,
+            source_excerpts=source_excerpts,
             result_objects=result_objects_str,
             claim_count=len(batch),
         )
@@ -382,6 +400,88 @@ async def _build_source_tier_map(session: AsyncSession) -> str:
 
     lines = [f"- {sc.id}: Tier {sc.tier} ({sc.name})" for sc in cards]
     return "\n".join(lines)
+
+
+async def _load_source_excerpts(
+    session: AsyncSession,
+    source_ids: set[str],
+    max_chars_per_source: int = 2000,
+) -> str:
+    """Load fetched source content as formatted excerpts for the LLM.
+
+    For each source_card_id used by the batch's claims, find the most
+    recent SourceSnapshot and read up to ``max_chars_per_source`` chars
+    from its on-disk file. Returns a formatted string suitable for
+    insertion into the Verifier prompt.
+
+    Best-effort: if the snapshot file is missing (Render's ephemeral
+    filesystem may have wiped it on a redeploy), skip that source with
+    a placeholder note rather than failing the whole verification.
+
+    Production paper apep_b4680e6e (autonomous-loop run 25212981303)
+    motivated this: 23 of 25 doctrinal claims stayed at status='pending'
+    because the Verifier had only source IDs (e.g. "courtlistener")
+    and tier metadata to work with — no actual case text. The LLM
+    couldn't assess "Court X held Y" without reading the underlying
+    decision, so it returned no determinations rather than fabricating
+    verifications.
+    """
+    from pathlib import Path
+
+    from app.models.source_snapshot import SourceSnapshot
+
+    if not source_ids:
+        return "(no sources cited by claims in this batch)"
+
+    # For each source_id, find the most recent snapshot.
+    snapshots_stmt = (
+        select(SourceSnapshot)
+        .where(SourceSnapshot.source_card_id.in_(source_ids))
+        .order_by(SourceSnapshot.fetched_at.desc())
+    )
+    snapshots = (await session.execute(snapshots_stmt)).scalars().all()
+
+    # Group by source, keep the most recent.
+    latest_by_source: dict[str, SourceSnapshot] = {}
+    for snap in snapshots:
+        if snap.source_card_id not in latest_by_source:
+            latest_by_source[snap.source_card_id] = snap
+
+    if not latest_by_source:
+        return (
+            "(no source snapshots available for the cited sources — "
+            "verify based on claim/source-card metadata only)"
+        )
+
+    excerpt_blocks: list[str] = []
+    for source_id, snap in sorted(latest_by_source.items()):
+        path = Path(snap.snapshot_path)
+        if not path.is_file():
+            excerpt_blocks.append(
+                f"--- {source_id} ---\n"
+                f"(snapshot file missing on disk — likely wiped by a "
+                f"Render redeploy; verify on metadata only)"
+            )
+            continue
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            excerpt_blocks.append(
+                f"--- {source_id} ---\n(read error: {e})"
+            )
+            continue
+
+        excerpt = content[:max_chars_per_source]
+        truncation_note = (
+            f"\n[...truncated; full snapshot is {len(content)} chars]"
+            if len(content) > max_chars_per_source
+            else ""
+        )
+        excerpt_blocks.append(
+            f"--- {source_id} ---\n{excerpt}{truncation_note}"
+        )
+
+    return "\n\n".join(excerpt_blocks)
 
 
 async def _update_claim_statuses(
