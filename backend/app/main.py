@@ -62,6 +62,11 @@ async def _ensure_added_columns() -> None:
     statements = [
         "ALTER TABLE papers ADD COLUMN IF NOT EXISTS last_heartbeat_at TIMESTAMP",
         "ALTER TABLE papers ADD COLUMN IF NOT EXISTS last_heartbeat_stage VARCHAR(32)",
+        # PR #58: durable manuscript content. Render's ephemeral
+        # filesystem wipes the .tex files on redeploy; this column
+        # holds the actual LaTeX so the export endpoint and L1 review
+        # can read it after the disk artifact is gone.
+        "ALTER TABLE papers ADD COLUMN IF NOT EXISTS manuscript_latex TEXT",
     ]
     from sqlalchemy import text
 

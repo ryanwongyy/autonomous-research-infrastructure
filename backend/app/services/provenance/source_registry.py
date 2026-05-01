@@ -19,6 +19,21 @@ logger = logging.getLogger(__name__)
 # Tier C sources cannot anchor these -- only auxiliary/corroboration roles.
 CENTRAL_CLAIM_TYPES = {"empirical", "doctrinal"}
 
+# The full set of methodological claim_type values the pipeline emits.
+# Used to disambiguate `source_card.claim_permissions` data shape: when
+# a source's permissions list contains ANY of these strings, the list
+# is being used to gate by claim-type. When it contains NONE, the list
+# is using the older "scope/topic" semantics (e.g. "spending", "vendor
+# concentration") and Rule 3's claim_type-vs-permissions comparison is
+# meaningless — every comparison would falsely fail.
+KNOWN_CLAIM_TYPES = {
+    "empirical",
+    "descriptive",
+    "doctrinal",
+    "theoretical",
+    "historical",
+}
+
 # Maximum days before a snapshot is considered stale.
 SNAPSHOT_FRESHNESS_DAYS = 30
 
@@ -91,8 +106,31 @@ async def validate_claim_against_source(
             "requires_corroboration": True,
         }
 
+    # The seed data ships ``claim_permissions`` and ``claim_prohibitions``
+    # as scope/topic descriptors (e.g. "spending", "vendor concentration",
+    # "compliance or effects by themselves") rather than methodological
+    # claim_type values. Rules 2 and 3 below were written to compare
+    # ``claim_type`` against these lists, which means they always fire
+    # for every claim from any source whose lists are topic-shaped — i.e.
+    # all current production sources. Production paper apep_703f59f7's L2
+    # review hit 22 spurious tier_violations on this exact path
+    # (descriptive vs ['spending', ...]).
+    #
+    # We detect topic-shape by checking overlap with KNOWN_CLAIM_TYPES.
+    # When a source's lists have NO overlap, we treat them as topic-shaped
+    # and skip the claim-type comparison. This preserves the type-gating
+    # contract for any future source that ships actual claim_types.
+    permissions_are_typed = any(
+        p.lower() in KNOWN_CLAIM_TYPES for p in permissions
+    )
+    prohibitions_are_typed = any(
+        p.lower() in KNOWN_CLAIM_TYPES for p in prohibitions
+    )
+
     # -- Rule 2: Explicit prohibition --
-    if claim_type.lower() in [p.lower() for p in prohibitions]:
+    if prohibitions_are_typed and claim_type.lower() in [
+        p.lower() for p in prohibitions
+    ]:
         return {
             "valid": False,
             "reason": (
@@ -103,8 +141,13 @@ async def validate_claim_against_source(
             "requires_corroboration": requires_corroboration,
         }
 
-    # -- Rule 3: Not in permissions list (if the list is non-empty) --
-    if permissions and claim_type.lower() not in [p.lower() for p in permissions]:
+    # -- Rule 3: Not in permissions list (if the list is non-empty AND
+    #    contains claim-type semantics; topic-shaped lists are skipped) --
+    if (
+        permissions
+        and permissions_are_typed
+        and claim_type.lower() not in [p.lower() for p in permissions]
+    ):
         return {
             "valid": False,
             "reason": (

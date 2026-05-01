@@ -2,7 +2,7 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from fastapi.responses import FileResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -10,11 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import admin_key_required
-from app.config import settings
 from app.database import get_db
 from app.models.paper import Paper
 from app.models.rating import Rating
 from app.schemas.paper import PaperCreate, PaperImport, PaperResponse, PaperWithRating
+from app.config import settings
 
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
@@ -149,7 +149,9 @@ async def paper_json_feed(
 
 @router.get("/papers/{paper_id}", response_model=PaperWithRating)
 async def get_paper(paper_id: str, db: AsyncSession = Depends(get_db)):
-    paper = (await db.execute(select(Paper).where(Paper.id == paper_id))).scalar_one_or_none()
+    paper = (
+        await db.execute(select(Paper).where(Paper.id == paper_id))
+    ).scalar_one_or_none()
 
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -184,36 +186,74 @@ async def export_paper(
     format: str = Query("pdf", pattern="^(pdf|tex)$"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Download the compiled PDF or TeX source for a paper."""
-    paper = (await db.execute(select(Paper).where(Paper.id == paper_id))).scalar_one_or_none()
+    """Download the compiled PDF or TeX source for a paper.
+
+    For ``format=tex`` the resolution order is:
+      1. ``Paper.manuscript_latex`` column — durable copy added in PR #58.
+         Used preferentially because Render's ephemeral filesystem wipes
+         the .tex file at ``paper_tex_path`` on every redeploy.
+      2. ``paper_tex_path`` file on disk — fallback for pre-PR-58 papers.
+
+    For ``format=pdf`` only the disk path is checked (PDFs aren't
+    generated yet in this pipeline; reserved for future use).
+    """
+    from fastapi.responses import Response
+
+    paper = (
+        await db.execute(select(Paper).where(Paper.id == paper_id))
+    ).scalar_one_or_none()
 
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
 
-    if format == "pdf":
-        path = paper.paper_pdf_path
-        media_type = "application/pdf"
-    else:
-        path = paper.paper_tex_path
-        media_type = "application/x-tex"
+    # TeX: prefer the durable DB column; fall back to disk.
+    if format == "tex":
+        if paper.manuscript_latex:
+            return Response(
+                content=paper.manuscript_latex,
+                media_type="application/x-tex",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{paper_id}.tex"'
+                },
+            )
 
-    if not path:
+        # Fallback: read from disk for pre-PR-58 papers.
+        if paper.paper_tex_path:
+            file_path = Path(paper.paper_tex_path)
+            if file_path.is_file():
+                return FileResponse(
+                    path=str(file_path),
+                    media_type="application/x-tex",
+                    filename=f"{paper_id}.tex",
+                )
+
         raise HTTPException(
             status_code=404,
-            detail=f"No {format.upper()} artifact available for this paper",
+            detail=(
+                "No TEX artifact available for this paper. "
+                "DB copy is empty and the on-disk file is missing "
+                "(likely wiped by a Render redeploy)."
+            ),
         )
 
-    file_path = Path(path)
+    # PDF: only the disk path is checked.
+    if not paper.paper_pdf_path:
+        raise HTTPException(
+            status_code=404,
+            detail="No PDF artifact available for this paper",
+        )
+
+    file_path = Path(paper.paper_pdf_path)
     if not file_path.is_file():
         raise HTTPException(
             status_code=404,
-            detail=f"{format.upper()} file not found on disk",
+            detail="PDF file not found on disk",
         )
 
     return FileResponse(
         path=str(file_path),
-        media_type=media_type,
-        filename=f"{paper_id}.{format}",
+        media_type="application/pdf",
+        filename=f"{paper_id}.pdf",
     )
 
 
@@ -243,7 +283,9 @@ async def backfill_paper_title(paper_id: str, db: AsyncSession = Depends(get_db)
 
     paper = (
         await db.execute(
-            select(Paper).where(Paper.id == paper_id).options(selectinload(Paper.package))
+            select(Paper)
+            .where(Paper.id == paper_id)
+            .options(selectinload(Paper.package))
         )
     ).scalar_one_or_none()
     if not paper:
@@ -284,7 +326,9 @@ async def backfill_paper_title(paper_id: str, db: AsyncSession = Depends(get_db)
     if not title:
         raise HTTPException(
             status_code=400,
-            detail=("Manuscript file exists but contains no extractable \\title{...} block."),
+            detail=(
+                "Manuscript file exists but contains no extractable \\title{...} block."
+            ),
         )
 
     paper.title = title
@@ -300,6 +344,183 @@ async def backfill_paper_title(paper_id: str, db: AsyncSession = Depends(get_db)
     )
 
     return PaperResponse.model_validate(paper)
+
+
+@router.post(
+    "/admin/papers/{paper_id}/backfill-manuscript",
+    dependencies=[Depends(admin_key_required)],
+)
+async def backfill_manuscript_latex(
+    paper_id: str, db: AsyncSession = Depends(get_db)
+):
+    """Read manuscript content from disk and copy it into ``Paper.manuscript_latex``.
+
+    Useful for papers generated before PR #58 deployed — they have
+    ``paper_tex_path`` set but ``manuscript_latex`` is NULL. This
+    endpoint reads from the path (if the file still exists) and stores
+    the content in the DB column so it survives future Render redeploys.
+
+    Idempotent: papers that already have ``manuscript_latex`` populated
+    return immediately. Papers with no on-disk file return 404 — the
+    artifact is unrecoverable (wiped by a prior redeploy before this
+    endpoint existed).
+    """
+    paper = (
+        await db.execute(select(Paper).where(Paper.id == paper_id))
+    ).scalar_one_or_none()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    if paper.manuscript_latex:
+        return {
+            "paper_id": paper_id,
+            "status": "already_populated",
+            "length": len(paper.manuscript_latex),
+        }
+
+    if not paper.paper_tex_path:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No paper_tex_path on this paper — manuscript was never "
+                "written to disk."
+            ),
+        )
+
+    file_path = Path(paper.paper_tex_path)
+    if not file_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Manuscript file not found on disk (likely wiped by a "
+                "prior Render redeploy). Content is unrecoverable; the "
+                "paper would have to be regenerated."
+            ),
+        )
+
+    content = file_path.read_text(encoding="utf-8", errors="replace")
+    paper.manuscript_latex = content
+    db.add(paper)
+    await db.commit()
+
+    logger.info(
+        "Backfilled manuscript_latex for paper %s from %s (%d chars)",
+        paper_id,
+        file_path,
+        len(content),
+    )
+    return {
+        "paper_id": paper_id,
+        "status": "backfilled",
+        "length": len(content),
+    }
+
+
+@router.post(
+    "/admin/papers/{paper_id}/re-verify",
+    dependencies=[Depends(admin_key_required)],
+)
+async def re_verify_paper_pending_claims(
+    paper_id: str, db: AsyncSession = Depends(get_db)
+):
+    """Re-run the Verifier on claims still at ``verification_status='pending'``.
+
+    Empirical observation across 5 production runs: the Verifier LLM
+    cherry-picks which claims to verify regardless of batch size or
+    prompt instructions, leaving ~70% of claims at ``pending`` after
+    the first pass (PRs #50, #52, #53 documented this behavior).
+    PR #54 made partial coverage acceptable by changing L2's
+    ``coverage_ratio`` formula, but coverage stays low forever for
+    that paper.
+
+    This endpoint provides the missing step: run the Verifier again,
+    but only on the claims it dropped on the prior pass. Repeated
+    invocations approach 100% coverage incrementally.
+
+    Returns the Verifier's standard report shape (``claim_verifications``
+    + ``summary``) plus a ``before`` / ``after`` snapshot of the
+    pending count so the operator can see the delta.
+
+    Idempotent in spirit — running it on a paper with zero pending
+    claims is a no-op that returns immediately.
+    """
+    from app.models.claim_map import ClaimMap
+    from app.services.paper_generation.roles.verifier import verify_manuscript
+
+    paper = (
+        await db.execute(select(Paper).where(Paper.id == paper_id))
+    ).scalar_one_or_none()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    pending_before = (
+        await db.execute(
+            select(ClaimMap).where(
+                ClaimMap.paper_id == paper_id,
+                ClaimMap.verification_status == "pending",
+            )
+        )
+    ).scalars().all()
+
+    if not pending_before:
+        return {
+            "paper_id": paper_id,
+            "before": {"pending": 0},
+            "after": {"pending": 0},
+            "verification": {
+                "claim_verifications": [],
+                "summary": {
+                    "total_claims": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "warnings": 0,
+                    "critical_violations": [],
+                    "recommendation": "approve",
+                },
+            },
+            "message": "No pending claims to re-verify.",
+        }
+
+    pending_count_before = len(pending_before)
+
+    try:
+        report = await verify_manuscript(
+            paper_id=paper_id, status_filter="pending"
+        )
+    except ValueError as e:
+        # Most common: no active lock artifact for this paper.
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Re-verify failed for paper %s", paper_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Verifier re-run encountered an internal error",
+        )
+
+    pending_after_count = (
+        await db.execute(
+            select(ClaimMap).where(
+                ClaimMap.paper_id == paper_id,
+                ClaimMap.verification_status == "pending",
+            )
+        )
+    )
+    pending_count_after = len(pending_after_count.scalars().all())
+
+    logger.info(
+        "Re-verified paper %s: pending %d → %d (delta=%d)",
+        paper_id,
+        pending_count_before,
+        pending_count_after,
+        pending_count_before - pending_count_after,
+    )
+
+    return {
+        "paper_id": paper_id,
+        "before": {"pending": pending_count_before},
+        "after": {"pending": pending_count_after},
+        "verification": report,
+    }
 
 
 @router.post("/papers", response_model=PaperResponse)
@@ -346,11 +567,15 @@ async def create_paper(paper_in: PaperCreate, db: AsyncSession = Depends(get_db)
     dependencies=[Depends(admin_key_required)],
 )
 @limiter.limit("10/hour")
-async def import_papers(request: Request, data: PaperImport, db: AsyncSession = Depends(get_db)):
+async def import_papers(
+    request: Request, data: PaperImport, db: AsyncSession = Depends(get_db)
+):
     created = []
     # Pre-generate IDs and batch-check existence to avoid N+1
     candidate_ids = [p.id or generate_paper_id() for p in data.papers]
-    existing_result = await db.execute(select(Paper.id).where(Paper.id.in_(candidate_ids)))
+    existing_result = await db.execute(
+        select(Paper.id).where(Paper.id.in_(candidate_ids))
+    )
     existing_ids = set(existing_result.scalars().all())
 
     for paper_in, paper_id in zip(data.papers, candidate_ids):

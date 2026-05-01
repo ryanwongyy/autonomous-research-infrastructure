@@ -66,6 +66,14 @@ Target venue style: {venue_style}
 
 Family description: {family_description}
 
+REGISTERED SOURCE CARDS (the ONLY valid source_ref values when
+source_type="source_span"):
+{registered_source_ids}
+
+REGISTERED RESULT OBJECTS (the ONLY valid source_ref values when
+source_type="result_object"):
+{registered_result_object_names}
+
 Write the COMPLETE manuscript with these sections:
 1. Introduction (research question, contribution, roadmap)
 2. Literature Review (position paper relative to existing work)
@@ -78,6 +86,41 @@ Write the COMPLETE manuscript with these sections:
 For EACH central claim, include a comment indicating the evidence source:
   %% CLAIM: <claim_text> | SOURCE: <source_card_id or result_object_name>
 
+CRITICAL — claim source linkage (production papers consistently fail
+review when this is wrong):
+- Each claim's ``source_ref`` MUST be either:
+    - a SourceCard ID copied verbatim from REGISTERED SOURCE CARDS above
+      (when source_type="source_span"), or
+    - a result-object key copied verbatim from REGISTERED RESULT OBJECTS
+      (when source_type="result_object").
+- Do NOT invent source IDs (e.g. "29 CFR § 1607.4(d)" or
+  "Griggs v. Duke Power"). If a claim genuinely needs a source not in
+  the registered list, narrow the claim or drop it; do not paper over
+  the gap with a free-text reference.
+- Doctrinal/legal claims that cite specific authorities are fine in the
+  manuscript prose — but the corresponding ClaimMap entry's
+  ``source_ref`` must still resolve to a registered source card or
+  result object.
+
+CRITICAL — claim_type vs source TIER pairing (production paper
+apep_3ddffa34 failed L2 with 14 tier_violations of this exact form):
+- Empirical and doctrinal claims are CENTRAL — they carry the paper's
+  argumentative weight. They MUST be anchored by a Tier A or Tier B
+  source from the listing above.
+- Tier C sources (incident logs, popular-press archives, opinion
+  columns) can ONLY anchor:
+    - claim_type="descriptive" (background context, scoping)
+    - claim_type="theoretical" (illustrative example, not evidence)
+    - claim_type="historical" (event-occurrence reporting)
+- If you have a strong empirical claim that you can only support
+  with a Tier C source, REWRITE it as descriptive or omit it. Do
+  NOT pair empirical/doctrinal with Tier C — the L2 reviewer will
+  fire CRITICAL tier_violation and the paper will fail.
+- Use a MIX of claim_types where the evidence supports it: an all-
+  empirical paper is suspicious. Background facts, framework
+  descriptions, and event reporting should typically be descriptive
+  or historical.
+
 Return JSON:
 {{
   "manuscript_latex": "<the full LaTeX document>",
@@ -86,7 +129,7 @@ Return JSON:
       "claim_text": "string",
       "claim_type": "empirical|descriptive|doctrinal|theoretical|historical",
       "source_type": "result_object|source_span",
-      "source_ref": "string (result object name or source card ID)",
+      "source_ref": "string (MUST be from the registered lists above)",
       "section": "string (which section contains this claim)"
     }}
   ],
@@ -156,6 +199,50 @@ async def compose_manuscript(
                 pass
         family_description = family.description if family else "AI governance research"
 
+        # Load registered SourceCard IDs so the prompt can present them
+        # as the closed set of valid source_ref values. Production paper
+        # apep_703f59f7 had 21/25 claims "soft-linked" because the LLM
+        # invented source references like "29 CFR § 1607.4(d)" that
+        # weren't in the registry. PR #51 added the closed-set listing.
+        #
+        # Production paper apep_3ddffa34 (run 25202085464) then revealed
+        # the next gap: the Drafter ignored source TIER when picking a
+        # source for empirical claims. 8/25 claims were anchored to a
+        # Tier C source ("OECD AI Incidents Monitor"), generating 14
+        # CRITICAL ``tier_violation`` issues at L2 because Tier C
+        # sources cannot anchor central (empirical/doctrinal) claims.
+        #
+        # PR #55 groups sources by tier so the Drafter sees the tier
+        # constraint structurally. Tier A/B sources are the ONLY valid
+        # anchors for empirical/doctrinal claims; Tier C is for
+        # auxiliary/descriptive only.
+        from app.models.source_card import SourceCard
+
+        sc_result = await s.execute(
+            select(SourceCard.id, SourceCard.name, SourceCard.tier).where(
+                SourceCard.active.is_(True)
+            )
+        )
+        sources_by_tier: dict[str, list[str]] = {"A": [], "B": [], "C": []}
+        for row in sc_result.all():
+            tier = (row[2] or "C").upper()
+            sources_by_tier.setdefault(tier, []).append(f"  - {row[0]} ({row[1]})")
+
+        def _format_tier(letter: str) -> str:
+            entries = sources_by_tier.get(letter, [])
+            return "\n".join(entries) if entries else f"  (no Tier {letter} sources registered)"
+
+        registered_source_ids_str = (
+            "TIER A — primary, audited; SUITABLE for empirical/doctrinal:\n"
+            f"{_format_tier('A')}\n"
+            "\nTIER B — high-quality secondary; SUITABLE for empirical/doctrinal:\n"
+            f"{_format_tier('B')}\n"
+            "\nTIER C — auxiliary/contextual; ONLY for descriptive or "
+            "supporting claims (NEVER as the anchor of an empirical or "
+            "doctrinal claim — that's a CRITICAL tier_violation at review):\n"
+            f"{_format_tier('C')}"
+        )
+
     # ── Phase 2: LLM call (no session held) ──────────────────────────
     if provider is None:
         provider, model = await get_generation_provider()
@@ -163,6 +250,18 @@ async def compose_manuscript(
         from app.config import settings
 
         model = settings.claude_opus_model
+
+    # Extract result-object names from the manifest so the prompt can
+    # show them as a closed set just like source IDs.
+    if result_manifest and isinstance(result_manifest.get("result_objects"), dict):
+        ro_names = list(result_manifest["result_objects"].keys())
+    else:
+        ro_names = []
+    registered_result_object_names_str = (
+        "\n".join(f"  - {n}" for n in ro_names)
+        if ro_names
+        else "  (no result objects registered yet)"
+    )
 
     prompt = DRAFT_USER_PROMPT.format(
         paper_id=paper_id,
@@ -177,6 +276,8 @@ async def compose_manuscript(
         ),
         venue_style=venue_style,
         family_description=family_description,
+        registered_source_ids=registered_source_ids_str,
+        registered_result_object_names=registered_result_object_names_str,
     )
 
     response = await provider.complete(
@@ -281,6 +382,13 @@ async def compose_manuscript(
         paper.funnel_stage = "drafting"
         if title:
             paper.title = title
+        # PR #58: persist the manuscript content so it survives Render
+        # redeploys (the disk file at paper_tex_path can be wiped).
+        # Stored on Paper rather than PaperPackage because PaperPackage
+        # is created later by the Packager — by then we want the
+        # manuscript to already be queryable.
+        if manuscript_latex:
+            paper.manuscript_latex = manuscript_latex
         s.add(paper)
         await s.commit()
 

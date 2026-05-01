@@ -74,11 +74,14 @@ def test_drafter_caps_claims_at_max():
 
 def test_verifier_batches_claims():
     """The Verifier must chunk claims into batches; sending 50 in one
-    prompt killed Verifier on production paper apep_28011bda.
+    prompt killed Verifier on production paper apep_28011bda. Batches
+    of 15 still saw the LLM dropping entries (paper apep_80c3df8f had
+    14/25 stuck pending) so PR #52 reduced the size to 5.
     """
-    assert 10 <= _VERIFIER_BATCH_SIZE <= 25, (
+    assert 1 <= _VERIFIER_BATCH_SIZE <= 10, (
         f"_VERIFIER_BATCH_SIZE = {_VERIFIER_BATCH_SIZE} should be "
-        "between 10 and 25 claims per LLM call."
+        "between 1 and 10 claims per LLM call. See test_verifier_batch_size.py "
+        "for the strict <= 5 lock."
     )
 
     src = inspect.getsource(verify_manuscript)

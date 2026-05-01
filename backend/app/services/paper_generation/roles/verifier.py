@@ -24,12 +24,26 @@ from app.services.llm.router import get_generation_provider
 
 logger = logging.getLogger(__name__)
 
-# Verifier batches claims into chunks of this size so the LLM prompt
-# stays manageable. With 50 claims (production paper apep_28011bda),
-# sending them all in one prompt produced a truncated response and
-# zero claim statuses got updated. 15 fits comfortably in a single
-# 16K-token output budget.
-_VERIFIER_BATCH_SIZE = 15
+# Verifier batches claims into chunks of this size. Production data
+# on the LLM's response coverage at various sizes:
+#
+#   - 50 (apep_28011bda): truncated, 0 statuses returned
+#   - 15 (apep_80c3df8f): 11/25 statuses, 14 pending  (44%)
+#   - 5  (apep_8f5c16b6): 6/18 statuses, 12 pending   (33%)
+#   - 1  (apep_de279513): 1/19 statuses, 18 pending   (5% — REGRESSED)
+#
+# Going to batch=1 (per-claim verification) was hypothesised to be
+# the structural fix — eliminate cherry-picking by giving the LLM
+# exactly one task per call. Empirically it made things WORSE, likely
+# because (a) the prompt becomes mostly context with very little
+# task, and (b) Anthropic may rate-limit aggressive sequential calls.
+#
+# 5 is the best partial-working state we've observed. The downstream
+# L2 coverage check is updated to count both verified AND failed as
+# "covered" (they were processed by Verifier), so partial-but-real
+# verification doesn't punish papers as hard as it did when only
+# `verified` counted.
+_VERIFIER_BATCH_SIZE = 5
 
 # ---------------------------------------------------------------------------
 # System prompts
@@ -49,7 +63,7 @@ HARD BOUNDARIES:
 """
 
 VERIFY_USER_PROMPT = """\
-Verify the following claims from paper {paper_id}.
+Verify the following {claim_count} claims from paper {paper_id}.
 
 Lock protocol type: {protocol_type}
 Permitted inference level: {inference_level}
@@ -70,11 +84,20 @@ For EACH claim, check:
 4. TIER COMPLIANCE: If the claim is central, is it anchored by Tier A or B (not Tier C)?
 5. SCOPE ACCURACY: Does the claim stay within the bounds of what the evidence supports?
 
+CRITICAL COMPLETENESS REQUIREMENT:
+- Your response's "claim_verifications" array MUST have EXACTLY {claim_count} entries.
+- Output ONE entry per claim above, in the SAME ORDER as the input list.
+- Each entry's "claim_id" MUST match the corresponding input claim's claim_id.
+- Do NOT skip claims, summarise multiple claims into one entry, or omit any claim_id.
+- If you are uncertain about a claim, still output an entry with overall="warning"
+  and a note explaining the uncertainty — do not omit the claim.
+
 Return JSON:
 {{
   "claim_verifications": [
     {{
-      "claim_text": "string",
+      "claim_id": int,
+      "claim_text": "string (echo of the input verbatim is preferred)",
       "evidence_link": {{"status": "verified|missing|weak", "note": "string"}},
       "citation_accuracy": {{"status": "verified|fabricated|unsupported", "note": "string"}},
       "causal_language": {{"status": "appropriate|violation|not_applicable", "note": "string"}},
@@ -84,7 +107,7 @@ Return JSON:
     }}
   ],
   "summary": {{
-    "total_claims": int,
+    "total_claims": {claim_count},
     "passed": int,
     "failed": int,
     "warnings": int,
@@ -106,11 +129,24 @@ async def verify_manuscript(
     result_manifest: dict[str, Any] | None = None,
     provider: LLMProvider | None = None,
     session: AsyncSession | None = None,
+    status_filter: str | None = None,
 ) -> dict[str, Any]:
     """Full verification of a manuscript.
 
     Internally manages DB sessions in three phases (read → LLM → write)
     so we never hold a connection across the LLM call.
+
+    Parameters
+    ----------
+    status_filter:
+        When given, only verify claims whose ``verification_status`` matches.
+        Default ``None`` verifies every claim. Useful values:
+          - ``"pending"``: re-verify claims the Verifier dropped on a prior
+            pass. Combined with multiple invocations, coverage approaches
+            100% incrementally — the workaround for the LLM's
+            cherry-picking behavior documented in PRs #50/#52/#53/#54.
+          - ``"failed"``: re-check claims that previously failed (e.g.
+            after a Drafter rewrite).
 
     The ``session`` parameter is kept for back-compat but ignored.
     """
@@ -126,6 +162,8 @@ async def verify_manuscript(
             )
 
         stmt = select(ClaimMap).where(ClaimMap.paper_id == paper_id)
+        if status_filter is not None:
+            stmt = stmt.where(ClaimMap.verification_status == status_filter)
         result = await s.execute(stmt)
         claims = list(result.scalars().all())
 
@@ -143,9 +181,16 @@ async def verify_manuscript(
                 },
             }
 
-        # Build claims YAML for the LLM (detach from session)
+        # Build claims YAML for the LLM (detach from session).
+        # IMPORTANT: include claim_id so the LLM's response can be matched
+        # back to the right ClaimMap row regardless of whether the LLM
+        # echoes claim_text verbatim. Production paper apep_6fc2020e had
+        # 25 claims but only 5 got their verification status updated
+        # because text-equality matching failed on 20 (LLM paraphrased
+        # or summarised the text). Matching by integer ID is robust.
         claims_data = [
             {
+                "claim_id": c.id,
                 "claim_text": c.claim_text,
                 "claim_type": c.claim_type,
                 "source_card_id": c.source_card_id,
@@ -201,6 +246,7 @@ async def verify_manuscript(
             claims_yaml=batch_yaml,
             source_tiers=source_tiers,
             result_objects=result_objects_str,
+            claim_count=len(batch),
         )
 
         response = await provider.complete(
@@ -215,6 +261,23 @@ async def verify_manuscript(
         batch_verification = _parse_json_object(response)
         batch_results = batch_verification.get("claim_verifications", [])
         batch_summary = batch_verification.get("summary", {})
+
+        # Completeness check: production paper apep_3cdecd97 had 14/25
+        # claims stuck at "pending" because the LLM cherry-picked which
+        # ones to verify. The strengthened prompt asks for exactly
+        # `len(batch)` entries; warn here when the response falls short.
+        if len(batch_results) < len(batch):
+            missing = len(batch) - len(batch_results)
+            logger.warning(
+                "Verifier batch %d/%d: LLM returned %d of %d expected "
+                "verifications — %d claim(s) will stay 'pending' unless "
+                "matched by a later batch.",
+                (batch_start // _VERIFIER_BATCH_SIZE) + 1,
+                (len(claims_data) + _VERIFIER_BATCH_SIZE - 1) // _VERIFIER_BATCH_SIZE,
+                len(batch_results),
+                len(batch),
+                missing,
+            )
 
         aggregate_results.extend(batch_results)
         aggregate_summary["total_claims"] += batch_summary.get("total_claims", len(batch_results))
@@ -319,21 +382,50 @@ async def _update_claim_statuses(
     claims: list[ClaimMap],
     verifications: list[dict[str, Any]],
 ) -> None:
-    """Update ClaimMap verification statuses based on verifier output."""
+    """Update ClaimMap verification statuses based on verifier output.
+
+    Matching strategy (in priority order):
+      1. By integer ``claim_id`` — robust regardless of text fidelity.
+         The verifier prompt now sends claim_id with each claim and
+         asks the LLM to echo it back.
+      2. By exact ``claim_text`` equality — fallback for older runs or
+         LLM responses that omitted claim_id.
+
+    Production paper apep_6fc2020e had 25 claims but only 5 got their
+    status updated because text matching failed on 20 (the LLM
+    paraphrased the text). With ID matching most claims should resolve
+    cleanly; the remaining "pending" rows then represent real LLM
+    omissions worth investigating.
+    """
     from app.utils import utcnow_naive
 
-    # Build a lookup by claim_text (best-effort matching)
-    verify_map: dict[str, dict] = {}
+    # Build dual lookups: by id (preferred), then by text (fallback).
+    by_id: dict[int, dict] = {}
+    by_text: dict[str, dict] = {}
     for v in verifications:
+        cid = v.get("claim_id")
+        if isinstance(cid, int):
+            by_id[cid] = v
         text = v.get("claim_text", "")
-        verify_map[text] = v
+        if text:
+            by_text[text] = v
 
     # claim_map.verified_at is TIMESTAMP WITHOUT TIME ZONE on Postgres;
     # asyncpg refuses to silently strip tzinfo. Use utcnow_naive().
     now = utcnow_naive()
+    matched_id = 0
+    matched_text = 0
+    unmatched = 0
     for claim in claims:
-        v = verify_map.get(claim.claim_text)
+        v = by_id.get(claim.id)
+        if v is not None:
+            matched_id += 1
+        else:
+            v = by_text.get(claim.claim_text)
+            if v is not None:
+                matched_text += 1
         if v is None:
+            unmatched += 1
             continue
 
         overall = v.get("overall", "warning")
@@ -347,6 +439,24 @@ async def _update_claim_statuses(
         claim.verified_by = "verifier_role"
         claim.verified_at = now
         session.add(claim)
+
+    if unmatched:
+        logger.warning(
+            "Verifier: paper %s had %d unmatched claim(s) (%d by id, "
+            "%d by text). Unmatched claims keep verification_status='pending'.",
+            paper_id,
+            unmatched,
+            matched_id,
+            matched_text,
+        )
+    else:
+        logger.info(
+            "Verifier: paper %s all %d claims matched (%d by id, %d by text)",
+            paper_id,
+            len(claims),
+            matched_id,
+            matched_text,
+        )
 
     await session.flush()
 

@@ -270,10 +270,20 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper | None:
 async def _load_manuscript_text(paper: Paper) -> str | None:
     """Load the manuscript text content if available.
 
-    Reads from the TeX path first (preferred), falling back to metadata_json
-    content field, or abstract as last resort.
+    Resolution order:
+      1. ``Paper.manuscript_latex`` column — durable, written by Drafter
+         in PR #58. Survives Render redeploys (the .tex file at
+         paper_tex_path may be wiped on every deploy).
+      2. The TeX file on disk at ``paper_tex_path`` — fallback for
+         papers generated before PR #58 deployed.
+      3. ``metadata_json.manuscript_text`` — legacy fallback.
+      4. ``paper.abstract`` — last resort.
     """
-    # Try to read the TeX file directly.
+    # Preferred: the durable DB copy.
+    if paper.manuscript_latex:
+        return paper.manuscript_latex
+
+    # Fallback for pre-PR-58 papers: read the TeX file from disk.
     tex_path = paper.paper_tex_path
     if tex_path:
         try:
@@ -283,7 +293,7 @@ async def _load_manuscript_text(paper: Paper) -> str | None:
         except (FileNotFoundError, ImportError):
             pass
 
-    # Fall back to metadata_json if it contains manuscript text.
+    # Legacy fallback: metadata_json.
     meta = safe_json_loads(paper.metadata_json, {})
     if "manuscript_text" in meta:
         return meta["manuscript_text"]
