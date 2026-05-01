@@ -130,11 +130,24 @@ async def verify_manuscript(
     result_manifest: dict[str, Any] | None = None,
     provider: LLMProvider | None = None,
     session: AsyncSession | None = None,
+    status_filter: str | None = None,
 ) -> dict[str, Any]:
     """Full verification of a manuscript.
 
     Internally manages DB sessions in three phases (read → LLM → write)
     so we never hold a connection across the LLM call.
+
+    Parameters
+    ----------
+    status_filter:
+        When given, only verify claims whose ``verification_status`` matches.
+        Default ``None`` verifies every claim. Useful values:
+          - ``"pending"``: re-verify claims the Verifier dropped on a prior
+            pass. Combined with multiple invocations, coverage approaches
+            100% incrementally — the workaround for the LLM's
+            cherry-picking behavior documented in PRs #50/#52/#53/#54.
+          - ``"failed"``: re-check claims that previously failed (e.g.
+            after a Drafter rewrite).
 
     The ``session`` parameter is kept for back-compat but ignored.
     """
@@ -151,6 +164,8 @@ async def verify_manuscript(
             )
 
         stmt = select(ClaimMap).where(ClaimMap.paper_id == paper_id)
+        if status_filter is not None:
+            stmt = stmt.where(ClaimMap.verification_status == status_filter)
         result = await s.execute(stmt)
         claims = list(result.scalars().all())
 
