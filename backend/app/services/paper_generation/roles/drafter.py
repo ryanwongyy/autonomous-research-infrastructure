@@ -122,6 +122,45 @@ apep_3ddffa34 failed L2 with 14 tier_violations of this exact form):
   descriptions, and event reporting should typically be descriptive
   or historical.
 
+CRITICAL — claim_type vs source_type pairing (production paper
+apep_5bd06118 was killed by the Verifier with 11 of 25 claims
+failing because empirical claims were anchored to data sources
+that don't actually contain the empirical finding):
+- ``claim_type="empirical"`` claims state STATISTICAL FINDINGS that
+  emerge from data analysis (e.g. "treatment increased disclosure
+  by 23%", "pre-treatment trends are parallel", "the coefficient is
+  significant at p<0.05"). These MUST use ``source_type="result_object"``
+  and a ``source_ref`` from REGISTERED RESULT OBJECTS — not from
+  REGISTERED SOURCE CARDS. The data source contains raw filings; the
+  Analyst's result_objects contain the statistical findings derived
+  from those filings.
+- If your paper's protocol is empirical_causal but no result objects
+  are registered (the Analyst stage produced no quantitative output),
+  REWRITE empirical claims as descriptive ("The AIID database
+  contains X incidents") or doctrinal ("The EU AI Act mandates Y").
+  Do not assert findings the paper hasn't actually computed.
+- ``claim_type="descriptive"`` / ``"doctrinal"`` claims state FACTS
+  that exist in the source itself (e.g. "the EU AI Act mandates
+  incident reporting", "the AIID database documents 1,200+ incidents").
+  These use ``source_type="source_span"`` with a ``source_ref`` from
+  REGISTERED SOURCE CARDS — the source's own text supports the claim
+  directly.
+- ``claim_type="theoretical"`` claims describe frameworks or
+  predictions that don't require source verification. They can use
+  ``source_type="source_span"`` if anchoring to a citing work.
+- Bad pairings to avoid (the Verifier will fail every one):
+    - "Pre-treatment trends are parallel" + source_type="source_span"
+      + source_ref="edgar"   ← the EDGAR filings don't say this; an
+      Analyst statistical test does
+    - "The coefficient on incident exposure is 0.34" +
+      source_type="source_span" + source_ref="aiid"   ← AIID is the
+      raw incident database; the coefficient comes from regression
+    - "AI systems mediate consequential decisions" +
+      source_type="source_span" + source_ref="aiid"   ← AIID is
+      specific incidents, not a general claim about AI's prevalence
+      (this should be descriptive + cited from openalex literature
+      review)
+
 Return JSON:
 {{
   "manuscript_latex": "<the full LaTeX document>",
@@ -343,9 +382,28 @@ async def compose_manuscript(
         )
         registered_source_ids = {row[0] for row in sc_result.all()}
 
+        # Track miscategorised claims for the warning log. Production
+        # paper apep_5bd06118 had 11 of 25 claims fail Verifier because
+        # ``empirical`` claims were anchored to data sources rather
+        # than result_objects (the source's text didn't contain the
+        # statistical finding the claim asserted).
+        empirical_with_source_span = 0
         for claim_data in claims_raw:
             source_type = claim_data.get("source_type", "")
             source_ref = claim_data.get("source_ref", "")
+            claim_type = claim_data.get("claim_type", "descriptive")
+
+            # Diagnostic: empirical/doctrinal claims with source_span
+            # source_type are suspect — they assert statistical
+            # findings that the raw source can't verify. Don't reject;
+            # just count and log the rate. The Verifier will still
+            # downstream-fail these, but this log gives the operator
+            # an early signal that the Drafter is mis-anchoring.
+            if (
+                claim_type.lower() == "empirical"
+                and source_type == "source_span"
+            ):
+                empirical_with_source_span += 1
 
             valid_source_card_id: str | None = None
             soft_source_span_ref: str | None = None
@@ -364,7 +422,7 @@ async def compose_manuscript(
             claim_map = ClaimMap(
                 paper_id=paper_id,
                 claim_text=claim_data.get("claim_text", ""),
-                claim_type=claim_data.get("claim_type", "descriptive"),
+                claim_type=claim_type,
                 source_card_id=valid_source_card_id,
                 source_span_ref=soft_source_span_ref,
                 result_object_ref=(
@@ -410,6 +468,20 @@ async def compose_manuscript(
         len(claim_map_entries),
         len(bibliography),
     )
+    # Diagnostic warning: production paper apep_5bd06118 had 11/25
+    # claims fail Verifier because ``empirical`` claims were anchored
+    # to data sources (source_span). Surface this rate so operators
+    # can see when the Drafter's prompt-following is weak.
+    if empirical_with_source_span > 0:
+        logger.warning(
+            "Drafter: paper %s has %d/%d empirical claims anchored to "
+            "source_span instead of result_object — these will likely "
+            "fail Verifier (the raw source doesn't contain the "
+            "statistical finding the claim asserts).",
+            paper_id,
+            empirical_with_source_span,
+            len(claim_map_entries),
+        )
 
     return {
         "manuscript_latex": manuscript_latex,
