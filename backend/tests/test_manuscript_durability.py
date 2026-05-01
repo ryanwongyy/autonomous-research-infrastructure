@@ -27,7 +27,6 @@ import inspect
 import pytest
 from sqlalchemy import select
 
-
 # ── Model: column exists ─────────────────────────────────────────────────────
 
 

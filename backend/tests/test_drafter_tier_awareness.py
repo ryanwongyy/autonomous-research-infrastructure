@@ -25,7 +25,6 @@ from app.services.paper_generation.roles.drafter import (
     compose_manuscript,
 )
 
-
 # ── Prompt content: tier sections are present and labelled ──────────────────
 
 

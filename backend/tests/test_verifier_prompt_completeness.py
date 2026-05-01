@@ -32,7 +32,6 @@ from app.services.paper_generation.roles.verifier import (
     verify_manuscript,
 )
 
-
 # ── Prompt template content ──────────────────────────────────────────────────
 
 

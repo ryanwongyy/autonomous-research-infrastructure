@@ -39,7 +39,6 @@ from app.services.paper_generation.roles.verifier import (
     verify_manuscript,
 )
 
-
 # ── Source-inspection: prompt + claims_data include claim_id ─────────────────
 
 

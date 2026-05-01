@@ -28,7 +28,6 @@ import pytest
 from app.services.paper_generation.roles import verifier as verifier_mod
 from app.services.paper_generation.roles.verifier import verify_manuscript
 
-
 # ── verify_manuscript supports status_filter ─────────────────────────────────
 
 

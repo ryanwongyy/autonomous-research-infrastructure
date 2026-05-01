@@ -61,6 +61,6 @@ def test_25_claim_paper_fits_in_reasonable_call_count():
     n_calls = (
         typical + verifier_mod._VERIFIER_BATCH_SIZE - 1
     ) // verifier_mod._VERIFIER_BATCH_SIZE
-    # 5 calls × ~30s each = 150s — well under 600s
-    # 12 calls × ~30s each = 360s — still under
+    # 5 calls x ~30s each = 150s — well under 600s
+    # 12 calls x ~30s each = 360s — still under
     assert 1 <= n_calls <= 25

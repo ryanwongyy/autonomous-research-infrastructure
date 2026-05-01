@@ -26,7 +26,6 @@ import re
 from app.services.paper_generation import orchestrator
 from app.services.paper_generation.orchestrator import _set_killed_at_stage
 
-
 # ── Helper exists with the right shape ───────────────────────────────────────
 
 
@@ -123,7 +122,7 @@ def test_killed_at_branches_pass_stage_error_string():
         re.DOTALL,
     )
     matches = pattern.findall(src)
-    # 5 stage failure branches × 1 call each = 5
+    # 5 stage failure branches x 1 call each = 5
     assert len(matches) >= 5, (
         f"Expected 5 helper calls passing stage_report.get('error') as "
         f"the error arg; found {len(matches)}."

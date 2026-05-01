@@ -2,7 +2,7 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -10,11 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import admin_key_required
+from app.config import settings
 from app.database import get_db
 from app.models.paper import Paper
 from app.models.rating import Rating
 from app.schemas.paper import PaperCreate, PaperImport, PaperResponse, PaperWithRating
-from app.config import settings
 
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()

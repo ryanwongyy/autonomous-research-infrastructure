@@ -60,7 +60,7 @@ def test_zero_processed_does_not_crash_pass_rate():
     # Look for a defensive 'if processed > 0' or similar guard.
     assert (
         "if processed > 0" in src
-        or "if total_claims > 0" in src and "pass_rate = verified / processed" not in src
+        or ("if total_claims > 0" in src and "pass_rate = verified / processed" not in src)
         or "processed > 0 else 0" in src
     ), "pass_rate must guard against zero division."
 

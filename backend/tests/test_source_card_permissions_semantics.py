@@ -62,13 +62,13 @@ def test_known_claim_types_set_matches_pipeline():
     Drafter / Verifier emit. If a future role adds a new claim_type,
     that role's prompt schema and KNOWN_CLAIM_TYPES must update
     together."""
-    assert KNOWN_CLAIM_TYPES == {
+    assert {
         "empirical",
         "descriptive",
         "doctrinal",
         "theoretical",
         "historical",
-    }
+    } == KNOWN_CLAIM_TYPES
 
 
 # ── Topic-shaped permissions: Rule 3 must NOT fire ───────────────────────────

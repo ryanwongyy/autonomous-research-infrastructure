@@ -29,7 +29,6 @@ from app.services.paper_generation.roles.drafter import (
     compose_manuscript,
 )
 
-
 # ── Prompt template includes new sections ───────────────────────────────────
 
 
