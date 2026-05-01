@@ -417,6 +417,112 @@ async def backfill_manuscript_latex(
 
 
 @router.post(
+    "/admin/papers/reap-orphans",
+    dependencies=[Depends(admin_key_required)],
+)
+async def reap_orphan_papers(
+    stale_minutes: int = Query(
+        30, ge=5, le=240,
+        description="Heartbeat staleness threshold in minutes. Default 30.",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Find papers stuck at non-terminal status with stale heartbeats and
+    flip them to ``status='killed'``.
+
+    Production paper apep_f237bfc0 (autonomous-loop run 25207115248) is
+    the canonical case: created at 07:51:27, last_heartbeat from
+    Analyst at 07:54:35, then 42 minutes of silence until the workflow
+    timed out. The Analyst stage's 900s asyncio.timeout (PR #46) should
+    have fired and PR #48's ``_set_killed_at_stage`` should have flipped
+    status to killed — but neither did, almost certainly because the
+    Render worker process was killed entirely (no Python alive to run
+    cleanup).
+
+    PR #46 + #48 require the Python process to survive. This reaper
+    closes the gap from the OUTSIDE: at /admin invocation it scans for
+    papers whose heartbeat is older than the threshold AND whose status
+    is non-terminal. Each match is flipped to ``status='killed'`` with
+    ``kill_reason="reaped: stale heartbeat (last seen at <stage> N min ago)"``.
+
+    The cron / a periodic job can call this on every workflow run to
+    keep the status field honest.
+
+    Terminal statuses (not reaped):
+        candidate, published, error, killed, rejected
+
+    Threshold default 30 min. Drafter is the longest legitimate stage
+    at 15 min so 30 min gives 2x safety margin.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=stale_minutes)
+    cutoff_naive = cutoff.replace(tzinfo=None)
+
+    # Find candidates: non-terminal status with stale (or missing) heartbeat.
+    # Papers without any heartbeat at all are also candidates if they're old
+    # enough — i.e. the worker died before even writing a heartbeat.
+    terminal_statuses = ("candidate", "published", "error", "killed", "rejected")
+    stmt = select(Paper).where(
+        Paper.status.notin_(terminal_statuses),
+        Paper.created_at < cutoff_naive,
+    )
+    candidates = (await db.execute(stmt)).scalars().all()
+
+    reaped: list[dict] = []
+    for paper in candidates:
+        # If there's a heartbeat, only reap if it's stale.
+        if paper.last_heartbeat_at is not None:
+            hb = paper.last_heartbeat_at
+            if hb.tzinfo is None:
+                hb = hb.replace(tzinfo=timezone.utc)
+            hb_naive = hb.replace(tzinfo=None)
+            if hb_naive >= cutoff_naive:
+                # Heartbeat is fresh — don't reap.
+                continue
+            stage = paper.last_heartbeat_stage or "unknown"
+            staleness_min = int((cutoff_naive - hb_naive).total_seconds() / 60)
+            reason = (
+                f"reaped: stale heartbeat (last seen at {stage} "
+                f"~{staleness_min + stale_minutes} min ago)"
+            )
+        else:
+            # No heartbeat at all — worker probably died before writing one.
+            age_min = int((cutoff_naive - paper.created_at).total_seconds() / 60)
+            reason = f"reaped: no heartbeat after {age_min} min"
+
+        paper.status = "killed"
+        paper.funnel_stage = "killed"
+        paper.kill_reason = reason
+        paper.review_status = "skipped"
+        db.add(paper)
+        reaped.append(
+            {
+                "paper_id": paper.id,
+                "previous_status": "draft",  # by predicate
+                "previous_funnel_stage": paper.funnel_stage,
+                "last_heartbeat_stage": paper.last_heartbeat_stage,
+                "kill_reason": reason,
+            }
+        )
+
+    if reaped:
+        await db.commit()
+        logger.warning(
+            "Reaped %d orphan paper(s) with stale heartbeats (>%d min)",
+            len(reaped),
+            stale_minutes,
+        )
+
+    return {
+        "stale_threshold_minutes": stale_minutes,
+        "candidates_examined": len(candidates),
+        "reaped_count": len(reaped),
+        "reaped": reaped,
+    }
+
+
+@router.post(
     "/admin/papers/{paper_id}/re-verify",
     dependencies=[Depends(admin_key_required)],
 )
