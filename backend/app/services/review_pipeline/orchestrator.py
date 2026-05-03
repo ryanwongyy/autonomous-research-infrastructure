@@ -89,7 +89,9 @@ async def run_review_pipeline(
         return report
 
     # Update paper status to 'reviewing'.
-    await _set_paper_status(session, paper_id, status="reviewing", funnel_stage="reviewing")
+    await _set_paper_status(
+        session, paper_id, status="reviewing", funnel_stage="reviewing"
+    )
 
     # ==================================================================
     # LAYER 1: Structural Integrity (must pass to proceed)
@@ -107,9 +109,17 @@ async def run_review_pipeline(
             "Cannot proceed until structural issues are resolved. "
             f"Issues: {l1_review.content[:200]}"
         )
+        # PR #75: Set status to terminal "rejected" so the orphan reaper
+        # (papers.py reap_orphan_papers) doesn't kill it as stale. Pre-PR,
+        # status="reviewing" was non-terminal and the reaper killed every
+        # rejected paper after 30 min — production paper apep_427ca0f1
+        # demonstrated this end-to-end.
         await _set_paper_status(
-            session, paper_id, status="reviewing", review_status="errors",
-            funnel_stage="reviewing",
+            session,
+            paper_id,
+            status="rejected",
+            review_status="errors",
+            funnel_stage="rejected",
         )
         await session.commit()
         report["completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -134,9 +144,17 @@ async def run_review_pipeline(
             "Claims cannot be verified against sources. "
             f"Issues: {l2_review.content[:200]}"
         )
+        # PR #75: Set status to terminal "rejected" so the orphan reaper
+        # (papers.py reap_orphan_papers) doesn't kill it as stale. Pre-PR,
+        # status="reviewing" was non-terminal and the reaper killed every
+        # rejected paper after 30 min — production paper apep_427ca0f1
+        # demonstrated this end-to-end.
         await _set_paper_status(
-            session, paper_id, status="reviewing", review_status="errors",
-            funnel_stage="reviewing",
+            session,
+            paper_id,
+            status="rejected",
+            review_status="errors",
+            funnel_stage="rejected",
         )
         await session.commit()
         report["completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -148,7 +166,9 @@ async def run_review_pipeline(
     # ==================================================================
     # LAYERS 3 & 4: Method Review + Adversarial Review (parallel)
     # ==================================================================
-    logger.info("[%s] Starting L3+L4: Method and Adversarial reviews (parallel)", paper_id)
+    logger.info(
+        "[%s] Starting L3+L4: Method and Adversarial reviews (parallel)", paper_id
+    )
 
     l3_result, l4_result = await asyncio.gather(
         _safe_run(run_method_review, session, paper_id, "l3_method"),
@@ -167,7 +187,10 @@ async def run_review_pipeline(
     if l4_review:
         report["layers"]["l4_adversarial"] = _review_to_dict(l4_review)
     else:
-        report["layers"]["l4_adversarial"] = {"verdict": "error", "error": str(l4_error)}
+        report["layers"]["l4_adversarial"] = {
+            "verdict": "error",
+            "error": str(l4_error),
+        }
         logger.error("[%s] L4 adversarial review failed: %s", paper_id, l4_error)
 
     # ==================================================================
@@ -183,9 +206,17 @@ async def run_review_pipeline(
         report["summary"] = (
             "Both method review and adversarial review rejected this paper."
         )
+        # PR #75: Set status to terminal "rejected" so the orphan reaper
+        # (papers.py reap_orphan_papers) doesn't kill it as stale. Pre-PR,
+        # status="reviewing" was non-terminal and the reaper killed every
+        # rejected paper after 30 min — production paper apep_427ca0f1
+        # demonstrated this end-to-end.
         await _set_paper_status(
-            session, paper_id, status="reviewing", review_status="errors",
-            funnel_stage="reviewing",
+            session,
+            paper_id,
+            status="rejected",
+            review_status="errors",
+            funnel_stage="rejected",
         )
         await session.commit()
         report["completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -208,6 +239,19 @@ async def run_review_pipeline(
             "Paper escalated to human review. "
             "Automated reviewers disagreed or flagged uncertainty. "
             "See L5 report for details."
+        )
+        # PR #75: Set status to terminal "rejected" so the orphan reaper
+        # leaves the paper alone. The L5 report is preserved on the
+        # Review row; a human can later flip status back if they want
+        # to revise. Without this the paper stays at status="reviewing"
+        # forever and the reaper kills it ~30 min later (production
+        # paper apep_427ca0f1 hit exactly this).
+        await _set_paper_status(
+            session,
+            paper_id,
+            status="rejected",
+            review_status="escalated",
+            funnel_stage="escalated",
         )
         await session.commit()
         report["completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -235,7 +279,8 @@ async def run_review_pipeline(
     # Update paper status based on decision.
     if decision == "pass":
         await _set_paper_status(
-            session, paper_id,
+            session,
+            paper_id,
             status="candidate",
             review_status="peer_reviewed",
             funnel_stage="candidate",
@@ -243,25 +288,28 @@ async def run_review_pipeline(
         )
     elif decision == "revision_needed":
         await _set_paper_status(
-            session, paper_id,
+            session,
+            paper_id,
             status="revision",
             review_status="issues",
             funnel_stage="revision",
         )
     elif decision == "reject":
+        # PR #75: status="rejected" (terminal) so reaper leaves it alone.
+        # Pre-PR status="reviewing" was non-terminal and every rejected
+        # paper got reaped ~30 min later by the orphan reaper.
         await _set_paper_status(
-            session, paper_id,
-            status="reviewing",
+            session,
+            paper_id,
+            status="rejected",
             review_status="errors",
-            funnel_stage="reviewing",
+            funnel_stage="rejected",
         )
 
     await session.commit()
 
     report["completed_at"] = datetime.now(timezone.utc).isoformat()
-    logger.info(
-        "[%s] Review pipeline completed: decision=%s", paper_id, decision
-    )
+    logger.info("[%s] Review pipeline completed: decision=%s", paper_id, decision)
     return report
 
 
@@ -321,8 +369,10 @@ def _build_final_summary(
     elif decision == "revision_needed":
         revision_layers = []
         for name, v in [
-            ("L1", l1_verdict), ("L2", l2_verdict),
-            ("L3", l3_verdict), ("L4", l4_verdict),
+            ("L1", l1_verdict),
+            ("L2", l2_verdict),
+            ("L3", l3_verdict),
+            ("L4", l4_verdict),
         ]:
             if v == "revision_needed":
                 revision_layers.append(name)
