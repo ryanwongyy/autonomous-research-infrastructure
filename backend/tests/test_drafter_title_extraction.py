@@ -12,7 +12,9 @@ from app.services.paper_generation.roles.drafter import _extract_latex_title
 
 
 def test_extracts_simple_title():
-    src = r"\documentclass{article}\title{Algorithmic Accountability in EU AI Regulation}\author{...}"
+    src = (
+        r"\documentclass{article}\title{Algorithmic Accountability in EU AI Regulation}\author{...}"
+    )
     assert _extract_latex_title(src) == "Algorithmic Accountability in EU AI Regulation"
 
 

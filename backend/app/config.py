@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings
 from pathlib import Path
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -43,9 +44,7 @@ class Settings(BaseSettings):
     artifact_store_path: str = str(Path(__file__).parent.parent / "artifacts")
 
     # Lock enforcement
-    lock_enforcement: str = (
-        "hard"  # "hard" = halt on violation, "soft" = log and continue
-    )
+    lock_enforcement: str = "hard"  # "hard" = halt on violation, "soft" = log and continue
 
     # Source freshness
     source_stale_days: int = 90  # source considered stale after this many days

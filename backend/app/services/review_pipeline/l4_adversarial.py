@@ -164,9 +164,7 @@ async def run_adversarial_review(session: AsyncSession, paper_id: str) -> Review
 
     # Build context strings for prompts.
     lock_context = (
-        f"LOCK ARTIFACT:\n{lock_content[:2000]}"
-        if lock_content
-        else "No lock artifact available."
+        f"LOCK ARTIFACT:\n{lock_content[:2000]}" if lock_content else "No lock artifact available."
     )
     claim_context = _build_claim_context(claims)
     source_context = _build_source_context(source_cards)
@@ -217,9 +215,7 @@ async def run_adversarial_review(session: AsyncSession, paper_id: str) -> Review
         result = results[i]
 
         if isinstance(result, Exception):
-            logger.error(
-                "[%s] Adversarial check '%s' failed: %s", paper_id, name, result
-            )
+            logger.error("[%s] Adversarial check '%s' failed: %s", paper_id, name, result)
             all_issues.append(
                 {
                     "check": f"adversarial_{name}_error",
@@ -508,8 +504,7 @@ def _build_claim_context(claims: list[ClaimMap]) -> str:
         src = claim.source_card_id or "result-object"
         status = claim.verification_status
         lines.append(
-            f"  - [{claim.claim_type}] {claim.claim_text[:100]} "
-            f"(source: {src}, status: {status})"
+            f"  - [{claim.claim_type}] {claim.claim_text[:100]} (source: {src}, status: {status})"
         )
 
     if len(claims) > 20:

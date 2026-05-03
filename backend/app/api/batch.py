@@ -18,7 +18,7 @@ import json
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -46,9 +46,7 @@ _HEARTBEAT_INTERVAL_SEC = 15
 
 class GenerateRequest(BaseModel):
     count: int = Field(default=2, ge=1, le=10, description="Papers to generate per run")
-    family_id: str | None = Field(
-        default=None, description="Target family (null = auto-select)"
-    )
+    family_id: str | None = Field(default=None, description="Target family (null = auto-select)")
 
 
 class BatchResult(BaseModel):
@@ -66,11 +64,7 @@ async def _pick_underserved_families(count: int) -> list[str]:
     """Return family IDs with the fewest papers, up to *count*."""
     async with async_session() as session:
         families = (
-            (
-                await session.execute(
-                    select(PaperFamily).where(PaperFamily.active.is_(True))
-                )
-            )
+            (await session.execute(select(PaperFamily).where(PaperFamily.active.is_(True))))
             .scalars()
             .all()
         )
@@ -82,9 +76,7 @@ async def _pick_underserved_families(count: int) -> list[str]:
         for fam in families:
             paper_count = (
                 await session.execute(
-                    select(func.count())
-                    .select_from(Paper)
-                    .where(Paper.family_id == fam.id)
+                    select(func.count()).select_from(Paper).where(Paper.family_id == fam.id)
                 )
             ).scalar() or 0
             counts.append((fam.id, paper_count))
@@ -106,9 +98,7 @@ class AsyncGenerateResponse(BaseModel):
 
 
 @router.post("/batch/generate-async", response_model=AsyncGenerateResponse)
-async def batch_generate_async(
-    body: GenerateRequest, request: Request
-) -> AsyncGenerateResponse:
+async def batch_generate_async(body: GenerateRequest, request: Request) -> AsyncGenerateResponse:
     """Fire-and-poll generation entry point.
 
     Validates the request, creates ``Paper`` rows with status="draft"
@@ -142,7 +132,7 @@ async def batch_generate_async(
             family_ids.append(family_ids[len(family_ids) % len(family_ids)])
 
     paper_ids: list[str] = []
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(UTC).isoformat()
 
     # Create Paper records up-front so the client can poll them
     # before the orchestrator gets to the _ensure_paper step. Each
@@ -173,12 +163,20 @@ async def batch_generate_async(
 
     # Spawn one fire-and-forget task per paper. The tasks run on the
     # uvicorn event loop AFTER this response closes; Render's worker
-    # process keeps the loop alive between requests.
+    # process keeps the loop alive between requests. We retain a
+    # reference to each task on app.state so they're not garbage
+    # collected mid-flight (RUF006 — Store a reference to the return
+    # value of asyncio.create_task). Tasks remove themselves from
+    # the set on completion.
+    if not hasattr(request.app.state, "background_tasks"):
+        request.app.state.background_tasks = set()
     for paper_id, fid in zip(paper_ids, family_ids[: body.count], strict=False):
-        asyncio.create_task(
+        task = asyncio.create_task(
             _run_pipeline_in_background(paper_id=paper_id, family_id=fid),
             name=f"pipeline:{paper_id}",
         )
+        request.app.state.background_tasks.add(task)
+        task.add_done_callback(request.app.state.background_tasks.discard)
 
     logger.info(
         "Fire-and-poll: spawned %d paper-generation tasks: %s",
@@ -280,7 +278,7 @@ async def batch_generate(body: GenerateRequest, request: Request) -> StreamingRe
     return StreamingResponse(stream(), media_type="application/x-ndjson")
 
 
-async def _do_batch_generate(body: GenerateRequest) -> "BatchResult":
+async def _do_batch_generate(body: GenerateRequest) -> BatchResult:
     """The actual batch-generate work, factored out so it can run as
     a background task while the streaming endpoint emits heartbeats.
 
@@ -368,9 +366,7 @@ async def _do_batch_generate(body: GenerateRequest) -> "BatchResult":
             # Anything else (e.g. "unknown") falls through to the success path
             # but is not counted as generated.
         except Exception as e:
-            logger.error(
-                "Generation failed for paper %s: %s", paper_id, e, exc_info=True
-            )
+            logger.error("Generation failed for paper %s: %s", paper_id, e, exc_info=True)
             entry["generation"] = {
                 "status": "error",
                 "error_message": str(e),
@@ -432,20 +428,14 @@ def _extract_stage_errors(report: dict[str, Any]) -> dict[str, str]:
         if not isinstance(stage_report, dict):
             continue
         if stage_report.get("status") == "failed":
-            err = (
-                stage_report.get("error")
-                or stage_report.get("reason")
-                or "(no error message)"
-            )
+            err = stage_report.get("error") or stage_report.get("reason") or "(no error message)"
             out[stage_name] = str(err)
     return out
 
 
 # Stage-report keys that aren't useful in the API response — they're
 # infrastructure / timing fields, not diagnostic content.
-_STAGE_INFRA_KEYS = frozenset(
-    {"status", "stage_name", "duration_sec", "error", "reason"}
-)
+_STAGE_INFRA_KEYS = frozenset({"status", "stage_name", "duration_sec", "error", "reason"})
 
 
 def _extract_stage_details(report: dict[str, Any]) -> dict[str, Any]:
@@ -474,9 +464,7 @@ def _extract_stage_details(report: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _primary_error_message(
-    stage_errors: dict[str, str], final_status: str
-) -> str | None:
+def _primary_error_message(stage_errors: dict[str, str], final_status: str) -> str | None:
     """Pick the most relevant single error string for the response.
 
     For ``killed_at_<stage>`` final statuses, prefer that stage's error.

@@ -261,15 +261,12 @@ async def verify_lock(session: AsyncSession, paper_id: str) -> dict:
 
     if not hash_match:
         violations.append(
-            f"Hash mismatch: stored={lock.lock_hash[:16]}..., "
-            f"computed={computed_hash[:16]}..."
+            f"Hash mismatch: stored={lock.lock_hash[:16]}..., computed={computed_hash[:16]}..."
         )
 
     # Check paper-level hash consistency.
     if paper.lock_hash and paper.lock_hash != lock.lock_hash:
-        violations.append(
-            "Paper.lock_hash does not match the active LockArtifact.lock_hash."
-        )
+        violations.append("Paper.lock_hash does not match the active LockArtifact.lock_hash.")
 
     # Parse immutable fields for reporting.
     immutable_fields: list[str] = safe_json_loads(lock.immutable_fields, [])
@@ -289,9 +286,7 @@ async def verify_lock(session: AsyncSession, paper_id: str) -> dict:
     }
 
 
-async def check_field_mutation(
-    old_lock_yaml: str, new_lock_yaml: str, protocol_type: str
-) -> dict:
+async def check_field_mutation(old_lock_yaml: str, new_lock_yaml: str, protocol_type: str) -> dict:
     """Check if any immutable fields were changed between lock versions.
 
     Parses both YAML documents and compares the values of all immutable fields
@@ -391,14 +386,9 @@ def extract_design_fields(lock_yaml_content: str) -> dict:
         "research_questions": _as_list(
             data.get("research_questions", data.get("research_question", []))
         ),
-        "data_sources": _as_list(
-            data.get("data_sources", data.get("source_lineage", []))
-        ),
-        "expected_outputs": _as_list(
-            data.get("expected_outputs", data.get("output_tables", []))
-        ),
-        "identification_strategy": data.get("identification_strategy")
-        or data.get("estimand"),
+        "data_sources": _as_list(data.get("data_sources", data.get("source_lineage", []))),
+        "expected_outputs": _as_list(data.get("expected_outputs", data.get("output_tables", []))),
+        "identification_strategy": data.get("identification_strategy") or data.get("estimand"),
         "method": data.get("method") or data.get("synthesis_method"),
     }
 

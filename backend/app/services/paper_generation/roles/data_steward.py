@@ -236,9 +236,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(

@@ -33,9 +33,7 @@ async def get_cohort(cohort_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/papers/{paper_id}/cohort")
 async def get_paper_cohort(paper_id: str, db: AsyncSession = Depends(get_db)):
     """Get which cohort a paper belongs to."""
-    result = await db.execute(
-        select(CohortTag).where(CohortTag.paper_id == paper_id)
-    )
+    result = await db.execute(select(CohortTag).where(CohortTag.paper_id == paper_id))
     tag = result.scalar_one_or_none()
 
     if tag is None:

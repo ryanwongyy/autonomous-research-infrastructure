@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -16,7 +16,10 @@ function SourceCardItem({ source }: { source: SourceCard }) {
       role="button"
       tabIndex={0}
       aria-expanded={expanded}
-      className="cursor-pointer transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none"
+      aria-label={`${source.name} source card, click to ${expanded ? "collapse" : "expand"} details`}
+      className={`cursor-pointer transition-all hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none ${
+        expanded ? "shadow-md border-primary/30 ring-1 ring-primary/10" : ""
+      }`}
       onClick={() => setExpanded(!expanded)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -27,7 +30,15 @@ function SourceCardItem({ source }: { source: SourceCard }) {
     >
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-sm leading-snug">{source.name}</CardTitle>
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-muted-foreground transition-transform text-xs ${expanded ? "rotate-90" : ""}`}
+              aria-hidden="true"
+            >
+              &#x25B8;
+            </span>
+            <CardTitle className="text-sm leading-snug">{source.name}</CardTitle>
+          </div>
           <SourceTierBadge tier={source.tier} />
         </div>
       </CardHeader>
@@ -35,7 +46,7 @@ function SourceCardItem({ source }: { source: SourceCard }) {
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>{source.access_method}</span>
           {source.requires_key && (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+            <Badge variant="outline" className="text-[11px] px-1.5 py-0">
               Key Required
             </Badge>
           )}
@@ -46,8 +57,23 @@ function SourceCardItem({ source }: { source: SourceCard }) {
           </p>
         )}
         {source.fragility_score > 0 && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Fragility: {source.fragility_score.toFixed(1)}
+          <p className="mt-1 text-xs text-muted-foreground inline-flex items-center gap-1">
+            <span>Fragility: </span>
+            <span className={`font-mono font-semibold ${
+              source.fragility_score >= 3
+                ? "text-red-600 dark:text-red-400"
+                : source.fragility_score >= 1.5
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-emerald-600 dark:text-emerald-400"
+            }`}>
+              {source.fragility_score.toFixed(1)}
+            </span>
+            <span className="relative group/frag">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="opacity-50 hover:opacity-100 cursor-help"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <span className="invisible group-hover/frag:visible absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 rounded-md bg-popover border border-border p-2 text-[11px] text-popover-foreground shadow-md z-20">
+                How likely this source is to break or return unreliable data. Lower is better. Above 3.0 = high risk.
+              </span>
+            </span>
           </p>
         )}
 
@@ -59,7 +85,7 @@ function SourceCardItem({ source }: { source: SourceCard }) {
                 <p className="text-xs font-medium mb-1">Claim Permissions</p>
                 <div className="flex flex-wrap gap-1">
                   {source.claim_permissions.map((p) => (
-                    <Badge key={p} variant="secondary" className="text-[10px]">
+                    <Badge key={p} variant="secondary" className="text-[11px]">
                       {p}
                     </Badge>
                   ))}
@@ -73,7 +99,7 @@ function SourceCardItem({ source }: { source: SourceCard }) {
                 <p className="text-xs font-medium mb-1 text-red-600 dark:text-red-400">Prohibitions</p>
                 <div className="flex flex-wrap gap-1">
                   {source.claim_prohibitions.map((p) => (
-                    <Badge key={p} variant="destructive" className="text-[10px]">
+                    <Badge key={p} variant="destructive" className="text-[11px]">
                       {p}
                     </Badge>
                   ))}
@@ -133,9 +159,9 @@ export default function SourcesPage() {
     load();
   }, []);
 
-  const tierA = sources.filter((s) => s.tier === "A");
-  const tierB = sources.filter((s) => s.tier === "B");
-  const tierC = sources.filter((s) => s.tier === "C");
+  const tierA = useMemo(() => sources.filter((s) => s.tier === "A"), [sources]);
+  const tierB = useMemo(() => sources.filter((s) => s.tier === "B"), [sources]);
+  const tierC = useMemo(() => sources.filter((s) => s.tier === "C"), [sources]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">

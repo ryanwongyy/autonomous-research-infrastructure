@@ -175,18 +175,18 @@ export default async function ExperimentsPage({
           </CardContent>
         </Card>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Tier</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Family</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Activated</TableHead>
-                <TableHead>Result Summary</TableHead>
+                <TableHead scope="col">ID</TableHead>
+                <TableHead scope="col">Tier</TableHead>
+                <TableHead scope="col">Name</TableHead>
+                <TableHead scope="col">Status</TableHead>
+                <TableHead scope="col">Family</TableHead>
+                <TableHead scope="col">Created</TableHead>
+                <TableHead scope="col">Activated</TableHead>
+                <TableHead scope="col">Result Summary</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

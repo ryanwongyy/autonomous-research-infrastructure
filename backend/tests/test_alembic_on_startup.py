@@ -41,9 +41,7 @@ def test_ensure_added_columns_handles_postgres_and_sqlite():
     from app.main import _ensure_added_columns
 
     src = inspect.getsource(_ensure_added_columns)
-    assert "ADD COLUMN IF NOT EXISTS" in src, (
-        "Must use IF NOT EXISTS so the helper is idempotent."
-    )
+    assert "ADD COLUMN IF NOT EXISTS" in src, "Must use IF NOT EXISTS so the helper is idempotent."
     assert "last_heartbeat_at" in src, "Must add papers.last_heartbeat_at."
     assert "last_heartbeat_stage" in src, "Must add papers.last_heartbeat_stage."
     assert "sqlite" in src.lower(), "Must short-circuit for SQLite (test envs use it)."

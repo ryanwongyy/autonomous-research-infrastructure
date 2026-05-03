@@ -42,12 +42,9 @@ def test_l3_load_manuscript_checks_column_first():
     column_pos = src.find("paper.manuscript_latex")
     disk_pos = src.find("paper.paper_tex_path")
     assert column_pos > 0, "L3 _load_manuscript must reference paper.manuscript_latex"
-    assert disk_pos > 0, (
-        "L3 _load_manuscript must still have the paper_tex_path fallback"
-    )
+    assert disk_pos > 0, "L3 _load_manuscript must still have the paper_tex_path fallback"
     assert column_pos < disk_pos, (
-        "Column read must come BEFORE disk read so durable storage wins "
-        "over ephemeral storage."
+        "Column read must come BEFORE disk read so durable storage wins over ephemeral storage."
     )
 
 
@@ -58,12 +55,9 @@ def test_l4_load_manuscript_checks_column_first():
     column_pos = src.find("paper.manuscript_latex")
     disk_pos = src.find("paper.paper_tex_path")
     assert column_pos > 0, "L4 _load_manuscript must reference paper.manuscript_latex"
-    assert disk_pos > 0, (
-        "L4 _load_manuscript must still have the paper_tex_path fallback"
-    )
+    assert disk_pos > 0, "L4 _load_manuscript must still have the paper_tex_path fallback"
     assert column_pos < disk_pos, (
-        "Column read must come BEFORE disk read so durable storage wins "
-        "over ephemeral storage."
+        "Column read must come BEFORE disk read so durable storage wins over ephemeral storage."
     )
 
 

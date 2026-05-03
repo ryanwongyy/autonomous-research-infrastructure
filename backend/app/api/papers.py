@@ -1,8 +1,9 @@
 import logging
 import uuid
+from datetime import UTC
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -10,11 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import admin_key_required
+from app.config import settings
 from app.database import get_db
 from app.models.paper import Paper
 from app.models.rating import Rating
 from app.schemas.paper import PaperCreate, PaperImport, PaperResponse, PaperWithRating
-from app.config import settings
 
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
@@ -149,9 +150,7 @@ async def paper_json_feed(
 
 @router.get("/papers/{paper_id}", response_model=PaperWithRating)
 async def get_paper(paper_id: str, db: AsyncSession = Depends(get_db)):
-    paper = (
-        await db.execute(select(Paper).where(Paper.id == paper_id))
-    ).scalar_one_or_none()
+    paper = (await db.execute(select(Paper).where(Paper.id == paper_id))).scalar_one_or_none()
 
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -199,9 +198,7 @@ async def export_paper(
     """
     from fastapi.responses import Response
 
-    paper = (
-        await db.execute(select(Paper).where(Paper.id == paper_id))
-    ).scalar_one_or_none()
+    paper = (await db.execute(select(Paper).where(Paper.id == paper_id))).scalar_one_or_none()
 
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -212,9 +209,7 @@ async def export_paper(
             return Response(
                 content=paper.manuscript_latex,
                 media_type="application/x-tex",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{paper_id}.tex"'
-                },
+                headers={"Content-Disposition": f'attachment; filename="{paper_id}.tex"'},
             )
 
         # Fallback: read from disk for pre-PR-58 papers.
@@ -283,9 +278,7 @@ async def backfill_paper_title(paper_id: str, db: AsyncSession = Depends(get_db)
 
     paper = (
         await db.execute(
-            select(Paper)
-            .where(Paper.id == paper_id)
-            .options(selectinload(Paper.package))
+            select(Paper).where(Paper.id == paper_id).options(selectinload(Paper.package))
         )
     ).scalar_one_or_none()
     if not paper:
@@ -326,9 +319,7 @@ async def backfill_paper_title(paper_id: str, db: AsyncSession = Depends(get_db)
     if not title:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Manuscript file exists but contains no extractable \\title{...} block."
-            ),
+            detail=("Manuscript file exists but contains no extractable \\title{...} block."),
         )
 
     paper.title = title
@@ -350,9 +341,7 @@ async def backfill_paper_title(paper_id: str, db: AsyncSession = Depends(get_db)
     "/admin/papers/{paper_id}/backfill-manuscript",
     dependencies=[Depends(admin_key_required)],
 )
-async def backfill_manuscript_latex(
-    paper_id: str, db: AsyncSession = Depends(get_db)
-):
+async def backfill_manuscript_latex(paper_id: str, db: AsyncSession = Depends(get_db)):
     """Read manuscript content from disk and copy it into ``Paper.manuscript_latex``.
 
     Useful for papers generated before PR #58 deployed — they have
@@ -365,9 +354,7 @@ async def backfill_manuscript_latex(
     artifact is unrecoverable (wiped by a prior redeploy before this
     endpoint existed).
     """
-    paper = (
-        await db.execute(select(Paper).where(Paper.id == paper_id))
-    ).scalar_one_or_none()
+    paper = (await db.execute(select(Paper).where(Paper.id == paper_id))).scalar_one_or_none()
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
 
@@ -381,10 +368,7 @@ async def backfill_manuscript_latex(
     if not paper.paper_tex_path:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "No paper_tex_path on this paper — manuscript was never "
-                "written to disk."
-            ),
+            detail=("No paper_tex_path on this paper — manuscript was never written to disk."),
         )
 
     file_path = Path(paper.paper_tex_path)
@@ -422,7 +406,9 @@ async def backfill_manuscript_latex(
 )
 async def reap_orphan_papers(
     stale_minutes: int = Query(
-        30, ge=5, le=240,
+        30,
+        ge=5,
+        le=240,
         description="Heartbeat staleness threshold in minutes. Default 30.",
     ),
     db: AsyncSession = Depends(get_db),
@@ -454,9 +440,9 @@ async def reap_orphan_papers(
     Threshold default 30 min. Drafter is the longest legitimate stage
     at 15 min so 30 min gives 2x safety margin.
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=stale_minutes)
+    cutoff = datetime.now(UTC) - timedelta(minutes=stale_minutes)
     cutoff_naive = cutoff.replace(tzinfo=None)
 
     # Find candidates: non-terminal status with stale (or missing) heartbeat.
@@ -475,7 +461,7 @@ async def reap_orphan_papers(
         if paper.last_heartbeat_at is not None:
             hb = paper.last_heartbeat_at
             if hb.tzinfo is None:
-                hb = hb.replace(tzinfo=timezone.utc)
+                hb = hb.replace(tzinfo=UTC)
             hb_naive = hb.replace(tzinfo=None)
             if hb_naive >= cutoff_naive:
                 # Heartbeat is fresh — don't reap.
@@ -528,12 +514,16 @@ async def reap_orphan_papers(
 )
 async def re_verify_batch(
     min_pending_ratio: float = Query(
-        0.2, ge=0.0, le=1.0,
+        0.2,
+        ge=0.0,
+        le=1.0,
         description="Only re-verify papers with at least this fraction of "
         "claims still at pending status. Default 0.2 (20%).",
     ),
     limit: int = Query(
-        10, ge=1, le=50,
+        10,
+        ge=1,
+        le=50,
         description="Maximum number of papers to re-verify in one call.",
     ),
     db: AsyncSession = Depends(get_db),
@@ -559,7 +549,7 @@ async def re_verify_batch(
 
     Each paper's re-verify is run sequentially (not in parallel) so
     the LLM concurrency limits don't kick in. Slow but bounded:
-    ~2-5 min per paper × ``limit``.
+    ~2-5 min per paper x ``limit``.
 
     Returns a summary of papers processed + before/after pending counts.
     """
@@ -567,24 +557,30 @@ async def re_verify_batch(
     from app.services.paper_generation.roles.verifier import verify_manuscript
 
     candidates = (
-        await db.execute(
-            select(Paper)
-            .where(Paper.status.in_(("reviewing", "candidate")))
-            .order_by(Paper.created_at.desc())
-            .limit(limit)
+        (
+            await db.execute(
+                select(Paper)
+                .where(Paper.status.in_(("reviewing", "candidate")))
+                .order_by(Paper.created_at.desc())
+                .limit(limit)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     eligible: list[Paper] = []
     for paper in candidates:
         # Compute pending ratio for this paper.
         claim_rows = (
-            await db.execute(
-                select(ClaimMap.verification_status).where(
-                    ClaimMap.paper_id == paper.id
+            (
+                await db.execute(
+                    select(ClaimMap.verification_status).where(ClaimMap.paper_id == paper.id)
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if not claim_rows:
             continue
         pending = sum(1 for s in claim_rows if s == "pending")
@@ -595,49 +591,63 @@ async def re_verify_batch(
     results: list[dict] = []
     for paper in eligible:
         before_pending = (
-            await db.execute(
-                select(ClaimMap).where(
-                    ClaimMap.paper_id == paper.id,
-                    ClaimMap.verification_status == "pending",
+            (
+                await db.execute(
+                    select(ClaimMap).where(
+                        ClaimMap.paper_id == paper.id,
+                        ClaimMap.verification_status == "pending",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         before_count = len(before_pending)
 
         try:
             await verify_manuscript(paper_id=paper.id, status_filter="pending")
         except ValueError as e:
-            results.append({
-                "paper_id": paper.id,
-                "before_pending": before_count,
-                "after_pending": before_count,
-                "error": str(e),
-            })
+            results.append(
+                {
+                    "paper_id": paper.id,
+                    "before_pending": before_count,
+                    "after_pending": before_count,
+                    "error": str(e),
+                }
+            )
             continue
         except Exception as e:
             logger.exception("Re-verify-batch failed for paper %s", paper.id)
-            results.append({
-                "paper_id": paper.id,
-                "before_pending": before_count,
-                "after_pending": before_count,
-                "error": f"internal: {type(e).__name__}",
-            })
+            results.append(
+                {
+                    "paper_id": paper.id,
+                    "before_pending": before_count,
+                    "after_pending": before_count,
+                    "error": f"internal: {type(e).__name__}",
+                }
+            )
             continue
 
         after_pending = (
-            await db.execute(
-                select(ClaimMap).where(
-                    ClaimMap.paper_id == paper.id,
-                    ClaimMap.verification_status == "pending",
+            (
+                await db.execute(
+                    select(ClaimMap).where(
+                        ClaimMap.paper_id == paper.id,
+                        ClaimMap.verification_status == "pending",
+                    )
                 )
             )
-        ).scalars().all()
-        results.append({
-            "paper_id": paper.id,
-            "before_pending": before_count,
-            "after_pending": len(after_pending),
-            "delta": before_count - len(after_pending),
-        })
+            .scalars()
+            .all()
+        )
+        results.append(
+            {
+                "paper_id": paper.id,
+                "before_pending": before_count,
+                "after_pending": len(after_pending),
+                "delta": before_count - len(after_pending),
+            }
+        )
 
     return {
         "min_pending_ratio": min_pending_ratio,
@@ -653,9 +663,7 @@ async def re_verify_batch(
     "/admin/papers/{paper_id}/re-verify",
     dependencies=[Depends(admin_key_required)],
 )
-async def re_verify_paper_pending_claims(
-    paper_id: str, db: AsyncSession = Depends(get_db)
-):
+async def re_verify_paper_pending_claims(paper_id: str, db: AsyncSession = Depends(get_db)):
     """Re-run the Verifier on claims still at ``verification_status='pending'``.
 
     Empirical observation across 5 production runs: the Verifier LLM
@@ -680,20 +688,22 @@ async def re_verify_paper_pending_claims(
     from app.models.claim_map import ClaimMap
     from app.services.paper_generation.roles.verifier import verify_manuscript
 
-    paper = (
-        await db.execute(select(Paper).where(Paper.id == paper_id))
-    ).scalar_one_or_none()
+    paper = (await db.execute(select(Paper).where(Paper.id == paper_id))).scalar_one_or_none()
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
 
     pending_before = (
-        await db.execute(
-            select(ClaimMap).where(
-                ClaimMap.paper_id == paper_id,
-                ClaimMap.verification_status == "pending",
+        (
+            await db.execute(
+                select(ClaimMap).where(
+                    ClaimMap.paper_id == paper_id,
+                    ClaimMap.verification_status == "pending",
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if not pending_before:
         return {
@@ -717,9 +727,7 @@ async def re_verify_paper_pending_claims(
     pending_count_before = len(pending_before)
 
     try:
-        report = await verify_manuscript(
-            paper_id=paper_id, status_filter="pending"
-        )
+        report = await verify_manuscript(paper_id=paper_id, status_filter="pending")
     except ValueError as e:
         # Most common: no active lock artifact for this paper.
         raise HTTPException(status_code=400, detail=str(e))
@@ -730,12 +738,10 @@ async def re_verify_paper_pending_claims(
             detail="Verifier re-run encountered an internal error",
         )
 
-    pending_after_count = (
-        await db.execute(
-            select(ClaimMap).where(
-                ClaimMap.paper_id == paper_id,
-                ClaimMap.verification_status == "pending",
-            )
+    pending_after_count = await db.execute(
+        select(ClaimMap).where(
+            ClaimMap.paper_id == paper_id,
+            ClaimMap.verification_status == "pending",
         )
     )
     pending_count_after = len(pending_after_count.scalars().all())
@@ -800,15 +806,11 @@ async def create_paper(paper_in: PaperCreate, db: AsyncSession = Depends(get_db)
     dependencies=[Depends(admin_key_required)],
 )
 @limiter.limit("10/hour")
-async def import_papers(
-    request: Request, data: PaperImport, db: AsyncSession = Depends(get_db)
-):
+async def import_papers(request: Request, data: PaperImport, db: AsyncSession = Depends(get_db)):
     created = []
     # Pre-generate IDs and batch-check existence to avoid N+1
     candidate_ids = [p.id or generate_paper_id() for p in data.papers]
-    existing_result = await db.execute(
-        select(Paper.id).where(Paper.id.in_(candidate_ids))
-    )
+    existing_result = await db.execute(select(Paper.id).where(Paper.id.in_(candidate_ids)))
     existing_ids = set(existing_result.scalars().all())
 
     for paper_in, paper_id in zip(data.papers, candidate_ids):

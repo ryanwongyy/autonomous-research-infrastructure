@@ -25,7 +25,6 @@ from app.services.paper_generation.roles.drafter import (
     compose_manuscript,
 )
 
-
 # ── Prompt content: tier sections are present and labelled ──────────────────
 
 
@@ -44,10 +43,7 @@ def test_prompt_states_tier_a_b_suitable_for_empirical():
     suitability so the LLM understands the pairing."""
     src = inspect.getsource(compose_manuscript)
     # Tier A heading mentions empirical/doctrinal as suitable use.
-    assert (
-        "SUITABLE for empirical/doctrinal" in src
-        or "empirical or doctrinal" in src
-    )
+    assert "SUITABLE for empirical/doctrinal" in src or "empirical or doctrinal" in src
 
 
 def test_prompt_warns_tier_c_cannot_anchor_central_claims():
@@ -100,8 +96,7 @@ def test_phase1_loads_tier_alongside_id():
     grouping by tier is possible."""
     src = inspect.getsource(compose_manuscript)
     assert "SourceCard.tier" in src, (
-        "Phase 1 must SELECT SourceCard.tier to enable per-tier "
-        "grouping in the prompt."
+        "Phase 1 must SELECT SourceCard.tier to enable per-tier grouping in the prompt."
     )
 
 

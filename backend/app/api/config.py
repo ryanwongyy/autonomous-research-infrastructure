@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.domain_config import DomainConfig
-from app.schemas.config import DomainConfigResponse, DomainConfigUpdate, CategoryInfo
+from app.schemas.config import CategoryInfo, DomainConfigResponse, DomainConfigUpdate
 from app.utils import safe_json_loads
 
 router = APIRouter()
@@ -39,7 +39,9 @@ async def list_domains(db: AsyncSession = Depends(get_db)):
 
 @router.get("/config/domains/{domain_id}", response_model=DomainConfigResponse)
 async def get_domain(domain_id: str, db: AsyncSession = Depends(get_db)):
-    dc = (await db.execute(select(DomainConfig).where(DomainConfig.id == domain_id))).scalar_one_or_none()
+    dc = (
+        await db.execute(select(DomainConfig).where(DomainConfig.id == domain_id))
+    ).scalar_one_or_none()
     if not dc:
         raise HTTPException(status_code=404, detail="Domain config not found")
 
@@ -59,8 +61,12 @@ async def get_domain(domain_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/config/domains/{domain_id}", response_model=DomainConfigResponse)
-async def update_domain(domain_id: str, update: DomainConfigUpdate, db: AsyncSession = Depends(get_db)):
-    dc = (await db.execute(select(DomainConfig).where(DomainConfig.id == domain_id))).scalar_one_or_none()
+async def update_domain(
+    domain_id: str, update: DomainConfigUpdate, db: AsyncSession = Depends(get_db)
+):
+    dc = (
+        await db.execute(select(DomainConfig).where(DomainConfig.id == domain_id))
+    ).scalar_one_or_none()
     if not dc:
         raise HTTPException(status_code=404, detail="Domain config not found")
 

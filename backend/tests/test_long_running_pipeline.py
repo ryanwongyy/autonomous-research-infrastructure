@@ -37,9 +37,7 @@ def test_orchestrator_uses_per_stage_sessions():
         any session across the call
     """
     src = inspect.getsource(orchestrator.run_full_pipeline)
-    helper_calls = src.count("_run_stage_with_session(") + src.count(
-        "_run_stage_no_outer_session("
-    )
+    helper_calls = src.count("_run_stage_with_session(") + src.count("_run_stage_no_outer_session(")
     assert helper_calls >= 7, (
         f"Expected >=7 stage-helper calls in run_full_pipeline; got {helper_calls}."
     )

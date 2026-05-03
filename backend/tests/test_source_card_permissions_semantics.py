@@ -62,13 +62,13 @@ def test_known_claim_types_set_matches_pipeline():
     Drafter / Verifier emit. If a future role adds a new claim_type,
     that role's prompt schema and KNOWN_CLAIM_TYPES must update
     together."""
-    assert KNOWN_CLAIM_TYPES == {
+    assert {
         "empirical",
         "descriptive",
         "doctrinal",
         "theoretical",
         "historical",
-    }
+    } == KNOWN_CLAIM_TYPES
 
 
 # ── Topic-shaped permissions: Rule 3 must NOT fire ───────────────────────────
@@ -90,12 +90,9 @@ async def test_topic_shaped_permissions_skip_rule3():
             "diffusion of guardrails",
         ],
     )
-    result = await validate_claim_against_source(
-        source, claim_text="x", claim_type="descriptive"
-    )
+    result = await validate_claim_against_source(source, claim_text="x", claim_type="descriptive")
     assert result["valid"], (
-        f"Topic-shaped permissions should accept any claim_type. "
-        f"Got: {result.get('reason')}"
+        f"Topic-shaped permissions should accept any claim_type. Got: {result.get('reason')}"
     )
 
 
@@ -111,9 +108,7 @@ async def test_topic_shaped_permissions_accept_every_known_type(claim_type):
         tier="A",
         permissions=["timing of rules", "legal obligations", "governance design"],
     )
-    result = await validate_claim_against_source(
-        source, claim_text="x", claim_type=claim_type
-    )
+    result = await validate_claim_against_source(source, claim_text="x", claim_type=claim_type)
     assert result["valid"]
 
 
@@ -129,17 +124,11 @@ async def test_type_shaped_permissions_enforce_rule3():
         tier="A",
         permissions=["empirical", "descriptive"],
     )
-    rejected = await validate_claim_against_source(
-        source, claim_text="x", claim_type="doctrinal"
-    )
-    assert not rejected["valid"], (
-        "Type-shaped permissions should still gate by claim_type."
-    )
+    rejected = await validate_claim_against_source(source, claim_text="x", claim_type="doctrinal")
+    assert not rejected["valid"], "Type-shaped permissions should still gate by claim_type."
     assert "not in the allowed permissions" in rejected["reason"]
 
-    accepted = await validate_claim_against_source(
-        source, claim_text="x", claim_type="empirical"
-    )
+    accepted = await validate_claim_against_source(source, claim_text="x", claim_type="empirical")
     assert accepted["valid"]
 
 
@@ -154,9 +143,7 @@ async def test_mixed_shape_permissions_treats_as_typed():
         # Mostly topic, but contains 'empirical' — list is treated as typed.
         permissions=["spending", "empirical"],
     )
-    rejected = await validate_claim_against_source(
-        source, claim_text="x", claim_type="descriptive"
-    )
+    rejected = await validate_claim_against_source(source, claim_text="x", claim_type="descriptive")
     assert not rejected["valid"]
 
 
@@ -173,9 +160,7 @@ async def test_topic_shaped_prohibitions_skip_rule2():
         permissions=["spending"],
         prohibitions=["compliance or effects by themselves"],
     )
-    result = await validate_claim_against_source(
-        source, claim_text="x", claim_type="empirical"
-    )
+    result = await validate_claim_against_source(source, claim_text="x", claim_type="empirical")
     assert result["valid"]
 
 
@@ -187,9 +172,7 @@ async def test_type_shaped_prohibitions_enforce_rule2():
         permissions=["empirical", "doctrinal"],
         prohibitions=["theoretical"],
     )
-    rejected = await validate_claim_against_source(
-        source, claim_text="x", claim_type="theoretical"
-    )
+    rejected = await validate_claim_against_source(source, claim_text="x", claim_type="theoretical")
     assert not rejected["valid"]
     assert "explicitly prohibited" in rejected["reason"]
 
@@ -207,9 +190,7 @@ async def test_tier_c_central_rule_still_fires():
         tier="C",
         permissions=[],  # empty list — neither shape matters
     )
-    rejected = await validate_claim_against_source(
-        source, claim_text="x", claim_type="empirical"
-    )
+    rejected = await validate_claim_against_source(source, claim_text="x", claim_type="empirical")
     assert not rejected["valid"]
     assert "Tier C" in rejected["reason"]
 
@@ -222,7 +203,5 @@ async def test_empty_permissions_accepts_any_type():
     """Pre-existing behavior: an empty permissions list means no
     permission gate applies — keep that."""
     source = _src("LooseSource", tier="A", permissions=[])
-    result = await validate_claim_against_source(
-        source, claim_text="x", claim_type="empirical"
-    )
+    result = await validate_claim_against_source(source, claim_text="x", claim_type="empirical")
     assert result["valid"]

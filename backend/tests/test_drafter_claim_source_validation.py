@@ -31,8 +31,7 @@ def test_drafter_validates_source_ref_against_registered_ids():
 
     # Must query SourceCard at the writes phase
     assert "SourceCard" in src, (
-        "compose_manuscript must query SourceCard to validate "
-        "LLM-supplied source_ref values."
+        "compose_manuscript must query SourceCard to validate LLM-supplied source_ref values."
     )
 
     # Must filter against the registered set before assigning
@@ -42,9 +41,7 @@ def test_drafter_validates_source_ref_against_registered_ids():
     )
 
     # Must use a None fallback for unregistered IDs
-    assert "valid_source_card_id" in src or "None" in src.split(
-        "claim_map_entries"
-    )[0], (
+    assert "valid_source_card_id" in src or "None" in src.split("claim_map_entries")[0], (
         "compose_manuscript must default to NULL source_card_id when "
         "the LLM's source_ref isn't in the registered set."
     )

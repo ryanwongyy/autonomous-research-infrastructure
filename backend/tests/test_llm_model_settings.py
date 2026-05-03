@@ -21,7 +21,6 @@ import pytest
 
 from app.config import Settings, settings
 
-
 # ── Settings exposure ────────────────────────────────────────────────────────
 
 
@@ -135,15 +134,15 @@ def test_l3_method_module_uses_judge_setting():
 
     # Re-import to capture any setting changes within this test process.
     importlib.reload(l3_method)
-    assert l3_method.METHOD_MODEL == settings.judge_non_claude_model
+    assert settings.judge_non_claude_model == l3_method.METHOD_MODEL
 
 
 def test_l4_adversarial_uses_sonnet_and_main_settings():
     from app.services.review_pipeline import l4_adversarial
 
     importlib.reload(l4_adversarial)
-    assert l4_adversarial.ADVERSARIAL_CLAUDE_MODEL == settings.claude_sonnet_model
-    assert l4_adversarial.ADVERSARIAL_GPT_MODEL == settings.openai_main_model
+    assert settings.claude_sonnet_model == l4_adversarial.ADVERSARIAL_CLAUDE_MODEL
+    assert settings.openai_main_model == l4_adversarial.ADVERSARIAL_GPT_MODEL
 
 
 def test_advisor_review_models_are_settings_driven():
@@ -216,10 +215,11 @@ def test_no_hardcoded_broken_model_ids_in_source():
                 continue
             for bad in bad_literals:
                 if bad in line:
-                    offenders.append((str(py_file.relative_to(app_root.parent)), lineno, line.strip()))
+                    offenders.append(
+                        (str(py_file.relative_to(app_root.parent)), lineno, line.strip())
+                    )
 
     assert not offenders, (
         "Hardcoded broken model ids found in source. Replace with "
-        "`settings.<>_model` lookups:\n"
-        + "\n".join(f"  {f}:{n}: {ln}" for f, n, ln in offenders)
+        "`settings.<>_model` lookups:\n" + "\n".join(f"  {f}:{n}: {ln}" for f, n, ln in offenders)
     )

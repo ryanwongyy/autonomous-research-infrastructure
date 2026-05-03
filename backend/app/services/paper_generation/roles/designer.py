@@ -81,6 +81,7 @@ No markdown, no commentary outside the JSON."""
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def create_research_design(
     session: AsyncSession,
     paper_id: str,
@@ -194,6 +195,7 @@ async def lock_design(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     stmt = select(Paper).where(Paper.id == paper_id)

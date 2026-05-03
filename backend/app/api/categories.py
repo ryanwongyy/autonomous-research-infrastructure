@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.domain_config import DomainConfig
 from app.models.paper import Paper
 from app.models.rating import Rating
-from app.models.domain_config import DomainConfig
 from app.schemas.leaderboard import LeaderboardEntry
 from app.utils import safe_json_loads
 
@@ -31,7 +31,9 @@ async def list_categories(
             continue
         cats = safe_json_loads(config.categories, [])
         for cat in cats:
-            category_entries.append({"slug": cat["slug"], "name": cat["name"], "domain_id": config.id})
+            category_entries.append(
+                {"slug": cat["slug"], "name": cat["name"], "domain_id": config.id}
+            )
 
     if category_entries:
         all_slugs = [c["slug"] for c in category_entries]
@@ -47,10 +49,12 @@ async def list_categories(
 
     categories = []
     for entry in category_entries:
-        categories.append({
-            **entry,
-            "paper_count": paper_counts.get(entry["slug"], 0),
-        })
+        categories.append(
+            {
+                **entry,
+                "paper_count": paper_counts.get(entry["slug"], 0),
+            }
+        )
 
     return categories
 

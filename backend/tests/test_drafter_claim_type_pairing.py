@@ -33,7 +33,6 @@ from app.services.paper_generation.roles.drafter import (
     compose_manuscript,
 )
 
-
 # ── Prompt structure ────────────────────────────────────────────────────────
 
 
@@ -95,7 +94,7 @@ def test_phase3_counts_empirical_with_source_span():
     src = inspect.getsource(compose_manuscript)
     assert "empirical_with_source_span" in src
     # The condition must check both claim_type and source_type.
-    assert "claim_type.lower() == \"empirical\"" in src or 'claim_type.lower() == "empirical"' in src
+    assert 'claim_type.lower() == "empirical"' in src or 'claim_type.lower() == "empirical"' in src
     assert 'source_type == "source_span"' in src
 
 
@@ -116,7 +115,7 @@ def test_phase3_warning_is_observability_not_kill():
     catches it. Drafter only logs."""
     src = inspect.getsource(compose_manuscript)
     # No `raise` after the warning; the loop continues.
-    warning_pos = src.find("logger.warning(\n        \"Drafter: paper")
+    warning_pos = src.find('logger.warning(\n        "Drafter: paper')
     if warning_pos < 0:
         warning_pos = src.find('logger.warning(\n            "Drafter: paper')
     if warning_pos < 0:

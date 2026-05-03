@@ -14,11 +14,11 @@ import logging
 
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import async_session
 from app.models.paper import Paper
 from app.models.review import Review
 from app.services.llm.router import get_provider_for_model
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ def _get_referee_models() -> list[str]:
     else:
         models.append(settings.openai_fast_model)  # Third reviewer fallback
     return models
+
 
 REFEREE_PROMPT = """You are Referee {number} reviewing a research paper for a top academic journal.
 
@@ -74,9 +75,7 @@ async def run_referee_review(paper_id: str) -> list[str]:
         response_upper = response.upper()
         if "ACCEPT" in response_upper[-300:] and "REVISION" not in response_upper[-300:]:
             verdict = "pass"
-        elif "MINOR_REVISION" in response_upper[-300:]:
-            verdict = "revision_needed"
-        elif "MAJOR_REVISION" in response_upper[-300:]:
+        elif "MINOR_REVISION" in response_upper[-300:] or "MAJOR_REVISION" in response_upper[-300:]:
             verdict = "revision_needed"
         else:
             verdict = "fail"

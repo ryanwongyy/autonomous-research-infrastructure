@@ -140,9 +140,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = (
-            "camera=(), microphone=(), geolocation=()"
-        )
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return response
 
 
@@ -238,31 +236,37 @@ async def health():
             await conn.execute(select(1))
         return {"status": "ok"}
     except Exception:
-        return JSONResponse(
-            {"status": "degraded", "db": "unreachable"}, status_code=503
-        )
+        return JSONResponse({"status": "degraded", "db": "unreachable"}, status_code=503)
 
 
 # Register routers
-from app.api import (  # noqa: E402
-    leaderboard,
-    stats,
-    papers,
-    matches,
-    tournament,
+from app.api import (  # noqa: E402  # noqa: E402  # noqa: E402  # noqa: E402  # noqa: E402  # noqa: E402
+    autonomy,
+    batch,
     categories,
+    cohorts,
+    collegial,
     config,
+    corrections,
+    expert_reviews,
+    failures,
+    families,
+    leaderboard,
+    matches,
+    novelty,
+    outcomes,
+    papers,
+    provenance,
+    release,
+    reliability,
     reviews,
+    rsi,
+    significance_memos,
+    sources,
+    stats,
+    throughput,
+    tournament,
 )
-from app.api import families, sources, provenance  # noqa: E402
-from app.api import release, throughput, significance_memos  # noqa: E402
-from app.api import reliability  # noqa: E402
-from app.api import outcomes, corrections, expert_reviews  # noqa: E402
-from app.api import autonomy, failures  # noqa: E402
-from app.api import novelty, cohorts  # noqa: E402
-from app.api import rsi  # noqa: E402
-from app.api import collegial  # noqa: E402
-from app.api import batch  # noqa: E402
 
 app.include_router(leaderboard.router, prefix="/api/v1", tags=["leaderboard"])
 app.include_router(stats.router, prefix="/api/v1", tags=["stats"])
@@ -282,9 +286,7 @@ app.include_router(sources.router, prefix="/api/v1", tags=["sources"])
 app.include_router(provenance.router, prefix="/api/v1", tags=["provenance"])
 app.include_router(release.router, prefix="/api/v1", tags=["release"])
 app.include_router(throughput.router, prefix="/api/v1", tags=["throughput"])
-app.include_router(
-    significance_memos.router, prefix="/api/v1", tags=["significance-memos"]
-)
+app.include_router(significance_memos.router, prefix="/api/v1", tags=["significance-memos"])
 app.include_router(reliability.router, prefix="/api/v1", tags=["reliability"])
 app.include_router(outcomes.router, prefix="/api/v1", tags=["outcomes"])
 app.include_router(corrections.router, prefix="/api/v1", tags=["corrections"])

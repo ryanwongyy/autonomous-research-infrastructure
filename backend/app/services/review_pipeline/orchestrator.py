@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, update
@@ -27,8 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.paper import Paper
 from app.models.review import Review
-from app.utils import safe_json_loads
-
 from app.services.review_pipeline.l1_structural import run_structural_review
 from app.services.review_pipeline.l2_provenance import run_provenance_review
 from app.services.review_pipeline.l3_method import run_method_review
@@ -37,6 +35,7 @@ from app.services.review_pipeline.l5_human_escalation import (
     check_escalation_needed,
     generate_escalation_report,
 )
+from app.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +68,7 @@ async def run_review_pipeline(
         "completed_at": str,
     }
     """
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     report: dict[str, Any] = {
         "paper_id": paper_id,
         "decision": "pending",
@@ -85,13 +84,11 @@ async def run_review_pipeline(
     if paper is None:
         report["decision"] = "reject"
         report["summary"] = f"Paper '{paper_id}' not found."
-        report["completed_at"] = datetime.now(timezone.utc).isoformat()
+        report["completed_at"] = datetime.now(UTC).isoformat()
         return report
 
     # Update paper status to 'reviewing'.
-    await _set_paper_status(
-        session, paper_id, status="reviewing", funnel_stage="reviewing"
-    )
+    await _set_paper_status(session, paper_id, status="reviewing", funnel_stage="reviewing")
 
     # ==================================================================
     # LAYER 1: Structural Integrity (must pass to proceed)
@@ -122,7 +119,7 @@ async def run_review_pipeline(
             funnel_stage="rejected",
         )
         await session.commit()
-        report["completed_at"] = datetime.now(timezone.utc).isoformat()
+        report["completed_at"] = datetime.now(UTC).isoformat()
         return report
 
     if l1_review.verdict == "revision_needed":
@@ -157,7 +154,7 @@ async def run_review_pipeline(
             funnel_stage="rejected",
         )
         await session.commit()
-        report["completed_at"] = datetime.now(timezone.utc).isoformat()
+        report["completed_at"] = datetime.now(UTC).isoformat()
         return report
 
     if l2_review.verdict == "revision_needed":
@@ -166,9 +163,7 @@ async def run_review_pipeline(
     # ==================================================================
     # LAYERS 3 & 4: Method Review + Adversarial Review (parallel)
     # ==================================================================
-    logger.info(
-        "[%s] Starting L3+L4: Method and Adversarial reviews (parallel)", paper_id
-    )
+    logger.info("[%s] Starting L3+L4: Method and Adversarial reviews (parallel)", paper_id)
 
     l3_result, l4_result = await asyncio.gather(
         _safe_run(run_method_review, session, paper_id, "l3_method"),
@@ -203,9 +198,7 @@ async def run_review_pipeline(
     if l3_verdict == "fail" and l4_verdict == "fail":
         logger.warning("[%s] Both L3 and L4 reject -- paper rejected", paper_id)
         report["decision"] = "reject"
-        report["summary"] = (
-            "Both method review and adversarial review rejected this paper."
-        )
+        report["summary"] = "Both method review and adversarial review rejected this paper."
         # PR #75: Set status to terminal "rejected" so the orphan reaper
         # (papers.py reap_orphan_papers) doesn't kill it as stale. Pre-PR,
         # status="reviewing" was non-terminal and the reaper killed every
@@ -219,7 +212,7 @@ async def run_review_pipeline(
             funnel_stage="rejected",
         )
         await session.commit()
-        report["completed_at"] = datetime.now(timezone.utc).isoformat()
+        report["completed_at"] = datetime.now(UTC).isoformat()
         return report
 
     # ==================================================================
@@ -254,7 +247,7 @@ async def run_review_pipeline(
             funnel_stage="escalated",
         )
         await session.commit()
-        report["completed_at"] = datetime.now(timezone.utc).isoformat()
+        report["completed_at"] = datetime.now(UTC).isoformat()
         return report
 
     # ==================================================================
@@ -308,7 +301,7 @@ async def run_review_pipeline(
 
     await session.commit()
 
-    report["completed_at"] = datetime.now(timezone.utc).isoformat()
+    report["completed_at"] = datetime.now(UTC).isoformat()
     logger.info("[%s] Review pipeline completed: decision=%s", paper_id, decision)
     return report
 
@@ -430,9 +423,7 @@ async def _set_paper_status(
         values["release_status"] = release_status
 
     if values:
-        await session.execute(
-            update(Paper).where(Paper.id == paper_id).values(**values)
-        )
+        await session.execute(update(Paper).where(Paper.id == paper_id).values(**values))
 
 
 def _review_to_dict(review: Review) -> dict:

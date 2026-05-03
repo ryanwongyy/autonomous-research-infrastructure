@@ -58,7 +58,9 @@ async def run_exhibit_review(paper_id: str) -> bool:
             messages=[
                 {
                     "role": "user",
-                    "content": EXHIBIT_PROMPT.format(content=content, iteration_context=iteration_context),
+                    "content": EXHIBIT_PROMPT.format(
+                        content=content, iteration_context=iteration_context
+                    ),
                 }
             ],
             model=model,

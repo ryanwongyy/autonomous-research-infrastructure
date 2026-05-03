@@ -48,7 +48,6 @@ from app.services.paper_generation.roles.drafter import (
     compose_manuscript,
 )
 
-
 # ── Prompt placeholder ──────────────────────────────────────────────────────
 
 
@@ -71,9 +70,7 @@ def test_prompt_places_framing_directive_at_top():
 def test_directive_when_results_exist_is_permissive():
     """When the Analyst produced result objects, the paper may be
     framed as empirical — the directive should not forbid that."""
-    text = _build_framing_directive(
-        ["att_estimate", "parallel_trends_test"], "empirical_causal"
-    )
+    text = _build_framing_directive(["att_estimate", "parallel_trends_test"], "empirical_causal")
     assert "analyst results available" in text.lower()
     # The count appears so the LLM sees the actual evidence base.
     assert "2" in text
@@ -103,10 +100,7 @@ def test_directive_when_no_results_offers_reframings():
     text = _build_framing_directive([], "empirical_causal")
     # Three viable reframings are required for different protocol shapes.
     assert "research design" in text.lower()
-    assert (
-        "measurement framework" in text.lower()
-        or "measurement protocol" in text.lower()
-    )
+    assert "measurement framework" in text.lower() or "measurement protocol" in text.lower()
     assert "doctrinal analysis" in text.lower() or "interpretive" in text.lower()
 
 

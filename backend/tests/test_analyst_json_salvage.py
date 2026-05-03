@@ -21,9 +21,7 @@ def test_full_json_is_parsed_normally():
 
 
 def test_markdown_fenced_json_is_parsed():
-    response = (
-        '```json\n{"code": "x = 1", "requirements": "", "expected_outputs": []}\n```'
-    )
+    response = '```json\n{"code": "x = 1", "requirements": "", "expected_outputs": []}\n```'
     parsed = _parse_json_object(response)
     assert parsed["code"] == "x = 1"
 

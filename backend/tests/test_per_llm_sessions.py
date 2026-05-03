@@ -74,8 +74,7 @@ def test_compose_manuscript_uses_short_lived_sessions():
 def test_verify_manuscript_uses_short_lived_sessions():
     src = inspect.getsource(verify_manuscript)
     assert src.count("async with async_session()") >= 2, (
-        "verify_manuscript must split read / LLM-call / write across "
-        "separate short-lived sessions."
+        "verify_manuscript must split read / LLM-call / write across separate short-lived sessions."
     )
 
 

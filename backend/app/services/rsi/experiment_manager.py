@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rsi_experiment import RSIExperiment
@@ -28,9 +28,7 @@ async def create_experiment(
 ) -> RSIExperiment:
     """Create a new RSI experiment in 'proposed' status."""
     if tier not in VALID_TIERS:
-        raise ValueError(
-            f"Invalid tier '{tier}'. Must be one of: {', '.join(sorted(VALID_TIERS))}"
-        )
+        raise ValueError(f"Invalid tier '{tier}'. Must be one of: {', '.join(sorted(VALID_TIERS))}")
 
     experiment = RSIExperiment(
         tier=tier,
@@ -42,9 +40,7 @@ async def create_experiment(
     )
     session.add(experiment)
     await session.flush()
-    logger.info(
-        "Created RSI experiment %s (tier=%s, name=%s)", experiment.id, tier, name
-    )
+    logger.info("Created RSI experiment %s (tier=%s, name=%s)", experiment.id, tier, name)
     return experiment
 
 
@@ -53,9 +49,7 @@ async def activate_experiment(
     experiment_id: int,
 ) -> RSIExperiment:
     """Move experiment from proposed/shadow to active. Sets activated_at."""
-    result = await session.execute(
-        select(RSIExperiment).where(RSIExperiment.id == experiment_id)
-    )
+    result = await session.execute(select(RSIExperiment).where(RSIExperiment.id == experiment_id))
     experiment = result.scalar_one_or_none()
     if experiment is None:
         raise ValueError(f"Experiment {experiment_id} not found")
@@ -88,9 +82,7 @@ async def rollback_experiment(
     reason: str = "",
 ) -> RSIExperiment:
     """Roll back an active experiment. Sets rolled_back_at."""
-    result = await session.execute(
-        select(RSIExperiment).where(RSIExperiment.id == experiment_id)
-    )
+    result = await session.execute(select(RSIExperiment).where(RSIExperiment.id == experiment_id))
     experiment = result.scalar_one_or_none()
     if experiment is None:
         raise ValueError(f"Experiment {experiment_id} not found")
@@ -122,9 +114,7 @@ async def evaluate_experiment(
     Default threshold: any metric degradation >10% triggers rollback recommendation.
     Returns {"decision": "promote"|"hold"|"rollback", "details": {...}}
     """
-    result = await session.execute(
-        select(RSIExperiment).where(RSIExperiment.id == experiment_id)
-    )
+    result = await session.execute(select(RSIExperiment).where(RSIExperiment.id == experiment_id))
     experiment = result.scalar_one_or_none()
     if experiment is None:
         raise ValueError(f"Experiment {experiment_id} not found")
@@ -155,9 +145,7 @@ async def evaluate_experiment(
         else:
             change = 0.0 if after_val == 0 else 1.0
 
-        max_degradation = effective_thresholds.get(
-            metric_key, DEFAULT_DEGRADATION_THRESHOLD
-        )
+        max_degradation = effective_thresholds.get(metric_key, DEFAULT_DEGRADATION_THRESHOLD)
 
         if change < -max_degradation:
             status = "degraded"
@@ -242,9 +230,7 @@ async def get_active_experiments(
 
 async def get_experiment(session: AsyncSession, experiment_id: int) -> dict | None:
     """Get single experiment detail."""
-    result = await session.execute(
-        select(RSIExperiment).where(RSIExperiment.id == experiment_id)
-    )
+    result = await session.execute(select(RSIExperiment).where(RSIExperiment.id == experiment_id))
     exp = result.scalar_one_or_none()
     if exp is None:
         return None
@@ -259,9 +245,7 @@ async def get_experiment(session: AsyncSession, experiment_id: int) -> dict | No
         "created_by": exp.created_by,
         "proposed_at": exp.proposed_at.isoformat() if exp.proposed_at else None,
         "activated_at": exp.activated_at.isoformat() if exp.activated_at else None,
-        "rolled_back_at": exp.rolled_back_at.isoformat()
-        if exp.rolled_back_at
-        else None,
+        "rolled_back_at": exp.rolled_back_at.isoformat() if exp.rolled_back_at else None,
         "config_snapshot": safe_json_loads(exp.config_snapshot_json, None),
         "result_summary": safe_json_loads(exp.result_summary_json, None),
         "created_at": exp.created_at.isoformat() if exp.created_at else None,
@@ -303,9 +287,7 @@ async def get_rsi_dashboard(session: AsyncSession) -> dict:
         for gl in gate_logs
     ]
 
-    total_result = await session.execute(
-        select(func.count()).select_from(RSIExperiment)
-    )
+    total_result = await session.execute(select(func.count()).select_from(RSIExperiment))
     total_experiments = total_result.scalar() or 0
 
     return {

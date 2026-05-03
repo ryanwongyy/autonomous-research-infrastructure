@@ -15,7 +15,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session
-
 from app.models.claim_map import ClaimMap
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
@@ -257,8 +256,7 @@ async def compose_manuscript(
         lock = await _load_active_lock(s, paper_id)
         if lock is None:
             raise ValueError(
-                f"No active lock for paper '{paper_id}'. "
-                "Design must be locked before drafting."
+                f"No active lock for paper '{paper_id}'. Design must be locked before drafting."
             )
         family = await _load_family(s, paper.family_id) if paper.family_id else None
         # Copy out values we need
@@ -307,11 +305,7 @@ async def compose_manuscript(
 
         def _format_tier(letter: str) -> str:
             entries = sources_by_tier.get(letter, [])
-            return (
-                "\n".join(entries)
-                if entries
-                else f"  (no Tier {letter} sources registered)"
-            )
+            return "\n".join(entries) if entries else f"  (no Tier {letter} sources registered)"
 
         registered_source_ids_str = (
             "TIER A — primary, audited; SUITABLE for empirical/doctrinal:\n"
@@ -367,14 +361,10 @@ async def compose_manuscript(
         protocol_type=protocol_type,
         inference_level=inference_level,
         result_manifest=(
-            json.dumps(result_manifest, indent=2)
-            if result_manifest
-            else "(no results yet)"
+            json.dumps(result_manifest, indent=2) if result_manifest else "(no results yet)"
         ),
         source_manifest=(
-            json.dumps(source_manifest, indent=2)
-            if source_manifest
-            else "(no manifest)"
+            json.dumps(source_manifest, indent=2) if source_manifest else "(no manifest)"
         ),
         venue_style=venue_style,
         family_description=family_description,
@@ -434,9 +424,7 @@ async def compose_manuscript(
         # the claim has no evidence at all.
         from app.models.source_card import SourceCard
 
-        sc_result = await s.execute(
-            select(SourceCard.id).where(SourceCard.active.is_(True))
-        )
+        sc_result = await s.execute(select(SourceCard.id).where(SourceCard.active.is_(True)))
         registered_source_ids = {row[0] for row in sc_result.all()}
 
         # Track miscategorised claims for the warning log. Production
@@ -469,9 +457,7 @@ async def compose_manuscript(
                     # Soft match — preserve in source_span_ref so the
                     # Verifier can see what the LLM intended, even
                     # though it didn't pick a registered ID.
-                    soft_source_span_ref = json.dumps(
-                        {"name": source_ref, "registered": False}
-                    )
+                    soft_source_span_ref = json.dumps({"name": source_ref, "registered": False})
 
             claim_map = ClaimMap(
                 paper_id=paper_id,
@@ -480,9 +466,7 @@ async def compose_manuscript(
                 source_card_id=valid_source_card_id,
                 source_span_ref=soft_source_span_ref,
                 result_object_ref=(
-                    json.dumps({"name": source_ref})
-                    if source_type == "result_object"
-                    else None
+                    json.dumps({"name": source_ref}) if source_type == "result_object" else None
                 ),
                 verification_status="pending",
             )
@@ -575,9 +559,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -755,9 +737,7 @@ def _extract_latex_title(manuscript_latex: str) -> str | None:
 
     # Match \title{...} allowing for nested braces (one level deep is
     # plenty for typical academic titles like \title{Foo: \emph{Bar}}).
-    match = re.search(
-        r"\\title\{((?:[^{}]|\{[^{}]*\})*)\}", manuscript_latex, re.DOTALL
-    )
+    match = re.search(r"\\title\{((?:[^{}]|\{[^{}]*\})*)\}", manuscript_latex, re.DOTALL)
     if not match:
         return None
     title = match.group(1).strip()

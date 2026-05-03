@@ -27,12 +27,12 @@ import inspect
 import pytest
 from sqlalchemy import select
 
-
 # ── Model: column exists ─────────────────────────────────────────────────────
 
 
 def test_paper_has_manuscript_latex_column():
     from app.models.paper import Paper
+
     assert hasattr(Paper, "manuscript_latex"), (
         "Paper model must have manuscript_latex column for durable storage."
     )
@@ -43,15 +43,14 @@ def test_startup_migration_adds_manuscript_latex():
     ``manuscript_latex`` ALTER so production Postgres gets the column
     on the next deploy."""
     from app.main import _ensure_added_columns
+
     src = inspect.getsource(_ensure_added_columns)
     assert "manuscript_latex" in src, (
         "Startup migration must add the manuscript_latex column to "
         "papers via raw SQL — Base.metadata.create_all doesn't ALTER "
         "existing tables."
     )
-    assert "ADD COLUMN IF NOT EXISTS" in src, (
-        "ALTER must be idempotent (IF NOT EXISTS)."
-    )
+    assert "ADD COLUMN IF NOT EXISTS" in src, "ALTER must be idempotent (IF NOT EXISTS)."
 
 
 # ── Drafter persists to the column ───────────────────────────────────────────
@@ -61,6 +60,7 @@ def test_drafter_writes_manuscript_latex_to_paper():
     """Source check: compose_manuscript's Phase 3 must set
     paper.manuscript_latex from the LLM-produced text before commit."""
     from app.services.paper_generation.roles.drafter import compose_manuscript
+
     src = inspect.getsource(compose_manuscript)
     assert "paper.manuscript_latex = manuscript_latex" in src, (
         "Drafter Phase 3 must persist manuscript_latex on the Paper row "
@@ -75,6 +75,7 @@ def test_l1_load_manuscript_text_prefers_db_column():
     """Source check: L1's _load_manuscript_text must check
     paper.manuscript_latex BEFORE attempting the disk file."""
     from app.services.review_pipeline.l1_structural import _load_manuscript_text
+
     src = inspect.getsource(_load_manuscript_text)
 
     # Both checks must be present.
@@ -97,9 +98,7 @@ def test_l1_load_manuscript_text_prefers_db_column():
 
 
 @pytest.mark.asyncio
-async def test_export_returns_db_content_when_column_populated(
-    authed_client, db_session
-):
+async def test_export_returns_db_content_when_column_populated(authed_client, db_session):
     from app.models.paper import Paper
     from app.models.paper_family import PaperFamily
 
@@ -128,18 +127,14 @@ async def test_export_returns_db_content_when_column_populated(
     db_session.add(paper)
     await db_session.commit()
 
-    resp = await authed_client.get(
-        "/api/v1/papers/apep_durtest/export?format=tex"
-    )
+    resp = await authed_client.get("/api/v1/papers/apep_durtest/export?format=tex")
     assert resp.status_code == 200, resp.text
     assert "Durability" in resp.text
     assert resp.headers["content-type"].startswith("application/x-tex")
 
 
 @pytest.mark.asyncio
-async def test_export_falls_back_to_disk_when_db_column_empty(
-    authed_client, db_session, tmp_path
-):
+async def test_export_falls_back_to_disk_when_db_column_empty(authed_client, db_session, tmp_path):
     """For pre-PR-58 papers (manuscript_latex is NULL), export should
     still serve from disk if the file exists."""
     from app.models.paper import Paper
@@ -172,9 +167,7 @@ async def test_export_falls_back_to_disk_when_db_column_empty(
     db_session.add(paper)
     await db_session.commit()
 
-    resp = await authed_client.get(
-        "/api/v1/papers/apep_legacy/export?format=tex"
-    )
+    resp = await authed_client.get("/api/v1/papers/apep_legacy/export?format=tex")
     assert resp.status_code == 200
     assert "OLD CONTENT" in resp.text
 
@@ -208,9 +201,7 @@ async def test_export_404_when_neither_column_nor_disk(authed_client, db_session
     db_session.add(paper)
     await db_session.commit()
 
-    resp = await authed_client.get(
-        "/api/v1/papers/apep_gone/export?format=tex"
-    )
+    resp = await authed_client.get("/api/v1/papers/apep_gone/export?format=tex")
     assert resp.status_code == 404
     assert "redeploy" in resp.json()["detail"].lower()
 
@@ -219,9 +210,7 @@ async def test_export_404_when_neither_column_nor_disk(authed_client, db_session
 
 
 @pytest.mark.asyncio
-async def test_backfill_endpoint_copies_disk_to_db(
-    authed_client, db_session, tmp_path
-):
+async def test_backfill_endpoint_copies_disk_to_db(authed_client, db_session, tmp_path):
     """For a pre-PR-58 paper whose disk file still exists, calling the
     backfill endpoint should copy the content into the DB column."""
     from app.models.paper import Paper
@@ -271,17 +260,19 @@ async def test_backfill_endpoint_copies_disk_to_db(
 
 
 @pytest.mark.asyncio
-async def test_backfill_idempotent_when_already_populated(
-    authed_client, db_session
-):
+async def test_backfill_idempotent_when_already_populated(authed_client, db_session):
     """Already-populated papers return 'already_populated' (no-op)."""
     from app.models.paper import Paper
     from app.models.paper_family import PaperFamily
 
     db_session.add(
         PaperFamily(
-            id="F_BFI", name="x", short_name="BI",
-            description="x", lock_protocol_type="open", active=True,
+            id="F_BFI",
+            name="x",
+            short_name="BI",
+            description="x",
+            lock_protocol_type="open",
+            active=True,
         )
     )
     db_session.add(
@@ -315,8 +306,12 @@ async def test_backfill_404_when_disk_file_missing(authed_client, db_session):
 
     db_session.add(
         PaperFamily(
-            id="F_BFG", name="x", short_name="BG",
-            description="x", lock_protocol_type="open", active=True,
+            id="F_BFG",
+            name="x",
+            short_name="BG",
+            description="x",
+            lock_protocol_type="open",
+            active=True,
         )
     )
     db_session.add(
@@ -344,11 +339,12 @@ async def test_backfill_404_when_disk_file_missing(authed_client, db_session):
 def test_backfill_endpoint_requires_admin():
     """Source check: the backfill endpoint must declare admin auth."""
     from app.api import papers as papers_module
+
     src = inspect.getsource(papers_module)
 
     bf_pos = src.find("backfill-manuscript")
     assert bf_pos > 0
-    window = src[max(0, bf_pos - 200):bf_pos + 300]
+    window = src[max(0, bf_pos - 200) : bf_pos + 300]
     assert "admin_key_required" in window
 
 
@@ -357,4 +353,5 @@ def test_backfill_endpoint_requires_admin():
 
 def test_paper_module_imports_clean():
     from app.models import paper as paper_module
+
     assert paper_module.Paper is not None

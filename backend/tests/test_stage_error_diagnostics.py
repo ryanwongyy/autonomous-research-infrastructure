@@ -30,12 +30,8 @@ def test_run_stage_sets_error_class_on_exception():
         "_run_stage must capture error_class so empty-message "
         "exceptions still produce diagnostic output."
     )
-    assert "error_traceback" in src, (
-        "_run_stage must capture error_traceback for stage failures."
-    )
-    assert "type(e).__name__" in src, (
-        "_run_stage must derive error_class from the exception type."
-    )
+    assert "error_traceback" in src, "_run_stage must capture error_traceback for stage failures."
+    assert "type(e).__name__" in src, "_run_stage must derive error_class from the exception type."
 
 
 @pytest.mark.asyncio

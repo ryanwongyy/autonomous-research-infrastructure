@@ -23,18 +23,15 @@ def test_backfill_endpoint_exists_and_is_admin_protected():
     src = inspect.getsource(backfill_paper_title)
     # Reads from the package_path
     assert "package_path" in src, (
-        "backfill_paper_title must read the manuscript from the "
-        "PaperPackage's package_path."
+        "backfill_paper_title must read the manuscript from the PaperPackage's package_path."
     )
     # Uses _extract_latex_title to parse
     assert "_extract_latex_title" in src, (
-        "backfill_paper_title must use the same _extract_latex_title "
-        "helper as the Drafter."
+        "backfill_paper_title must use the same _extract_latex_title helper as the Drafter."
     )
     # Idempotent — bails when title is already real
     assert "Generating..." in src, (
-        "backfill_paper_title must skip papers that already have a "
-        "real title (idempotency check)."
+        "backfill_paper_title must skip papers that already have a real title (idempotency check)."
     )
 
 

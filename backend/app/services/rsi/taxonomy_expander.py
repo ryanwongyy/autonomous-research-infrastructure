@@ -7,7 +7,7 @@ import logging
 import re
 from collections import defaultdict
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.failure_record import FailureRecord
@@ -253,9 +253,7 @@ async def cluster_other_failures(
             jaccard_sum = 0.0
             for i in range(len(record_ids)):
                 for j in range(i + 1, len(record_ids)):
-                    jaccard_sum += _jaccard(
-                        kw_by_id[record_ids[i]], kw_by_id[record_ids[j]]
-                    )
+                    jaccard_sum += _jaccard(kw_by_id[record_ids[i]], kw_by_id[record_ids[j]])
                     pair_count += 1
             cohesion = jaccard_sum / pair_count if pair_count > 0 else 0.0
         else:
@@ -330,8 +328,7 @@ async def propose_new_failure_type(
     await session.flush()
 
     logger.info(
-        "Proposed new failure type '%s' from cluster of %d records "
-        "(proposal=%d, experiment=%d)",
+        "Proposed new failure type '%s' from cluster of %d records (proposal=%d, experiment=%d)",
         proposed_name,
         cluster["size"],
         proposal.id,

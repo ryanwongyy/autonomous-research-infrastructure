@@ -5,8 +5,8 @@ import logging
 import anthropic
 import httpx
 
-from app.services.llm.provider import LLMProvider, _llm_retry, _RETRYABLE_EXCEPTIONS
 from app.config import settings
+from app.services.llm.provider import _RETRYABLE_EXCEPTIONS, LLMProvider, _llm_retry
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +21,14 @@ logger = logging.getLogger(__name__)
 # RemoteProtocolError / ReadError / ReadTimeout / ConnectError /
 # ConnectTimeout / WriteError / WriteTimeout — every flavor of "the
 # connection broke partway through".
-_RETRYABLE_EXCEPTIONS.extend([
-    anthropic.APIConnectionError,
-    anthropic.RateLimitError,
-    anthropic.InternalServerError,
-    httpx.TransportError,
-])
+_RETRYABLE_EXCEPTIONS.extend(
+    [
+        anthropic.APIConnectionError,
+        anthropic.RateLimitError,
+        anthropic.InternalServerError,
+        httpx.TransportError,
+    ]
+)
 
 
 class AnthropicProvider(LLMProvider):

@@ -26,7 +26,6 @@ import re
 from app.services.paper_generation import orchestrator
 from app.services.paper_generation.orchestrator import _set_killed_at_stage
 
-
 # ── Helper exists with the right shape ───────────────────────────────────────
 
 
@@ -47,12 +46,11 @@ def test_helper_writes_terminal_paper_columns():
     src = inspect.getsource(_set_killed_at_stage)
     # Status flips
     assert 'status="killed"' in src, (
-        "Helper must set status='killed' (terminal value the cron poll "
-        "loop watches for)."
+        "Helper must set status='killed' (terminal value the cron poll loop watches for)."
     )
     assert 'funnel_stage="killed"' in src
     # Kill-reason prefix
-    assert 'killed_at_' in src
+    assert "killed_at_" in src
     assert "kill_reason" in src
 
 

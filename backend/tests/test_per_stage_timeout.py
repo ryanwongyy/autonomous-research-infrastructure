@@ -60,8 +60,7 @@ def test_timeouts_are_within_sensible_bounds():
     provide."""
     for stage, timeout in orchestrator._STAGE_TIMEOUT_SEC.items():
         assert 60 <= timeout <= 1800, (
-            f"stage {stage!r} has unreasonable timeout {timeout}s — "
-            f"expected 60..1800."
+            f"stage {stage!r} has unreasonable timeout {timeout}s — expected 60..1800."
         )
 
 
@@ -81,8 +80,7 @@ def test_wrappers_use_asyncio_timeout():
     ``asyncio.timeout(timeout_sec)``."""
     short_src = inspect.getsource(orchestrator._run_stage_with_session)
     assert "asyncio.timeout(" in short_src, (
-        "_run_stage_with_session must enforce a per-stage timeout via "
-        "asyncio.timeout(...)."
+        "_run_stage_with_session must enforce a per-stage timeout via asyncio.timeout(...)."
     )
     long_src = inspect.getsource(orchestrator._run_stage_no_outer_session)
     assert "asyncio.timeout(" in long_src, (
@@ -97,14 +95,16 @@ def test_wrappers_handle_timeout_error_without_raising():
     the contract from PR #42 / test_wrappers_never_raise.py."""
     short_src = inspect.getsource(orchestrator._run_stage_with_session)
     long_src = inspect.getsource(orchestrator._run_stage_no_outer_session)
-    for label, src in (("_run_stage_with_session", short_src),
-                       ("_run_stage_no_outer_session", long_src)):
+    for label, src in (
+        ("_run_stage_with_session", short_src),
+        ("_run_stage_no_outer_session", long_src),
+    ):
         assert "except TimeoutError" in src or "except (TimeoutError" in src, (
             f"{label} must catch TimeoutError. Without the catch, a hung "
             f"stage propagates as an uncaught exception and the next "
             f"stage's wrapper isn't called."
         )
-        assert 'wrapper_timeout' in src, (
+        assert "wrapper_timeout" in src, (
             f"{label} must mark its TimeoutError-failure dict with "
             f"wrapper_timeout=True so external observers can distinguish "
             f"a hang-kill from a regular stage failure."

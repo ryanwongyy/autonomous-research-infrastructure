@@ -27,7 +27,7 @@ class _FakeProvider:
     def __init__(self, response_text: str):
         self._response_text = response_text
 
-    async def complete(self, **_kwargs) -> str:  # noqa: D401, ANN003
+    async def complete(self, **_kwargs) -> str:
         return self._response_text
 
 
@@ -36,8 +36,7 @@ def _llm_response(scores: dict[str, int]) -> str:
     import json
 
     scores_dict = {
-        dim: {"score": val, "reason": f"reason for {dim}"}
-        for dim, val in scores.items()
+        dim: {"score": val, "reason": f"reason for {dim}"} for dim, val in scores.items()
     }
     return json.dumps(
         {
@@ -98,8 +97,7 @@ async def test_default_gate_is_composite_only(monkeypatch, db_session):
 
     assert abs(result["weighted_composite"] - 3.20) < 0.01
     assert result["pass"] is True, (
-        "Composite-only gate should accept composite=3.20 even with "
-        "novelty=2 and data_adequacy=2"
+        "Composite-only gate should accept composite=3.20 even with novelty=2 and data_adequacy=2"
     )
     assert result["thresholds"]["strict_per_dimension"] is False
 

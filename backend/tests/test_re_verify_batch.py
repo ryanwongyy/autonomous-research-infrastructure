@@ -23,7 +23,7 @@ This file locks in:
 from __future__ import annotations
 
 import inspect
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -33,7 +33,7 @@ from app.models.paper_family import PaperFamily
 
 
 def _utcnow_naive() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 @pytest.fixture(autouse=True)
@@ -98,8 +98,7 @@ def test_endpoint_is_registered():
     from app.api import papers as papers_module
 
     routes = [
-        r for r in papers_module.router.routes
-        if hasattr(r, "path") and "re-verify-batch" in r.path
+        r for r in papers_module.router.routes if hasattr(r, "path") and "re-verify-batch" in r.path
     ]
     assert routes, "POST /admin/papers/re-verify-batch must be registered."
 
@@ -108,8 +107,9 @@ def test_endpoint_filters_by_status():
     """Source check: candidates query must filter to status in
     ('reviewing', 'candidate')."""
     from app.api.papers import re_verify_batch
+
     src = inspect.getsource(re_verify_batch)
-    assert 'Paper.status.in_' in src
+    assert "Paper.status.in_" in src
     assert '"reviewing"' in src
     assert '"candidate"' in src
 
@@ -117,6 +117,7 @@ def test_endpoint_filters_by_status():
 def test_endpoint_orders_by_created_at_desc():
     """Newest papers first so the cron always processes the latest."""
     from app.api.papers import re_verify_batch
+
     src = inspect.getsource(re_verify_batch)
     assert "created_at.desc()" in src
 
@@ -125,6 +126,7 @@ def test_endpoint_uses_status_filter_pending():
     """The batch loop must call verify_manuscript with
     status_filter='pending' so only pending claims get re-verified."""
     from app.api.papers import re_verify_batch
+
     src = inspect.getsource(re_verify_batch)
     assert 'status_filter="pending"' in src
 
@@ -219,9 +221,7 @@ async def test_limit_bounds_validated(authed_client):
 
 
 @pytest.mark.asyncio
-async def test_endpoint_requires_admin_auth_when_admin_key_set(
-    db_engine, monkeypatch
-):
+async def test_endpoint_requires_admin_auth_when_admin_key_set(db_engine, monkeypatch):
     from collections.abc import AsyncGenerator
 
     from httpx import ASGITransport, AsyncClient
@@ -231,9 +231,7 @@ async def test_endpoint_requires_admin_auth_when_admin_key_set(
     from app.main import app
 
     monkeypatch.setattr("app.config.settings.ape_admin_key", "secret-admin")
-    session_factory = async_sessionmaker(
-        db_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def _test_db() -> AsyncGenerator[AsyncSession, None]:
         async with session_factory() as session:
@@ -257,9 +255,13 @@ def test_workflow_calls_re_verify_batch():
     between Generate and Review so coverage is filled before review
     runs (otherwise every paper L2-fails on coverage_incomplete)."""
     import pathlib
-    workflow = pathlib.Path(
-        __file__
-    ).parent.parent.parent / ".github" / "workflows" / "autonomous-loop.yml"
+
+    workflow = (
+        pathlib.Path(__file__).parent.parent.parent
+        / ".github"
+        / "workflows"
+        / "autonomous-loop.yml"
+    )
     assert workflow.is_file(), f"workflow not found at {workflow}"
     text = workflow.read_text()
     assert "/api/v1/admin/papers/re-verify-batch" in text
@@ -270,6 +272,5 @@ def test_workflow_calls_re_verify_batch():
     assert rv_pos > 0
     assert review_pos > 0
     assert rv_pos < review_pos, (
-        "Re-verify step must run BEFORE Review step so L2 sees filled "
-        "coverage."
+        "Re-verify step must run BEFORE Review step so L2 sees filled coverage."
     )

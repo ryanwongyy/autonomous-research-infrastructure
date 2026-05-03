@@ -214,9 +214,7 @@ async def test_generate_endpoint_counts_completed_separately_from_killed(
         fake_run_review_pipeline,
     )
 
-    resp = await client.post(
-        "/api/v1/batch/generate", json={"count": 2, "family_id": "F_BTC"}
-    )
+    resp = await client.post("/api/v1/batch/generate", json={"count": 2, "family_id": "F_BTC"})
     body = _parse_ndjson_result(resp.text)
     assert "Generated 1" in body["summary"]
     assert "killed_at_drafter 1" in body["summary"]
@@ -239,9 +237,7 @@ async def test_generate_endpoint_surfaces_uncaught_exception(
         fake_run_full_pipeline,
     )
 
-    resp = await client.post(
-        "/api/v1/batch/generate", json={"count": 1, "family_id": "F_BTC"}
-    )
+    resp = await client.post("/api/v1/batch/generate", json={"count": 1, "family_id": "F_BTC"})
     body = _parse_ndjson_result(resp.text)
     gen = body["results"][0]["generation"]
     assert gen["status"] == "error"
@@ -279,9 +275,7 @@ async def test_generate_endpoint_completed_paper_has_no_error_message(
         fake_run_review_pipeline,
     )
 
-    resp = await client.post(
-        "/api/v1/batch/generate", json={"count": 1, "family_id": "F_BTC"}
-    )
+    resp = await client.post("/api/v1/batch/generate", json={"count": 1, "family_id": "F_BTC"})
     body = _parse_ndjson_result(resp.text)
     gen = body["results"][0]["generation"]
     assert gen["status"] == "completed"
@@ -396,9 +390,7 @@ async def test_generate_endpoint_surfaces_scout_screenings(
         fake_run_full_pipeline,
     )
 
-    resp = await client.post(
-        "/api/v1/batch/generate", json={"count": 1, "family_id": "F_BTC"}
-    )
+    resp = await client.post("/api/v1/batch/generate", json={"count": 1, "family_id": "F_BTC"})
     body = _parse_ndjson_result(resp.text)
     gen = body["results"][0]["generation"]
 

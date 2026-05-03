@@ -19,7 +19,6 @@ from app.models.paper import Paper
 from app.models.pipeline_run import PipelineRun
 from app.services.paper_generation import orchestrator
 
-
 # ── Issue C: pipeline_runs ─────────────────────────────────────────────
 
 
@@ -48,9 +47,7 @@ def test_orchestrator_persists_stage_runs():
     after each stage so the row gets a PipelineRun for post-mortems.
     """
     src = inspect.getsource(orchestrator._run_stage)
-    assert "_persist_stage_run" in src, (
-        "_run_stage must persist a PipelineRun row for each stage."
-    )
+    assert "_persist_stage_run" in src, "_run_stage must persist a PipelineRun row for each stage."
 
 
 def test_persist_stage_run_helper_exists_and_swallows_errors():

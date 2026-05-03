@@ -1,6 +1,5 @@
-from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
-
 import ssl as _ssl_module
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase

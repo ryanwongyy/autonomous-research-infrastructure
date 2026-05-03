@@ -39,9 +39,7 @@ class PipelineRun(Base):
         String(32), index=True
     )  # completed, failed, completed_with_errors
 
-    started_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), index=True
-    )
+    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
     duration_sec: Mapped[float | None] = mapped_column(Float)
 

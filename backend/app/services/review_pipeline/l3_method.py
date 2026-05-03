@@ -14,11 +14,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
 from app.models.paper_family import PaperFamily
 from app.models.review import Review
-from app.config import settings
 from app.services.llm.router import get_provider_for_model
 from app.utils import safe_json_loads
 
@@ -313,12 +313,8 @@ async def run_method_review(session: AsyncSession, paper_id: str) -> Review:
 
     # Determine protocol type and load family-specific configs.
     protocol_type = family.lock_protocol_type if family else "unknown"
-    fatal_failures = (
-        _parse_json_field(family.fatal_failures) if family else "None specified"
-    )
-    mandatory_checks = (
-        _parse_json_field(family.mandatory_checks) if family else "None specified"
-    )
+    fatal_failures = _parse_json_field(family.fatal_failures) if family else "None specified"
+    mandatory_checks = _parse_json_field(family.mandatory_checks) if family else "None specified"
     review_rubric = safe_json_loads(family.review_rubric, None) if family else None
 
     # ------------------------------------------------------------------
@@ -539,9 +535,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper | None:
     return result.scalar_one_or_none()
 
 
-async def _load_family(
-    session: AsyncSession, family_id: str | None
-) -> PaperFamily | None:
+async def _load_family(session: AsyncSession, family_id: str | None) -> PaperFamily | None:
     if family_id is None:
         return None
     stmt = select(PaperFamily).where(PaperFamily.id == family_id)
@@ -625,8 +619,7 @@ def _build_user_message(
 
     if lock_content:
         parts.append(
-            f"\n\n--- LOCK ARTIFACT (Protocol: {protocol_type}) ---\n"
-            f"{lock_content[:3000]}"
+            f"\n\n--- LOCK ARTIFACT (Protocol: {protocol_type}) ---\n{lock_content[:3000]}"
         )
 
     # Truncate manuscript to fit within token limits (roughly 12k chars ~3k tokens).

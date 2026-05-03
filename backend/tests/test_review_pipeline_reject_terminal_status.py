@@ -102,9 +102,7 @@ def test_decision_reject_branch_sets_rejected():
         for line in window.splitlines()
         if 'status="reviewing"' in line and not line.strip().startswith("#")
     )
-    assert code_uses == 0, (
-        "decision==reject branch must not use status=reviewing in code"
-    )
+    assert code_uses == 0, "decision==reject branch must not use status=reviewing in code"
 
 
 def test_escalate_branch_now_calls_set_paper_status():

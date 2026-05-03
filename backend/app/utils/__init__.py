@@ -1,7 +1,7 @@
 """Shared utilities."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -33,4 +33,4 @@ def utcnow_naive() -> datetime:
     timedelta(...)``), keep using tz-aware datetimes — they're correct
     semantically and never written to disk.
     """
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)

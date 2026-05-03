@@ -15,7 +15,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session
-
 from app.models.claim_map import ClaimMap
 from app.models.lock_artifact import LockArtifact
 from app.models.paper import Paper
@@ -169,8 +168,7 @@ async def verify_manuscript(
         lock = await _load_active_lock(s, paper_id)
         if lock is None:
             raise ValueError(
-                f"No active lock for paper '{paper_id}'. "
-                "Cannot verify without a locked design."
+                f"No active lock for paper '{paper_id}'. Cannot verify without a locked design."
             )
 
         stmt = select(ClaimMap).where(ClaimMap.paper_id == paper_id)
@@ -180,9 +178,7 @@ async def verify_manuscript(
         claims = list(result.scalars().all())
 
         if not claims:
-            logger.warning(
-                "No claims found for paper %s -- nothing to verify", paper_id
-            )
+            logger.warning("No claims found for paper %s -- nothing to verify", paper_id)
             return {
                 "claim_verifications": [],
                 "summary": {
@@ -220,9 +216,7 @@ async def verify_manuscript(
         # Load source excerpts for every source cited by the claims
         # we're verifying. PR #65 — gives the LLM actual text to
         # check claims against rather than just source IDs.
-        cited_source_ids: set[str] = {
-            c.source_card_id for c in claims if c.source_card_id
-        }
+        cited_source_ids: set[str] = {c.source_card_id for c in claims if c.source_card_id}
         source_excerpts = await _load_source_excerpts(s, cited_source_ids)
         protocol_type = lock.lock_protocol_type
         inference_level = _determine_inference_level(protocol_type)
@@ -302,9 +296,7 @@ async def verify_manuscript(
             )
 
         aggregate_results.extend(batch_results)
-        aggregate_summary["total_claims"] += batch_summary.get(
-            "total_claims", len(batch_results)
-        )
+        aggregate_summary["total_claims"] += batch_summary.get("total_claims", len(batch_results))
         aggregate_summary["passed"] += batch_summary.get("passed", 0)
         aggregate_summary["failed"] += batch_summary.get("failed", 0)
         aggregate_summary["warnings"] += batch_summary.get("warnings", 0)
@@ -313,9 +305,9 @@ async def verify_manuscript(
         )
         # Worst recommendation across batches wins.
         rec_priority = {"reject": 0, "revise": 1, "approve": 2}
-        if rec_priority.get(
-            batch_summary.get("recommendation", "approve"), 99
-        ) < rec_priority.get(aggregate_summary["recommendation"], 99):
+        if rec_priority.get(batch_summary.get("recommendation", "approve"), 99) < rec_priority.get(
+            aggregate_summary["recommendation"], 99
+        ):
             aggregate_summary["recommendation"] = batch_summary["recommendation"]
 
         logger.info(
@@ -374,9 +366,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -466,9 +456,7 @@ async def _load_source_excerpts(
         try:
             content = path.read_text(encoding="utf-8", errors="replace")
         except OSError as e:
-            excerpt_blocks.append(
-                f"--- {source_id} ---\n(read error: {e})"
-            )
+            excerpt_blocks.append(f"--- {source_id} ---\n(read error: {e})")
             continue
 
         excerpt = content[:max_chars_per_source]
@@ -477,9 +465,7 @@ async def _load_source_excerpts(
             if len(content) > max_chars_per_source
             else ""
         )
-        excerpt_blocks.append(
-            f"--- {source_id} ---\n{excerpt}{truncation_note}"
-        )
+        excerpt_blocks.append(f"--- {source_id} ---\n{excerpt}{truncation_note}")
 
     return "\n\n".join(excerpt_blocks)
 

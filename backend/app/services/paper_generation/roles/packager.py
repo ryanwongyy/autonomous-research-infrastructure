@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -188,7 +188,7 @@ async def build_package(
             },
             "component_hashes": component_hashes,
             "merkle_root": merkle_root,
-            "packaged_at": datetime.now(timezone.utc).isoformat(),
+            "packaged_at": datetime.now(UTC).isoformat(),
         },
         indent=2,
     )
@@ -229,9 +229,7 @@ async def build_package(
     )
     ack_records = ack_result.scalars().all()
     if ack_records:
-        ack_lines = [
-            a.acknowledgment_text for a in ack_records if a.acknowledgment_text
-        ]
+        ack_lines = [a.acknowledgment_text for a in ack_records if a.acknowledgment_text]
         if ack_lines:
             disclosure_text += "\n\nACKNOWLEDGMENTS\n\n" + " ".join(ack_lines)
 
@@ -339,9 +337,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -393,9 +389,7 @@ def _write_package_artifacts(
                 f.write(manuscript_latex)
             out["manuscript"] = manuscript_file
         except OSError as e:
-            logger.warning(
-                "Packager: failed to write manuscript.tex: %s", e
-            )
+            logger.warning("Packager: failed to write manuscript.tex: %s", e)
 
     if code_content:
         code_dir = os.path.join(package_path, "code")

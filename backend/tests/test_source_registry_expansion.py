@@ -33,7 +33,6 @@ import json
 
 from seeds.source_cards import SOURCE_CARDS
 
-
 # ── Required new sources ───────────────────────────────────────────────────
 
 NEW_TIER_A_IDS = {
@@ -129,9 +128,7 @@ def test_fragility_score_is_in_range():
     by_id = {sc["id"]: sc for sc in SOURCE_CARDS}
     for new_id in NEW_TIER_A_IDS:
         score = by_id[new_id]["fragility_score"]
-        assert 0.0 <= score <= 1.0, (
-            f"{new_id}.fragility_score = {score} (must be in [0, 1])"
-        )
+        assert 0.0 <= score <= 1.0, f"{new_id}.fragility_score = {score} (must be in [0, 1])"
 
 
 # ── Integrity ──────────────────────────────────────────────────────────────
@@ -150,8 +147,7 @@ def test_total_source_count_at_or_above_expansion():
     """Lock in the post-PR-#70 count. If this drops, an entry was
     deleted — investigate before merging."""
     assert len(SOURCE_CARDS) >= 23, (
-        f"Expected >=23 source cards (18 pre-PR + 5 added), "
-        f"got {len(SOURCE_CARDS)}."
+        f"Expected >=23 source cards (18 pre-PR + 5 added), got {len(SOURCE_CARDS)}."
     )
 
 

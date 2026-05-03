@@ -28,7 +28,6 @@ import pytest
 from app.services.paper_generation.roles import verifier as verifier_mod
 from app.services.paper_generation.roles.verifier import verify_manuscript
 
-
 # ── verify_manuscript supports status_filter ─────────────────────────────────
 
 
@@ -37,9 +36,7 @@ def test_verify_manuscript_signature_accepts_status_filter():
     parameter so callers can request 'pending'-only re-verification."""
     sig = inspect.signature(verify_manuscript)
     params = sig.parameters
-    assert "status_filter" in params, (
-        "verify_manuscript must accept a status_filter parameter."
-    )
+    assert "status_filter" in params, "verify_manuscript must accept a status_filter parameter."
     # Default should be None (= verify all claims, current behavior).
     assert params["status_filter"].default is None
 
@@ -52,12 +49,10 @@ def test_verify_manuscript_phase1_applies_status_filter():
     # Look for "if status_filter is not None" guard followed by a
     # .where(... verification_status ...) call.
     assert "if status_filter is not None" in src, (
-        "verify_manuscript must guard the filter so default behavior "
-        "is unchanged."
+        "verify_manuscript must guard the filter so default behavior is unchanged."
     )
     assert "ClaimMap.verification_status == status_filter" in src, (
-        "Phase 1 must filter ClaimMap.verification_status when status_filter "
-        "is provided."
+        "Phase 1 must filter ClaimMap.verification_status when status_filter is provided."
     )
 
 
@@ -87,8 +82,7 @@ def test_endpoint_is_registered():
     from app.api import papers as papers_module
 
     routes = [
-        r for r in papers_module.router.routes
-        if hasattr(r, "path") and "re-verify" in r.path
+        r for r in papers_module.router.routes if hasattr(r, "path") and "re-verify" in r.path
     ]
     assert routes, "POST /admin/papers/{id}/re-verify must be registered."
     # Must be a POST.
@@ -102,13 +96,14 @@ def test_endpoint_is_registered():
 def test_endpoint_requires_admin_auth():
     """Source check: the endpoint must use admin_key_required."""
     from app.api import papers as papers_module
+
     src = inspect.getsource(papers_module)
 
     # Find the re-verify endpoint definition and look for admin auth.
     re_verify_pos = src.find("re-verify")
     assert re_verify_pos > 0
     # Look 200 chars before for the dependencies declaration.
-    window = src[max(0, re_verify_pos - 200):re_verify_pos + 500]
+    window = src[max(0, re_verify_pos - 200) : re_verify_pos + 500]
     assert "admin_key_required" in window, (
         "Re-verify endpoint must declare dependencies=[Depends(admin_key_required)]."
     )
@@ -127,9 +122,7 @@ async def test_endpoint_returns_404_for_unknown_paper(authed_client):
 
 
 @pytest.mark.asyncio
-async def test_endpoint_handles_paper_with_no_pending_claims(
-    authed_client, db_session
-):
+async def test_endpoint_handles_paper_with_no_pending_claims(authed_client, db_session):
     """When the paper has zero pending claims, the endpoint returns
     immediately with before=after=0 and a no-op message."""
     from app.models.paper import Paper
@@ -170,9 +163,7 @@ async def test_endpoint_handles_paper_with_no_pending_claims(
 
 
 @pytest.mark.asyncio
-async def test_endpoint_rejects_unauth_request_when_admin_key_set(
-    db_engine, monkeypatch
-):
+async def test_endpoint_rejects_unauth_request_when_admin_key_set(db_engine, monkeypatch):
     """When ``ape_admin_key`` IS configured, a request without the
     correct ``X-API-Key`` header returns 403. (When the admin key is
     blank the dependency falls through to api_key_required, which is
@@ -187,9 +178,7 @@ async def test_endpoint_rejects_unauth_request_when_admin_key_set(
 
     monkeypatch.setattr("app.config.settings.ape_admin_key", "secret-admin-key")
 
-    session_factory = async_sessionmaker(
-        db_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def _test_db() -> AsyncGenerator[AsyncSession, None]:
         async with session_factory() as session:
@@ -212,6 +201,7 @@ async def test_endpoint_rejects_unauth_request_when_admin_key_set(
 def test_module_imports_clean():
     """Sanity: papers module loads without errors after the new endpoint."""
     from app.api import papers as papers_module
+
     assert papers_module.router is not None
 
 

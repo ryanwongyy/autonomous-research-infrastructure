@@ -30,7 +30,6 @@ import inspect
 
 from app.services.paper_generation.orchestrator import run_full_pipeline
 
-
 # ── Source-level checks: the deferral logic is wired in ────────────────────
 
 

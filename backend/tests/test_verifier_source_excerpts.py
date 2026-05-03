@@ -41,7 +41,6 @@ from app.services.paper_generation.roles.verifier import (
 )
 from app.utils import utcnow_naive
 
-
 # ── Prompt template ─────────────────────────────────────────────────────────
 
 
@@ -66,9 +65,9 @@ def test_prompt_explains_status_mapping():
     """Tell the LLM what each citation_accuracy status means relative
     to the excerpt."""
     # All three citation_accuracy statuses must have a clear definition.
-    assert 'verified' in VERIFY_USER_PROMPT
-    assert 'fabricated' in VERIFY_USER_PROMPT
-    assert 'unsupported' in VERIFY_USER_PROMPT
+    assert "verified" in VERIFY_USER_PROMPT
+    assert "fabricated" in VERIFY_USER_PROMPT
+    assert "unsupported" in VERIFY_USER_PROMPT
     # The prompt must explicitly differentiate them. Line breaks in the
     # template can split phrases across lines; collapse whitespace so
     # the substring search is wrap-tolerant.
@@ -173,14 +172,10 @@ async def seeded_sources(db_session: AsyncSession, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_load_excerpts_returns_actual_content(
-    db_session, seeded_sources
-):
+async def test_load_excerpts_returns_actual_content(db_session, seeded_sources):
     """When snapshots exist on disk, the excerpt string must contain
     the real content the Verifier needs."""
-    text = await _load_source_excerpts(
-        db_session, {"SC_courtlistener", "SC_federal_register"}
-    )
+    text = await _load_source_excerpts(db_session, {"SC_courtlistener", "SC_federal_register"})
     assert "SC_courtlistener" in text
     assert "SC_federal_register" in text
     # Real content from the seeded files.
@@ -189,9 +184,7 @@ async def test_load_excerpts_returns_actual_content(
 
 
 @pytest.mark.asyncio
-async def test_load_excerpts_truncates_long_content(
-    db_session, tmp_path
-):
+async def test_load_excerpts_truncates_long_content(db_session, tmp_path):
     """Long snapshots truncate at max_chars_per_source so the prompt
     stays bounded."""
     # Seed a SourceCard + a snapshot pointing at a 10K-char file.
@@ -277,9 +270,7 @@ async def test_load_excerpts_no_snapshots_available(db_session):
 
 
 @pytest.mark.asyncio
-async def test_load_excerpts_uses_most_recent_snapshot(
-    db_session, tmp_path
-):
+async def test_load_excerpts_uses_most_recent_snapshot(db_session, tmp_path):
     """When a source has multiple snapshots, the latest fetched_at
     wins — older ones are stale."""
     from datetime import timedelta

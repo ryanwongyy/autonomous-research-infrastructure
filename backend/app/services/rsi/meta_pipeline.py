@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import select, func, case
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.failure_record import FailureRecord
 from app.models.meta_pipeline_run import MetaPipelineRun
-from app.utils import safe_json_loads, utcnow_naive
 from app.models.paper import Paper
 from app.models.rating import Rating
 from app.models.reliability_metric import ReliabilityMetric
 from app.models.rsi_experiment import RSIExperiment
 from app.models.rsi_gate_log import RSIGateLog
 from app.models.submission_outcome import SubmissionOutcome
+from app.utils import safe_json_loads, utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,7 @@ async def run_observation_phase(session: AsyncSession) -> dict:
     total_papers = total_result.scalar() or 0
 
     active_result = await session.execute(
-        select(func.count())
-        .select_from(Paper)
-        .where(Paper.funnel_stage.notin_(["killed", "idea"]))
+        select(func.count()).select_from(Paper).where(Paper.funnel_stage.notin_(["killed", "idea"]))
     )
     active_papers = active_result.scalar() or 0
 
@@ -54,9 +52,7 @@ async def run_observation_phase(session: AsyncSession) -> dict:
     killed_papers = killed_result.scalar() or 0
 
     # -- Global failure rate -----------------------------------------------------
-    failure_count_result = await session.execute(
-        select(func.count()).select_from(FailureRecord)
-    )
+    failure_count_result = await session.execute(select(func.count()).select_from(FailureRecord))
     total_failures = failure_count_result.scalar() or 0
     global_failure_rate = total_failures / total_papers if total_papers > 0 else 0.0
 
@@ -69,17 +65,15 @@ async def run_observation_phase(session: AsyncSession) -> dict:
         .group_by(FailureRecord.failure_type)
         .order_by(func.count().desc())
     )
-    failure_distribution = {
-        row.failure_type: row.cnt for row in failure_dist_result.all()
-    }
+    failure_distribution = {row.failure_type: row.cnt for row in failure_dist_result.all()}
 
     # -- Global acceptance rate --------------------------------------------------
     outcome_result = await session.execute(
         select(
             func.count().label("total"),
-            func.sum(
-                case((SubmissionOutcome.decision == "accepted", 1), else_=0)
-            ).label("accepted"),
+            func.sum(case((SubmissionOutcome.decision == "accepted", 1), else_=0)).label(
+                "accepted"
+            ),
         )
     )
     outcome_row = outcome_result.one()
@@ -92,9 +86,9 @@ async def run_observation_phase(session: AsyncSession) -> dict:
         select(
             ReliabilityMetric.metric_type,
             func.avg(ReliabilityMetric.value).label("avg_val"),
-            func.sum(
-                case((ReliabilityMetric.passes_threshold.is_(True), 1), else_=0)
-            ).label("passing"),
+            func.sum(case((ReliabilityMetric.passes_threshold.is_(True), 1), else_=0)).label(
+                "passing"
+            ),
             func.count().label("total"),
         ).group_by(ReliabilityMetric.metric_type)
     )
@@ -103,9 +97,7 @@ async def run_observation_phase(session: AsyncSession) -> dict:
         total = row.total or 1
         passing = int(row.passing or 0)
         reliability_overview[row.metric_type] = {
-            "avg_value": round(float(row.avg_val), 4)
-            if row.avg_val is not None
-            else 0.0,
+            "avg_value": round(float(row.avg_val), 4) if row.avg_val is not None else 0.0,
             "pass_rate": round(passing / total, 4),
             "total_measured": total,
         }
@@ -121,9 +113,7 @@ async def run_observation_phase(session: AsyncSession) -> dict:
     )
     rating_row = rating_result.one()
     tournament_stats = {
-        "avg_mu": round(float(rating_row.avg_mu), 4)
-        if rating_row.avg_mu is not None
-        else 0.0,
+        "avg_mu": round(float(rating_row.avg_mu), 4) if rating_row.avg_mu is not None else 0.0,
         "avg_conservative": round(float(rating_row.avg_cons), 4)
         if rating_row.avg_cons is not None
         else 0.0,
@@ -169,7 +159,7 @@ async def run_observation_phase(session: AsyncSession) -> dict:
     ]
 
     observation = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "pipeline": {
             "total_papers": total_papers,
             "active_papers": active_papers,
@@ -399,9 +389,7 @@ async def _find_supporting_experiments(
 
             # Count papers in family as cohort proxy
             count_result = await session.execute(
-                select(func.count())
-                .select_from(Paper)
-                .where(Paper.family_id == family_id)
+                select(func.count()).select_from(Paper).where(Paper.family_id == family_id)
             )
             cohort_paper_count = count_result.scalar() or 0
 
@@ -518,9 +506,7 @@ async def run_promotion_gate(
             {
                 "target": proposal["target"],
                 "decision": "hold",
-                "reason": proposal.get(
-                    "hold_reason", "Insufficient data or low impact"
-                ),
+                "reason": proposal.get("hold_reason", "Insufficient data or low impact"),
                 "expected_impact": proposal.get("expected_impact", 0.0),
                 "risk_score": proposal.get("risk_score", 0.0),
                 "cohort_paper_count": proposal.get("cohort_paper_count", 0),
@@ -627,9 +613,7 @@ async def execute_meta_cycle(session: AsyncSession) -> dict:
             "rejected": promotion["rejected_count"],
             "overall_decision": overall_decision,
             "trend": observations.get("cohort_trends", {}).get("trend", "stable"),
-            "global_failure_rate": observations.get("failure", {}).get(
-                "global_failure_rate", 0.0
-            ),
+            "global_failure_rate": observations.get("failure", {}).get("global_failure_rate", 0.0),
             "global_acceptance_rate": observations.get("acceptance", {}).get(
                 "global_acceptance_rate", 0.0
             ),
@@ -685,9 +669,7 @@ async def get_meta_pipeline_run(
 
     Returns None if the run does not exist.
     """
-    result = await session.execute(
-        select(MetaPipelineRun).where(MetaPipelineRun.id == run_id)
-    )
+    result = await session.execute(select(MetaPipelineRun).where(MetaPipelineRun.id == run_id))
     run = result.scalar_one_or_none()
     if run is None:
         return None

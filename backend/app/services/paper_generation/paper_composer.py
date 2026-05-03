@@ -3,10 +3,10 @@ import os
 import subprocess
 from dataclasses import dataclass
 
-from app.services.paper_generation.idea_generator import ResearchIdea
-from app.services.paper_generation.data_fetcher import DataResult
-from app.services.paper_generation.code_writer import CodeResult
 from app.services.llm.router import get_generation_provider
+from app.services.paper_generation.code_writer import CodeResult
+from app.services.paper_generation.data_fetcher import DataResult
+from app.services.paper_generation.idea_generator import ResearchIdea
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,9 @@ async def compose_paper(
                 timeout=60,
             )
             if result.returncode != 0 and pass_num == 1:
-                compilation_error = result.stderr[:500] if result.stderr else "pdflatex returned non-zero"
+                compilation_error = (
+                    result.stderr[:500] if result.stderr else "pdflatex returned non-zero"
+                )
                 logger.warning("pdflatex failed (pass %d): %s", pass_num + 1, compilation_error)
 
         candidate = os.path.join(paper_dir, "paper.pdf")

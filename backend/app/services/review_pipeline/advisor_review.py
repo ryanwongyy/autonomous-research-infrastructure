@@ -14,11 +14,11 @@ import logging
 
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import async_session
 from app.models.paper import Paper
 from app.models.review import Review
 from app.services.llm.router import get_provider_for_model
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -100,5 +100,11 @@ async def run_advisor_review(paper_id: str) -> bool:
 
         await db.commit()
 
-    logger.info("[%s] Advisor review: %d/%d passed (threshold: %d)", paper_id, pass_count, len(advisor_models), threshold)
+    logger.info(
+        "[%s] Advisor review: %d/%d passed (threshold: %d)",
+        paper_id,
+        pass_count,
+        len(advisor_models),
+        threshold,
+    )
     return pass_count >= threshold

@@ -45,8 +45,13 @@ async def run_structural_review(session: AsyncSession, paper_id: str) -> Review:
             family_id=None,
             verdict="fail",
             severity="critical",
-            issues=[{"check": "paper_exists", "severity": "critical",
-                     "message": f"Paper '{paper_id}' not found."}],
+            issues=[
+                {
+                    "check": "paper_exists",
+                    "severity": "critical",
+                    "message": f"Paper '{paper_id}' not found.",
+                }
+            ],
             content="Structural review aborted: paper not found.",
         )
 
@@ -59,33 +64,37 @@ async def run_structural_review(session: AsyncSession, paper_id: str) -> Review:
 
     if not lock_result["valid"]:
         for violation in lock_result.get("violations", []):
-            issues.append({
-                "check": "lock_integrity",
-                "severity": "critical",
-                "message": violation,
-            })
+            issues.append(
+                {
+                    "check": "lock_integrity",
+                    "severity": "critical",
+                    "message": violation,
+                }
+            )
 
     # Verify lock version consistency between artifact and paper record.
     if lock_result.get("lock_version", 0) > 0:
         if lock_result["lock_version"] != paper.lock_version:
-            issues.append({
-                "check": "lock_version_mismatch",
-                "severity": "critical",
-                "message": (
-                    f"LockArtifact version ({lock_result['lock_version']}) "
-                    f"does not match Paper.lock_version ({paper.lock_version})."
-                ),
-            })
+            issues.append(
+                {
+                    "check": "lock_version_mismatch",
+                    "severity": "critical",
+                    "message": (
+                        f"LockArtifact version ({lock_result['lock_version']}) "
+                        f"does not match Paper.lock_version ({paper.lock_version})."
+                    ),
+                }
+            )
     else:
         # No active lock at all
         if paper.lock_version > 0:
-            issues.append({
-                "check": "lock_missing",
-                "severity": "critical",
-                "message": (
-                    "Paper has lock_version > 0 but no active lock artifact found."
-                ),
-            })
+            issues.append(
+                {
+                    "check": "lock_missing",
+                    "severity": "critical",
+                    "message": ("Paper has lock_version > 0 but no active lock artifact found."),
+                }
+            )
 
     # ------------------------------------------------------------------
     # 2. Required artifacts present
@@ -98,12 +107,14 @@ async def run_structural_review(session: AsyncSession, paper_id: str) -> Review:
 
     for artifact_name, artifact_path in artifact_checks.items():
         if not artifact_path:
-            issues.append({
-                "check": "artifact_missing",
-                "severity": "critical" if artifact_name == "manuscript" else "warning",
-                "message": f"Required artifact missing: {artifact_name}",
-                "artifact": artifact_name,
-            })
+            issues.append(
+                {
+                    "check": "artifact_missing",
+                    "severity": "critical" if artifact_name == "manuscript" else "warning",
+                    "message": f"Required artifact missing: {artifact_name}",
+                    "artifact": artifact_name,
+                }
+            )
 
     # ------------------------------------------------------------------
     # 3. Claim map coverage
@@ -113,11 +124,13 @@ async def run_structural_review(session: AsyncSession, paper_id: str) -> Review:
     claims: list[ClaimMap] = list(claims_result.scalars().all())
 
     if not claims:
-        issues.append({
-            "check": "claim_map_empty",
-            "severity": "critical",
-            "message": "No claim map entries found. Every central claim needs a ClaimMap entry.",
-        })
+        issues.append(
+            {
+                "check": "claim_map_empty",
+                "severity": "critical",
+                "message": "No claim map entries found. Every central claim needs a ClaimMap entry.",
+            }
+        )
     else:
         # A claim is considered "linked" if it has ANY of three pointers:
         #
@@ -147,31 +160,35 @@ async def run_structural_review(session: AsyncSession, paper_id: str) -> Review:
 
         unlinked = [c for c in claims if not _is_linked(c)]
         if unlinked:
-            issues.append({
-                "check": "claim_map_unlinked",
-                "severity": "warning",
-                "message": (
-                    f"{len(unlinked)} claim(s) have no source card, "
-                    f"source span, or result object link."
-                ),
-                "claim_ids": [c.id for c in unlinked],
-            })
+            issues.append(
+                {
+                    "check": "claim_map_unlinked",
+                    "severity": "warning",
+                    "message": (
+                        f"{len(unlinked)} claim(s) have no source card, "
+                        f"source span, or result object link."
+                    ),
+                    "claim_ids": [c.id for c in unlinked],
+                }
+            )
 
         # Check for central claims specifically.
         central_types = {"empirical", "doctrinal"}
         central_claims = [c for c in claims if c.claim_type.lower() in central_types]
         unlinked_central = [c for c in central_claims if not _is_linked(c)]
         if unlinked_central:
-            issues.append({
-                "check": "central_claim_unlinked",
-                "severity": "critical",
-                "message": (
-                    f"{len(unlinked_central)} central claim(s) "
-                    f"(empirical/doctrinal) have no source, span, or "
-                    f"result link."
-                ),
-                "claim_ids": [c.id for c in unlinked_central],
-            })
+            issues.append(
+                {
+                    "check": "central_claim_unlinked",
+                    "severity": "critical",
+                    "message": (
+                        f"{len(unlinked_central)} central claim(s) "
+                        f"(empirical/doctrinal) have no source, span, or "
+                        f"result link."
+                    ),
+                    "claim_ids": [c.id for c in unlinked_central],
+                }
+            )
 
         # Quality signal: how many claims are linked ONLY via the soft
         # source_span_ref path? High soft-link rates mean the Drafter is
@@ -179,7 +196,8 @@ async def run_structural_review(session: AsyncSession, paper_id: str) -> Review:
         # operators to track without being a structural failure. Logged
         # at INFO; not added to issues.
         soft_linked = [
-            c for c in claims
+            c
+            for c in claims
             if c.source_card_id is None
             and c.result_object_ref is None
             and c.source_span_ref is not None
@@ -288,6 +306,7 @@ async def _load_manuscript_text(paper: Paper) -> str | None:
     if tex_path:
         try:
             import aiofiles
+
             async with aiofiles.open(tex_path) as f:
                 return await f.read()
         except (FileNotFoundError, ImportError):
@@ -321,12 +340,14 @@ def _check_orphan_references(text: str) -> list[dict]:
     for orphan in sorted(orphans):
         prefix = orphan.split(":")[0] if ":" in orphan else "unknown"
         entity = {"tab": "Table", "fig": "Figure", "eq": "Equation"}.get(prefix, prefix)
-        issues.append({
-            "check": "orphan_reference",
-            "severity": "warning",
-            "message": f"{entity} reference '\\ref{{{orphan}}}' has no matching \\label.",
-            "ref": orphan,
-        })
+        issues.append(
+            {
+                "check": "orphan_reference",
+                "severity": "warning",
+                "message": f"{entity} reference '\\ref{{{orphan}}}' has no matching \\label.",
+                "ref": orphan,
+            }
+        )
 
     return issues
 
@@ -356,12 +377,14 @@ def _check_citation_completeness(text: str) -> list[dict]:
     if bib_keys and missing:
         # Only flag if bibitem-style bibliography is in use.
         for key in sorted(missing):
-            issues.append({
-                "check": "citation_missing_bib",
-                "severity": "warning",
-                "message": f"Citation key '{key}' has no matching \\bibitem.",
-                "key": key,
-            })
+            issues.append(
+                {
+                    "check": "citation_missing_bib",
+                    "severity": "warning",
+                    "message": f"Citation key '{key}' has no matching \\bibitem.",
+                    "key": key,
+                }
+            )
     elif not bib_keys and cited_keys:
         # Using external .bib file -- cannot verify, but note it.
         pass  # Not flagged; external bib verification is out of scope.
@@ -390,20 +413,24 @@ def _check_consistent_numbering(text: str) -> list[dict]:
         has_caption = bool(re.search(r"\\caption", env_body))
 
         if not has_label:
-            issues.append({
-                "check": "missing_label",
-                "severity": "info",
-                "message": f"{env_type.capitalize()} environment without \\label.",
-                "env_type": env_type,
-            })
+            issues.append(
+                {
+                    "check": "missing_label",
+                    "severity": "info",
+                    "message": f"{env_type.capitalize()} environment without \\label.",
+                    "env_type": env_type,
+                }
+            )
 
         if env_type in ("table", "figure") and not has_caption:
-            issues.append({
-                "check": "missing_caption",
-                "severity": "info",
-                "message": f"{env_type.capitalize()} environment without \\caption.",
-                "env_type": env_type,
-            })
+            issues.append(
+                {
+                    "check": "missing_caption",
+                    "severity": "info",
+                    "message": f"{env_type.capitalize()} environment without \\caption.",
+                    "env_type": env_type,
+                }
+            )
 
     return issues
 
@@ -435,6 +462,8 @@ async def _create_review(
     await session.flush()
     logger.info(
         "[%s] L1 structural review: verdict=%s, issues=%d",
-        paper_id, verdict, len(issues),
+        paper_id,
+        verdict,
+        len(issues),
     )
     return review

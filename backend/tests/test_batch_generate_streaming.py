@@ -71,9 +71,7 @@ async def test_generate_endpoint_returns_ndjson_stream(client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_generate_endpoint_emits_error_envelope_on_inner_failure(
-    client, monkeypatch
-):
+async def test_generate_endpoint_emits_error_envelope_on_inner_failure(client, monkeypatch):
     """If the inner work raises, the final stream line is an
     ``{"event":"error",...}`` envelope (not a 500 plus dropped body).
 

@@ -71,9 +71,7 @@ def test_coverage_message_uses_verified_plus_failed_numerator():
     assert pos > 0
     window = src[pos : pos + 800]
     # The message should reference verified+failed in the numerator.
-    assert (
-        "verified'] + claim_report['failed']" in window or "verified + failed" in window
-    )
+    assert "verified'] + claim_report['failed']" in window or "verified + failed" in window
 
 
 def test_coverage_message_mentions_re_verify():

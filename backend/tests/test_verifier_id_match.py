@@ -39,7 +39,6 @@ from app.services.paper_generation.roles.verifier import (
     verify_manuscript,
 )
 
-
 # ── Source-inspection: prompt + claims_data include claim_id ─────────────────
 
 
@@ -105,9 +104,7 @@ async def _add_and_get_claim(session, paper_id, text, claim_type="empirical"):
 async def test_id_match_when_text_does_not_match(seeded_paper, db_session):
     """LLM returns claim_id correctly but a paraphrased claim_text.
     The writeback should use the id and update status."""
-    c = await _add_and_get_claim(
-        db_session, seeded_paper.id, "Original verbatim text"
-    )
+    c = await _add_and_get_claim(db_session, seeded_paper.id, "Original verbatim text")
     verifications: list[dict[str, Any]] = [
         {
             "claim_id": c.id,
@@ -115,15 +112,9 @@ async def test_id_match_when_text_does_not_match(seeded_paper, db_session):
             "overall": "pass",
         }
     ]
-    await _update_claim_statuses(
-        db_session, seeded_paper.id, [c], verifications
-    )
+    await _update_claim_statuses(db_session, seeded_paper.id, [c], verifications)
     await db_session.commit()
-    refreshed = (
-        await db_session.execute(
-            select(ClaimMap).where(ClaimMap.id == c.id)
-        )
-    ).scalar_one()
+    refreshed = (await db_session.execute(select(ClaimMap).where(ClaimMap.id == c.id))).scalar_one()
     assert refreshed.verification_status == "verified", (
         "ID match should resolve claim regardless of text mismatch."
     )
@@ -133,22 +124,16 @@ async def test_id_match_when_text_does_not_match(seeded_paper, db_session):
 async def test_text_fallback_when_id_missing(seeded_paper, db_session):
     """LLM omits claim_id (older response shape) but echoes claim_text
     exactly. Text fallback should still match."""
-    c = await _add_and_get_claim(
-        db_session, seeded_paper.id, "Exact text echo"
-    )
-    verifications = [{
-        "claim_text": "Exact text echo",
-        "overall": "fail",
-    }]  # no claim_id
-    await _update_claim_statuses(
-        db_session, seeded_paper.id, [c], verifications
-    )
+    c = await _add_and_get_claim(db_session, seeded_paper.id, "Exact text echo")
+    verifications = [
+        {
+            "claim_text": "Exact text echo",
+            "overall": "fail",
+        }
+    ]  # no claim_id
+    await _update_claim_statuses(db_session, seeded_paper.id, [c], verifications)
     await db_session.commit()
-    refreshed = (
-        await db_session.execute(
-            select(ClaimMap).where(ClaimMap.id == c.id)
-        )
-    ).scalar_one()
+    refreshed = (await db_session.execute(select(ClaimMap).where(ClaimMap.id == c.id))).scalar_one()
     assert refreshed.verification_status == "failed"
 
 
@@ -156,9 +141,7 @@ async def test_text_fallback_when_id_missing(seeded_paper, db_session):
 async def test_unmatched_claim_stays_pending(seeded_paper, db_session, caplog):
     """LLM response doesn't include this claim by id or text. Status
     stays pending and a WARNING is logged."""
-    c = await _add_and_get_claim(
-        db_session, seeded_paper.id, "Original text"
-    )
+    c = await _add_and_get_claim(db_session, seeded_paper.id, "Original text")
     verifications = [
         {
             "claim_id": 99999,  # different id
@@ -170,29 +153,18 @@ async def test_unmatched_claim_stays_pending(seeded_paper, db_session, caplog):
         logging.WARNING,
         logger="app.services.paper_generation.roles.verifier",
     ):
-        await _update_claim_statuses(
-            db_session, seeded_paper.id, [c], verifications
-        )
+        await _update_claim_statuses(db_session, seeded_paper.id, [c], verifications)
     await db_session.commit()
 
-    refreshed = (
-        await db_session.execute(
-            select(ClaimMap).where(ClaimMap.id == c.id)
-        )
-    ).scalar_one()
+    refreshed = (await db_session.execute(select(ClaimMap).where(ClaimMap.id == c.id))).scalar_one()
     assert refreshed.verification_status == "pending"
 
-    warnings = [
-        r for r in caplog.records
-        if "unmatched claim" in r.getMessage()
-    ]
+    warnings = [r for r in caplog.records if "unmatched claim" in r.getMessage()]
     assert warnings, "Expected a WARNING log mentioning unmatched claim(s)"
 
 
 @pytest.mark.asyncio
-async def test_apep_6fc2020e_shape_now_resolves_all_claims(
-    seeded_paper, db_session
-):
+async def test_apep_6fc2020e_shape_now_resolves_all_claims(seeded_paper, db_session):
     """Mirror production paper's shape: 25 claims, LLM returns ID for
     every one, but paraphrases 20 of the texts.
 
@@ -214,27 +186,28 @@ async def test_apep_6fc2020e_shape_now_resolves_all_claims(
     # last 20 paraphrase.
     verifications = []
     for i, c in enumerate(claims):
-        verifications.append({
-            "claim_id": c.id,
-            "claim_text": (
-                c.claim_text if i < 5
-                else f"summary of #{i}: <paraphrased differently>"
-            ),
-            "overall": "pass" if i < 18 else "fail",
-        })
+        verifications.append(
+            {
+                "claim_id": c.id,
+                "claim_text": (
+                    c.claim_text if i < 5 else f"summary of #{i}: <paraphrased differently>"
+                ),
+                "overall": "pass" if i < 18 else "fail",
+            }
+        )
 
-    await _update_claim_statuses(
-        db_session, seeded_paper.id, claims, verifications
-    )
+    await _update_claim_statuses(db_session, seeded_paper.id, claims, verifications)
     await db_session.commit()
 
     statuses = (
-        await db_session.execute(
-            select(ClaimMap.verification_status).where(
-                ClaimMap.paper_id == seeded_paper.id
+        (
+            await db_session.execute(
+                select(ClaimMap.verification_status).where(ClaimMap.paper_id == seeded_paper.id)
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     pending = sum(1 for s in statuses if s == "pending")
     verified = sum(1 for s in statuses if s == "verified")

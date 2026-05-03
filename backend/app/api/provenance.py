@@ -1,14 +1,14 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models.paper import Paper
 from app.models.claim_map import ClaimMap
+from app.models.paper import Paper
 from app.models.source_card import SourceCard
 from app.models.source_snapshot import SourceSnapshot
 from app.utils import safe_json_loads, utcnow_naive
@@ -27,12 +27,7 @@ async def list_paper_claims(paper_id: str, db: AsyncSession = Depends(get_db)):
     if not paper:
         raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
 
-    query = (
-        select(ClaimMap)
-        .where(ClaimMap.paper_id == paper_id)
-        .order_by(ClaimMap.id)
-        .limit(500)
-    )
+    query = select(ClaimMap).where(ClaimMap.paper_id == paper_id).order_by(ClaimMap.id).limit(500)
     result = await db.execute(query)
     claims = result.scalars().all()
 
@@ -49,12 +44,8 @@ async def list_paper_claims(paper_id: str, db: AsyncSession = Depends(get_db)):
                 "result_object_ref": safe_json_loads(claim.result_object_ref),
                 "verification_status": claim.verification_status,
                 "verified_by": claim.verified_by,
-                "verified_at": claim.verified_at.isoformat()
-                if claim.verified_at
-                else None,
-                "created_at": claim.created_at.isoformat()
-                if claim.created_at
-                else None,
+                "verified_at": claim.verified_at.isoformat() if claim.verified_at else None,
+                "created_at": claim.created_at.isoformat() if claim.created_at else None,
             }
         )
 
@@ -105,9 +96,7 @@ async def get_paper_provenance(paper_id: str, db: AsyncSession = Depends(get_db)
     source_ids = list({c.source_card_id for c in claims if c.source_card_id})
     tier_breakdown = {"A": 0, "B": 0, "C": 0, "unknown": 0}
     if source_ids:
-        sources_result = await db.execute(
-            select(SourceCard).where(SourceCard.id.in_(source_ids))
-        )
+        sources_result = await db.execute(select(SourceCard).where(SourceCard.id.in_(source_ids)))
         sources_map = {s.id: s for s in sources_result.scalars().all()}
         for claim in claims:
             if claim.source_card_id and claim.source_card_id in sources_map:
@@ -125,9 +114,7 @@ async def get_paper_provenance(paper_id: str, db: AsyncSession = Depends(get_db)
     top_source_share = 0.0
     top_source_id = None
     if sourced_count > 0 and source_distribution:
-        top_source_id, top_count = max(
-            source_distribution.items(), key=lambda kv: kv[1]
-        )
+        top_source_id, top_count = max(source_distribution.items(), key=lambda kv: kv[1])
         top_source_share = top_count / sourced_count
     # Warn when one source covers more than half the claims.
     diversity_warning = None
@@ -138,9 +125,7 @@ async def get_paper_provenance(paper_id: str, db: AsyncSession = Depends(get_db)
         )
 
     # Source freshness: batch query for latest snapshot per source
-    stale_threshold = datetime.now(timezone.utc) - timedelta(
-        days=settings.source_stale_days
-    )
+    stale_threshold = datetime.now(UTC) - timedelta(days=settings.source_stale_days)
     stale_sources = []
     fresh_sources = []
     if source_ids:
@@ -152,15 +137,13 @@ async def get_paper_provenance(paper_id: str, db: AsyncSession = Depends(get_db)
             .where(SourceSnapshot.source_card_id.in_(source_ids))
             .group_by(SourceSnapshot.source_card_id)
         )
-        snap_map = {
-            row.source_card_id: row.latest_fetched for row in snap_results.all()
-        }
+        snap_map = {row.source_card_id: row.latest_fetched for row in snap_results.all()}
 
         for src_id in source_ids:
             fetched_at = snap_map.get(src_id)
             if fetched_at:
                 if fetched_at.tzinfo is None:
-                    fetched_at = fetched_at.replace(tzinfo=timezone.utc)
+                    fetched_at = fetched_at.replace(tzinfo=UTC)
                 if fetched_at < stale_threshold:
                     stale_sources.append(src_id)
                 else:
@@ -242,9 +225,7 @@ async def trigger_claim_verification(paper_id: str, db: AsyncSession = Depends(g
     skipped = 0
 
     # Batch-load all referenced snapshots
-    snapshot_ids = list(
-        {c.source_snapshot_id for c in pending_claims if c.source_snapshot_id}
-    )
+    snapshot_ids = list({c.source_snapshot_id for c in pending_claims if c.source_snapshot_id})
     snapshot_map: dict[int, bool] = {}
     if snapshot_ids:
         snap_results = await db.execute(
@@ -287,9 +268,7 @@ async def trigger_claim_verification(paper_id: str, db: AsyncSession = Depends(g
     except Exception:
         await db.rollback()
         logger.exception("Failed to persist claim verification for paper %s", paper_id)
-        raise HTTPException(
-            status_code=500, detail="Failed to persist claim verification results"
-        )
+        raise HTTPException(status_code=500, detail="Failed to persist claim verification results")
 
     return {
         "paper_id": paper_id,

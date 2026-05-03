@@ -132,9 +132,7 @@ async def run_provenance_review(session: AsyncSession, paper_id: str) -> Review:
             {
                 "check": "verification_pending",
                 "severity": "warning",
-                "message": (
-                    f"{claim_report['pending']} claim(s) still pending verification."
-                ),
+                "message": (f"{claim_report['pending']} claim(s) still pending verification."),
             }
         )
 
@@ -240,9 +238,7 @@ async def run_provenance_review(session: AsyncSession, paper_id: str) -> Review:
 # ---------------------------------------------------------------------------
 
 
-async def _check_direct_quotes(
-    session: AsyncSession, paper_id: str, paper: Paper
-) -> list[dict]:
+async def _check_direct_quotes(session: AsyncSession, paper_id: str, paper: Paper) -> list[dict]:
     """Check that direct quotes in claims can be string-matched against source text.
 
     For each claim that has a source_span_ref, verify that the claim text
@@ -260,9 +256,7 @@ async def _check_direct_quotes(
 
     for claim in claims_with_spans:
         # Extract quoted text from the claim (text between quotation marks).
-        quoted_fragments = re.findall(
-            r'["\u201c]([^"\u201d]+)["\u201d]', claim.claim_text
-        )
+        quoted_fragments = re.findall(r'["\u201c]([^"\u201d]+)["\u201d]', claim.claim_text)
         if not quoted_fragments:
             continue  # No direct quotes to check.
 
@@ -321,9 +315,7 @@ async def _check_direct_quotes(
     return issues
 
 
-async def _check_data_object_resolution(
-    session: AsyncSession, paper_id: str
-) -> list[dict]:
+async def _check_data_object_resolution(session: AsyncSession, paper_id: str) -> list[dict]:
     """Check that every claim with a result_object_ref actually resolves.
 
     Verifies that the referenced result object has a valid structure and
@@ -346,9 +338,7 @@ async def _check_data_object_resolution(
                 {
                     "check": "result_ref_invalid_json",
                     "severity": "critical",
-                    "message": (
-                        f"Claim {claim.id} has malformed result_object_ref JSON."
-                    ),
+                    "message": (f"Claim {claim.id} has malformed result_object_ref JSON."),
                     "claim_id": claim.id,
                 }
             )
@@ -407,9 +397,7 @@ async def _check_source_hash_drift(session: AsyncSession, paper_id: str) -> list
 
         # Load snapshot.
         if claim.source_snapshot_id not in snapshot_cache:
-            sn_stmt = select(SourceSnapshot).where(
-                SourceSnapshot.id == claim.source_snapshot_id
-            )
+            sn_stmt = select(SourceSnapshot).where(SourceSnapshot.id == claim.source_snapshot_id)
             sn_result = await session.execute(sn_stmt)
             snapshot_cache[claim.source_snapshot_id] = sn_result.scalar_one_or_none()
 
@@ -453,9 +441,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper | None:
     return result.scalar_one_or_none()
 
 
-async def _load_snapshot(
-    session: AsyncSession, snapshot_id: int | None
-) -> SourceSnapshot | None:
+async def _load_snapshot(session: AsyncSession, snapshot_id: int | None) -> SourceSnapshot | None:
     if snapshot_id is None:
         return None
     stmt = select(SourceSnapshot).where(SourceSnapshot.id == snapshot_id)
@@ -470,7 +456,7 @@ async def _load_snapshot_text(snapshot: SourceSnapshot) -> str | None:
     try:
         import aiofiles
 
-        async with aiofiles.open(snapshot.snapshot_path, "r") as f:
+        async with aiofiles.open(snapshot.snapshot_path) as f:
             return await f.read()
     except (FileNotFoundError, ImportError, UnicodeDecodeError):
         return None

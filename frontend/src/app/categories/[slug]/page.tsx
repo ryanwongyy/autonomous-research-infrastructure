@@ -36,7 +36,7 @@ export default async function CategoryPage({
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
-      <nav className="mb-4 text-sm text-muted-foreground">
+      <nav aria-label="Breadcrumb" className="mb-4 text-sm text-muted-foreground">
         <Link href="/categories" className="hover:text-foreground">
           Categories
         </Link>

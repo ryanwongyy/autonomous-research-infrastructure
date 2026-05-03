@@ -31,8 +31,7 @@ def test_coverage_ratio_uses_verified_plus_failed():
     src = inspect.getsource(verify_paper_claims)
     # Old formula was `verified / total_claims` — must be gone.
     assert "verified / total_claims" not in src, (
-        "Old coverage formula (verified-only) must not appear; PR #54 "
-        "changed to processed/total."
+        "Old coverage formula (verified-only) must not appear; PR #54 changed to processed/total."
     )
     # New formula must add verified + failed (in that order or
     # symmetric).
@@ -60,7 +59,7 @@ def test_zero_processed_does_not_crash_pass_rate():
     # Look for a defensive 'if processed > 0' or similar guard.
     assert (
         "if processed > 0" in src
-        or "if total_claims > 0" in src and "pass_rate = verified / processed" not in src
+        or ("if total_claims > 0" in src and "pass_rate = verified / processed" not in src)
         or "processed > 0 else 0" in src
     ), "pass_rate must guard against zero division."
 

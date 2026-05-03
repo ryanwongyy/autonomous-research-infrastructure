@@ -406,9 +406,7 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper:
     return paper
 
 
-async def _load_active_lock(
-    session: AsyncSession, paper_id: str
-) -> LockArtifact | None:
+async def _load_active_lock(session: AsyncSession, paper_id: str) -> LockArtifact | None:
     stmt = (
         select(LockArtifact)
         .where(
@@ -484,9 +482,7 @@ def _parse_json_object(response: str) -> dict:
     #25138860483 hit "No analysis code generated" with no diagnostic).
     """
     if not response:
-        logger.warning(
-            "Empty LLM response — cannot parse analysis JSON. Returning fallback."
-        )
+        logger.warning("Empty LLM response — cannot parse analysis JSON. Returning fallback.")
         return {"code": "", "requirements": "", "expected_outputs": []}
 
     # Try the full-JSON-extract path first.
@@ -624,15 +620,13 @@ except Exception as e:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=tmpdir,
             )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=120
-            )
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=120)
             return {
                 "stdout": stdout_bytes.decode("utf-8", errors="replace"),
                 "stderr": stderr_bytes.decode("utf-8", errors="replace"),
                 "exit_code": proc.returncode or 0,
             }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if proc:
                 proc.kill()
             return {
@@ -694,15 +688,13 @@ async def _execute_in_container(code_content: str) -> dict[str, Any]:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=120
-            )
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=120)
             return {
                 "stdout": stdout_bytes.decode("utf-8", errors="replace"),
                 "stderr": stderr_bytes.decode("utf-8", errors="replace"),
                 "exit_code": proc.returncode or 0,
             }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if proc:
                 proc.kill()
             # Force-remove the container if stuck
@@ -713,9 +705,7 @@ async def _execute_in_container(code_content: str) -> dict[str, Any]:
                 "exit_code": -1,
             }
         except Exception as e:
-            logger.warning(
-                "Docker execution failed: %s — falling back to subprocess", e
-            )
+            logger.warning("Docker execution failed: %s — falling back to subprocess", e)
             return await _execute_in_subprocess(code_content)
 
 

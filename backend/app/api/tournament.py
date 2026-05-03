@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy import select
@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.match import Match
-from app.models.tournament_run import TournamentRun
 from app.models.paper_family import PaperFamily
+from app.models.tournament_run import TournamentRun
 from app.schemas.match import MatchResponse
 from app.services.tournament.engine import execute_all_family_tournaments, execute_tournament_run
 
@@ -39,13 +39,15 @@ async def trigger_tournament_run(
     if family_id == "all":
         # Run for all eligible families
         background_tasks.add_task(execute_all_family_tournaments)
-        return {"status": "started", "family_id": "all", "message": "Running for all eligible families"}
+        return {
+            "status": "started",
+            "family_id": "all",
+            "message": "Running for all eligible families",
+        }
 
     # Validate that the family exists
     family = (
-        await db.execute(
-            select(PaperFamily).where(PaperFamily.id == family_id)
-        )
+        await db.execute(select(PaperFamily).where(PaperFamily.id == family_id))
     ).scalar_one_or_none()
 
     if not family:
@@ -132,21 +134,23 @@ async def get_tournament_run(run_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Tournament run not found")
 
     matches = (
-        await db.execute(
-            select(Match)
-            .where(Match.tournament_run_id == run_id)
-            .order_by(Match.batch_number, Match.id)
-            .limit(1000)
+        (
+            await db.execute(
+                select(Match)
+                .where(Match.tournament_run_id == run_id)
+                .order_by(Match.batch_number, Match.id)
+                .limit(1000)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     # Load family info if present
     family_info = None
     if run.family_id:
         family = (
-            await db.execute(
-                select(PaperFamily).where(PaperFamily.id == run.family_id)
-            )
+            await db.execute(select(PaperFamily).where(PaperFamily.id == run.family_id))
         ).scalar_one_or_none()
         if family:
             family_info = {

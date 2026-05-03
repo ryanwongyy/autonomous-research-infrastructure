@@ -25,7 +25,6 @@ from app.services.paper_generation.roles.verifier import (
     verify_manuscript,
 )
 
-
 # ── Issue 1: Drafter soft source-ref filter ────────────────────────────
 
 
@@ -41,9 +40,7 @@ def test_drafter_preserves_unregistered_source_ref_in_source_span_ref():
     )
     # The soft path must check `registered=False` so the verifier
     # can tell registered vs unregistered claims apart.
-    assert (
-        '"registered": False' in src or "registered=False" in src or "registered" in src
-    ), (
+    assert '"registered": False' in src or "registered=False" in src or "registered" in src, (
         "Soft-source records must be tagged so Verifier can distinguish "
         "them from registered-source claims."
     )
@@ -88,16 +85,12 @@ def test_verifier_batches_claims():
     )
 
     src = inspect.getsource(verify_manuscript)
-    assert "_VERIFIER_BATCH_SIZE" in src, (
-        "verify_manuscript must reference _VERIFIER_BATCH_SIZE."
-    )
+    assert "_VERIFIER_BATCH_SIZE" in src, "verify_manuscript must reference _VERIFIER_BATCH_SIZE."
     assert "for batch_start in range" in src or "batch_start" in src, (
         "verify_manuscript must iterate claims in batches."
     )
     # Aggregation must accumulate across batches
-    assert "aggregate_results" in src, (
-        "verify_manuscript must aggregate per-batch results."
-    )
+    assert "aggregate_results" in src, "verify_manuscript must aggregate per-batch results."
 
 
 # ── Issue 4: Source diversity in provenance ────────────────────────────
@@ -110,12 +103,9 @@ def test_provenance_endpoint_includes_diversity_score():
     from app.api.provenance import get_paper_provenance
 
     src = inspect.getsource(get_paper_provenance)
-    assert "source_diversity" in src, (
-        "Provenance endpoint must compute a source_diversity block."
-    )
+    assert "source_diversity" in src, "Provenance endpoint must compute a source_diversity block."
     assert "top_source_share" in src, (
-        "Provenance endpoint must compute the share of claims from "
-        "the most-used source."
+        "Provenance endpoint must compute the share of claims from the most-used source."
     )
     assert "diversity_warning" in src, (
         "Provenance endpoint must emit a warning when one source covers >50% of claims."

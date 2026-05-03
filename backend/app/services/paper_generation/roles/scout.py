@@ -210,9 +210,7 @@ async def generate_ideas(
         card = _normalise_idea_card(raw, family_id)
         validated.append(card)
 
-    logger.info(
-        "Scout generated %d idea cards for family %s", len(validated), family_id
-    )
+    logger.info("Scout generated %d idea cards for family %s", len(validated), family_id)
     return validated
 
 
