@@ -196,15 +196,9 @@ def test_generate_falls_through_when_retry_also_broken():
     for line in window.splitlines():
         stripped = line.strip()
         # Comments and string-literal lines are fine.
-        if (
-            stripped.startswith("#")
-            or stripped.startswith('"')
-            or stripped.startswith("'")
-        ):
+        if stripped.startswith("#") or stripped.startswith('"') or stripped.startswith("'"):
             continue
-        assert not stripped.startswith("raise "), (
-            f"Retry branch must not raise — found: {line!r}"
-        )
+        assert not stripped.startswith("raise "), f"Retry branch must not raise — found: {line!r}"
 
 
 def test_generate_handles_retry_exceptions_gracefully():

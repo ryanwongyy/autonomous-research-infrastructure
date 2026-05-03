@@ -216,9 +216,7 @@ async def verify_manuscript(
         # Load source excerpts for every source cited by the claims
         # we're verifying. PR #65 — gives the LLM actual text to
         # check claims against rather than just source IDs.
-        cited_source_ids: set[str] = {
-            c.source_card_id for c in claims if c.source_card_id
-        }
+        cited_source_ids: set[str] = {c.source_card_id for c in claims if c.source_card_id}
         source_excerpts = await _load_source_excerpts(s, cited_source_ids)
         protocol_type = lock.lock_protocol_type
         inference_level = _determine_inference_level(protocol_type)
@@ -458,9 +456,7 @@ async def _load_source_excerpts(
         try:
             content = path.read_text(encoding="utf-8", errors="replace")
         except OSError as e:
-            excerpt_blocks.append(
-                f"--- {source_id} ---\n(read error: {e})"
-            )
+            excerpt_blocks.append(f"--- {source_id} ---\n(read error: {e})")
             continue
 
         excerpt = content[:max_chars_per_source]
@@ -469,9 +465,7 @@ async def _load_source_excerpts(
             if len(content) > max_chars_per_source
             else ""
         )
-        excerpt_blocks.append(
-            f"--- {source_id} ---\n{excerpt}{truncation_note}"
-        )
+        excerpt_blocks.append(f"--- {source_id} ---\n{excerpt}{truncation_note}")
 
     return "\n\n".join(excerpt_blocks)
 

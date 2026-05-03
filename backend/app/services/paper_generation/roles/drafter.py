@@ -305,11 +305,7 @@ async def compose_manuscript(
 
         def _format_tier(letter: str) -> str:
             entries = sources_by_tier.get(letter, [])
-            return (
-                "\n".join(entries)
-                if entries
-                else f"  (no Tier {letter} sources registered)"
-            )
+            return "\n".join(entries) if entries else f"  (no Tier {letter} sources registered)"
 
         registered_source_ids_str = (
             "TIER A — primary, audited; SUITABLE for empirical/doctrinal:\n"
