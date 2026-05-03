@@ -255,6 +255,162 @@ SOURCE_CARDS: list[dict] = [
         "fragility_score": 0.20,
         "active": True,
     },
+    {
+        # Mandated by EO 13960 (Dec 2020) — each federal agency
+        # publishes a JSON inventory of its AI use cases. Critical
+        # for "what AI is the federal government actually using"
+        # claims. Covers most of what apep_9afaf116 needed and could
+        # not anchor (the paper claimed federal AI deployment via
+        # USAspending, which has only spending records).
+        "id": "federal_ai_use_cases",
+        "name": "Federal AI Use Case Inventory",
+        "url": "https://ai.gov/ai-use-cases/",
+        "tier": "A",
+        "source_type": "government_registry",
+        "access_method": "bulk_download",
+        "requires_key": False,
+        "canonical_unit": "use-case-by-agency-by-fiscal-year",
+        "claim_permissions": json.dumps([
+            "specific agency AI deployments",
+            "use case descriptions",
+            "stage of deployment",
+            "rights-impacting flag",
+        ]),
+        "claim_prohibitions": json.dumps([
+            "performance or accuracy of deployed systems",
+            "agency claims not in the disclosed inventory",
+        ]),
+        "known_traps": json.dumps([
+            "voluntary level-of-detail",
+            "varying inventory completeness across agencies",
+            "naming inconsistency for same system",
+        ]),
+        "fragility_score": 0.30,
+        "active": True,
+    },
+    {
+        # GAO is the audit arm of Congress; its reports are
+        # authoritative on government-program performance, including
+        # AI procurement and use. Reports often quantify deployment
+        # patterns and compliance gaps that the Federal Register
+        # alone (rule text) and USAspending (money) cannot.
+        "id": "gao_reports",
+        "name": "GAO Reports (Government Accountability Office)",
+        "url": "https://www.gao.gov/reports-testimonies",
+        "tier": "A",
+        "source_type": "government_registry",
+        "access_method": "api",
+        "requires_key": False,
+        "canonical_unit": "report-by-id/recommendation",
+        "claim_permissions": json.dumps([
+            "audited findings on agency program operations",
+            "recommendations to agencies",
+            "implementation status of prior recommendations",
+            "patterns in federal AI use across agencies",
+        ]),
+        "claim_prohibitions": json.dumps([
+            "claims outside the report's scoped audit period",
+            "predictions about future enforcement",
+        ]),
+        "known_traps": json.dumps([
+            "scope of the audit may be narrower than the report title",
+            "recommendation-vs-finding distinction",
+        ]),
+        "fragility_score": 0.20,
+        "active": True,
+    },
+    {
+        # Executive orders, OSTP guidance, and OMB memoranda. The
+        # canonical authority for federal AI policy direction
+        # (e.g. EO 13960, EO 14110, the Blueprint for an AI Bill
+        # of Rights, OMB M-24-10).
+        "id": "whitehouse_ostp",
+        "name": "White House OSTP / Executive Orders / OMB Memoranda",
+        "url": "https://www.whitehouse.gov/ostp/",
+        "tier": "A",
+        "source_type": "government_registry",
+        "access_method": "html_parse",
+        "requires_key": False,
+        "canonical_unit": "executive-instrument-by-date",
+        "claim_permissions": json.dumps([
+            "executive policy direction",
+            "agency mandates from OMB",
+            "high-level governance framework",
+            "principles articulated by the executive branch",
+        ]),
+        "claim_prohibitions": json.dumps([
+            "agency implementation quality",
+            "downstream behavioral change without separate evidence",
+        ]),
+        "known_traps": json.dumps([
+            "EO superseded by a later EO",
+            "principles vs binding requirements distinction",
+        ]),
+        "fragility_score": 0.25,
+        "active": True,
+    },
+    {
+        # USPTO patent filings. Useful for AI invention claims,
+        # patent-quality measures, and the tension between AI as
+        # invention vs AI as inventor (Thaler v. Vidal, etc.).
+        "id": "uspto_patents",
+        "name": "USPTO Patent Database",
+        "url": "https://developer.uspto.gov/api-catalog",
+        "tier": "A",
+        "source_type": "government_registry",
+        "access_method": "api",
+        "requires_key": False,
+        "canonical_unit": "application/patent/family",
+        "claim_permissions": json.dumps([
+            "filing volume by technology classification",
+            "patent grant rates",
+            "assignee concentration",
+            "claim text and inventor-of-record",
+        ]),
+        "claim_prohibitions": json.dumps([
+            "actual invention novelty",
+            "deployment of patented technology",
+            "post-grant value or licensing",
+        ]),
+        "known_traps": json.dumps([
+            "AI-related classifications evolve",
+            "continuation/divisional families inflate counts",
+            "prior-art coverage uneven across decades",
+        ]),
+        "fragility_score": 0.30,
+        "active": True,
+    },
+    {
+        # arXiv — the canonical preprint repository for AI/ML
+        # research. Pairs with OpenAlex (citations + venues) for
+        # bibliometric work; arXiv is where the LLM should cite
+        # specific papers, not just bibliographic indices.
+        "id": "arxiv",
+        "name": "arXiv (preprint repository)",
+        "url": "https://arxiv.org/help/api/index",
+        "tier": "A",
+        "source_type": "research_index",
+        "access_method": "api",
+        "requires_key": False,
+        "canonical_unit": "paper/version-by-id",
+        "claim_permissions": json.dumps([
+            "specific cited works and their content",
+            "research direction by category",
+            "submission timing of specific findings",
+            "version histories of preprints",
+        ]),
+        "claim_prohibitions": json.dumps([
+            "peer-review status (preprints are not peer-reviewed)",
+            "downstream citation impact (use openalex)",
+        ]),
+        "known_traps": json.dumps([
+            "papers withdrawn or superseded",
+            "category drift",
+            "double submissions across categories",
+        ]),
+        "fragility_score": 0.20,
+        "active": True,
+    },
 
     # ------------------------------------------------------------------
     # Tier B -- Structured Public Secondary
