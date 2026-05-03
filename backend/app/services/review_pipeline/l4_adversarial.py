@@ -101,9 +101,7 @@ Return JSON:
 {{"language_issues": [{{"text": str, "issue": str, "severity": "info"|"warning"|"critical", "suggested_fix": str}}], "design_mismatch_count": int, "verdict": "pass"|"revision_needed"|"reject"}}"""
 
 
-async def run_adversarial_review(
-    session: AsyncSession, paper_id: str
-) -> Review:
+async def run_adversarial_review(session: AsyncSession, paper_id: str) -> Review:
     """Run Layer 4 adversarial red-team review.
 
     1. Load manuscript, lock artifact, claim map, source manifest
@@ -128,8 +126,13 @@ async def run_adversarial_review(
             family_id=None,
             verdict="fail",
             severity="critical",
-            issues=[{"check": "paper_exists", "severity": "critical",
-                     "message": f"Paper '{paper_id}' not found."}],
+            issues=[
+                {
+                    "check": "paper_exists",
+                    "severity": "critical",
+                    "message": f"Paper '{paper_id}' not found.",
+                }
+            ],
             content="Adversarial review aborted: paper not found.",
             model_used="multi-model",
             sub_reviews={},
@@ -143,8 +146,13 @@ async def run_adversarial_review(
             family_id=paper.family_id,
             verdict="fail",
             severity="critical",
-            issues=[{"check": "manuscript_missing", "severity": "critical",
-                     "message": "No manuscript content for adversarial review."}],
+            issues=[
+                {
+                    "check": "manuscript_missing",
+                    "severity": "critical",
+                    "message": "No manuscript content for adversarial review.",
+                }
+            ],
             content="Adversarial review aborted: no manuscript content.",
             model_used="multi-model",
             sub_reviews={},
@@ -156,7 +164,9 @@ async def run_adversarial_review(
 
     # Build context strings for prompts.
     lock_context = (
-        f"LOCK ARTIFACT:\n{lock_content[:2000]}" if lock_content else "No lock artifact available."
+        f"LOCK ARTIFACT:\n{lock_content[:2000]}"
+        if lock_content
+        else "No lock artifact available."
     )
     claim_context = _build_claim_context(claims)
     source_context = _build_source_context(source_cards)
@@ -197,7 +207,11 @@ async def run_adversarial_review(
     any_reject = False
 
     check_names = ["alternative_explanation", "source_fragility", "causal_language"]
-    check_models = [ADVERSARIAL_CLAUDE_MODEL, ADVERSARIAL_GPT_MODEL, ADVERSARIAL_CLAUDE_MODEL]
+    check_models = [
+        ADVERSARIAL_CLAUDE_MODEL,
+        ADVERSARIAL_GPT_MODEL,
+        ADVERSARIAL_CLAUDE_MODEL,
+    ]
 
     for i, (name, model_name) in enumerate(zip(check_names, check_models)):
         result = results[i]
@@ -206,11 +220,13 @@ async def run_adversarial_review(
             logger.error(
                 "[%s] Adversarial check '%s' failed: %s", paper_id, name, result
             )
-            all_issues.append({
-                "check": f"adversarial_{name}_error",
-                "severity": "warning",
-                "message": f"Adversarial check '{name}' ({model_name}) failed: {result}",
-            })
+            all_issues.append(
+                {
+                    "check": f"adversarial_{name}_error",
+                    "severity": "warning",
+                    "message": f"Adversarial check '{name}' ({model_name}) failed: {result}",
+                }
+            )
             sub_reviews[name] = {"error": str(result), "model": model_name}
             continue
 
@@ -222,13 +238,15 @@ async def run_adversarial_review(
         }
 
         if parsed is None:
-            all_issues.append({
-                "check": f"adversarial_{name}_parse_error",
-                "severity": "warning",
-                "message": (
-                    f"Could not parse structured response from {name} check ({model_name})."
-                ),
-            })
+            all_issues.append(
+                {
+                    "check": f"adversarial_{name}_parse_error",
+                    "severity": "warning",
+                    "message": (
+                        f"Could not parse structured response from {name} check ({model_name})."
+                    ),
+                }
+            )
             # Try to extract verdict from text.
             if "REJECT" in raw_response.upper()[-500:]:
                 any_reject = True
@@ -383,80 +401,94 @@ def _extract_issues_from_parsed(check_name: str, parsed: dict) -> list[dict]:
             else:
                 severity = "info"
 
-            issues.append({
-                "check": "adversarial_alternative_explanation",
-                "severity": severity,
-                "message": (
-                    f"Alternative explanation for '{alt.get('claim', '?')[:60]}': "
-                    f"{alt.get('alternative', '?')[:120]}"
-                ),
-                "plausibility": plausibility,
-                "addressed": addressed,
-                "recommendation": alt.get("recommendation", ""),
-            })
+            issues.append(
+                {
+                    "check": "adversarial_alternative_explanation",
+                    "severity": severity,
+                    "message": (
+                        f"Alternative explanation for '{alt.get('claim', '?')[:60]}': "
+                        f"{alt.get('alternative', '?')[:120]}"
+                    ),
+                    "plausibility": plausibility,
+                    "addressed": addressed,
+                    "recommendation": alt.get("recommendation", ""),
+                }
+            )
 
         # Check overall threat level.
         threat = parsed.get("overall_threat", "medium")
         if threat == "fatal":
-            issues.append({
-                "check": "adversarial_fatal_threat",
-                "severity": "critical",
-                "message": "Overall alternative explanation threat rated as FATAL.",
-            })
+            issues.append(
+                {
+                    "check": "adversarial_fatal_threat",
+                    "severity": "critical",
+                    "message": "Overall alternative explanation threat rated as FATAL.",
+                }
+            )
 
     elif check_name == "source_fragility":
         for finding in parsed.get("fragility_findings", []):
             severity = finding.get("severity", "warning")
-            issues.append({
-                "check": "adversarial_source_fragility",
-                "severity": severity,
-                "message": (
-                    f"Fragility in '{finding.get('source_or_claim', '?')[:60]}': "
-                    f"{finding.get('concern', '?')[:120]}"
-                ),
-                "recommendation": finding.get("recommendation", ""),
-            })
+            issues.append(
+                {
+                    "check": "adversarial_source_fragility",
+                    "severity": severity,
+                    "message": (
+                        f"Fragility in '{finding.get('source_or_claim', '?')[:60]}': "
+                        f"{finding.get('concern', '?')[:120]}"
+                    ),
+                    "recommendation": finding.get("recommendation", ""),
+                }
+            )
 
         # Check redundancy risk.
         redundancy = parsed.get("redundancy_risk", "")
         if redundancy:
-            issues.append({
-                "check": "adversarial_redundancy",
-                "severity": "warning",
-                "message": f"Redundancy risk: {redundancy[:200]}",
-            })
+            issues.append(
+                {
+                    "check": "adversarial_redundancy",
+                    "severity": "warning",
+                    "message": f"Redundancy risk: {redundancy[:200]}",
+                }
+            )
 
         fragility_level = parsed.get("overall_fragility", "medium")
         if fragility_level == "fatal":
-            issues.append({
-                "check": "adversarial_fatal_fragility",
-                "severity": "critical",
-                "message": "Overall source fragility rated as FATAL.",
-            })
+            issues.append(
+                {
+                    "check": "adversarial_fatal_fragility",
+                    "severity": "critical",
+                    "message": "Overall source fragility rated as FATAL.",
+                }
+            )
 
     elif check_name == "causal_language":
         for lang_issue in parsed.get("language_issues", []):
             severity = lang_issue.get("severity", "warning")
-            issues.append({
-                "check": "adversarial_causal_language",
-                "severity": severity,
-                "message": (
-                    f"Causal language issue: '{lang_issue.get('text', '?')[:60]}' -- "
-                    f"{lang_issue.get('issue', '?')[:120]}"
-                ),
-                "suggested_fix": lang_issue.get("suggested_fix", ""),
-            })
+            issues.append(
+                {
+                    "check": "adversarial_causal_language",
+                    "severity": severity,
+                    "message": (
+                        f"Causal language issue: '{lang_issue.get('text', '?')[:60]}' -- "
+                        f"{lang_issue.get('issue', '?')[:120]}"
+                    ),
+                    "suggested_fix": lang_issue.get("suggested_fix", ""),
+                }
+            )
 
         mismatch_count = parsed.get("design_mismatch_count", 0)
         if mismatch_count > 3:
-            issues.append({
-                "check": "adversarial_design_mismatch",
-                "severity": "critical",
-                "message": (
-                    f"{mismatch_count} design-language mismatches found. "
-                    f"Paper claims more than the research design supports."
-                ),
-            })
+            issues.append(
+                {
+                    "check": "adversarial_design_mismatch",
+                    "severity": "critical",
+                    "message": (
+                        f"{mismatch_count} design-language mismatches found. "
+                        f"Paper claims more than the research design supports."
+                    ),
+                }
+            )
 
     return issues
 
@@ -513,11 +545,20 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper | None:
 
 
 async def _load_manuscript(paper: Paper) -> str | None:
+    """Load manuscript text. Prefers the durable ``manuscript_latex``
+    column (PR #58) over the disk file at ``paper_tex_path`` because
+    Render's ephemeral filesystem wipes the file on every redeploy.
+    See l3_method._load_manuscript for the same fix and rationale.
+    """
+    if paper.manuscript_latex:
+        return paper.manuscript_latex
+
     tex_path = paper.paper_tex_path
     if tex_path:
         try:
             import aiofiles
-            async with aiofiles.open(tex_path, "r") as f:
+
+            async with aiofiles.open(tex_path) as f:
                 return await f.read()
         except (FileNotFoundError, ImportError):
             pass
@@ -586,7 +627,7 @@ def _parse_json_response(response: str) -> dict | None:
     brace_end = response.rfind("}")
     if brace_start >= 0 and brace_end > brace_start:
         try:
-            return json.loads(response[brace_start:brace_end + 1])
+            return json.loads(response[brace_start : brace_end + 1])
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -631,6 +672,9 @@ async def _create_review(
     await session.flush()
     logger.info(
         "[%s] L4 adversarial review: verdict=%s, issues=%d, models=%s",
-        paper_id, verdict, len(issues), model_used,
+        paper_id,
+        verdict,
+        len(issues),
+        model_used,
     )
     return review
