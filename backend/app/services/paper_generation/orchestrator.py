@@ -159,7 +159,9 @@ async def run_full_pipeline(
         report["stages"]["scout"] = stage_report
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_scout"
-            await _set_killed_at_stage(paper_id, "scout", stage_report.get("error"))
+            await _set_killed_at_stage(
+                paper_id, "scout", _stage_failure_message(stage_report)
+            )
             return _finalise_report(report, pipeline_start)
 
         idea_card = stage_report.get("idea_card", {})
@@ -177,7 +179,9 @@ async def run_full_pipeline(
         report["stages"]["designer"] = stage_report
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_designer"
-            await _set_killed_at_stage(paper_id, "designer", stage_report.get("error"))
+            await _set_killed_at_stage(
+                paper_id, "designer", _stage_failure_message(stage_report)
+            )
             return _finalise_report(report, pipeline_start)
 
         # ---------------------------------------------------------------
@@ -193,7 +197,7 @@ async def run_full_pipeline(
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_data_steward"
             await _set_killed_at_stage(
-                paper_id, "data_steward", stage_report.get("error")
+                paper_id, "data_steward", _stage_failure_message(stage_report)
             )
             return _finalise_report(report, pipeline_start)
 
@@ -213,7 +217,9 @@ async def run_full_pipeline(
         report["stages"]["analyst"] = stage_report
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_analyst"
-            await _set_killed_at_stage(paper_id, "analyst", stage_report.get("error"))
+            await _set_killed_at_stage(
+                paper_id, "analyst", _stage_failure_message(stage_report)
+            )
             return _finalise_report(report, pipeline_start)
 
         code_content = stage_report.get("code_content", "")
@@ -234,7 +240,9 @@ async def run_full_pipeline(
         report["stages"]["drafter"] = stage_report
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_drafter"
-            await _set_killed_at_stage(paper_id, "drafter", stage_report.get("error"))
+            await _set_killed_at_stage(
+                paper_id, "drafter", _stage_failure_message(stage_report)
+            )
             return _finalise_report(report, pipeline_start)
 
         manuscript_latex = stage_report.get("manuscript_latex", "")
@@ -1242,6 +1250,27 @@ async def _set_error(paper_id: str, error: str) -> None:
             await db.commit()
     except Exception as e:
         logger.error("Failed to set error on paper %s: %s", paper_id, e)
+
+
+def _stage_failure_message(stage_report: dict) -> str | None:
+    """Extract a human-readable failure message from a stage report.
+
+    Stages report failures via two different keys:
+      - ``error``: set by ``_run_stage`` when an exception was caught
+                   (format: ``f"{ErrorClass}: {message}"``)
+      - ``reason``: set by stage logic when the stage returned a soft
+                   failure (e.g. ``{"status": "failed", "reason":
+                   "Empty design YAML"}``). Production paper
+                   apep_c1502865 was killed at Designer with no
+                   ``error`` key set, so kill_reason ended up as just
+                   ``"killed_at_designer"`` with no diagnostic.
+
+    Try ``error`` first (richer when set, includes class + traceback
+    handle), then fall back to ``reason`` for soft failures. Empty
+    strings are treated as absent so the operator never sees a
+    blank kill_reason suffix.
+    """
+    return stage_report.get("error") or stage_report.get("reason") or None
 
 
 async def _set_killed_at_stage(
