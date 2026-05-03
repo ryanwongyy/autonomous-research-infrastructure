@@ -109,20 +109,24 @@ def test_every_killed_at_branch_calls_helper():
 
 
 def test_killed_at_branches_pass_stage_error_string():
-    """Each helper call passes ``stage_report.get('error')`` as the
-    third arg so the kill_reason includes whatever exception text the
-    wrapper captured. Without this, kill_reason would be just
-    'killed_at_<stage>' with no diagnostic detail."""
+    """Each helper call passes a failure-message extractor as the
+    third arg so the kill_reason includes diagnostic detail.
+
+    PR #76 replaced the direct ``stage_report.get("error")`` read
+    with ``_stage_failure_message(stage_report)`` which falls back
+    to the ``reason`` key for soft failures (Designer/Scout/Analyst
+    can return ``{"status": "failed", "reason": "..."}`` without
+    ever setting ``error``). Production paper apep_c1502865's
+    ``kill_reason`` was just ``"killed_at_designer"`` with no
+    diagnostic — the helper now extracts the soft-failure reason."""
     src = inspect.getsource(orchestrator.run_full_pipeline)
-    # Every helper call should be followed (within the same call site)
-    # by stage_report.get("error").
+    # Every helper call should pass _stage_failure_message(stage_report).
     pattern = re.compile(
-        r"_set_killed_at_stage\s*\([^)]*stage_report\.get\(\s*[\"']error[\"']\s*\)",
+        r"_set_killed_at_stage\s*\([^)]*_stage_failure_message\(\s*stage_report\s*\)",
         re.DOTALL,
     )
     matches = pattern.findall(src)
-    # 5 stage failure branches x 1 call each = 5
     assert len(matches) >= 5, (
-        f"Expected 5 helper calls passing stage_report.get('error') as "
-        f"the error arg; found {len(matches)}."
+        f"Expected 5 helper calls passing _stage_failure_message(stage_report); "
+        f"found {len(matches)}."
     )
