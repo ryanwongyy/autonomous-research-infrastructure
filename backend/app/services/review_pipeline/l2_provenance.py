@@ -157,16 +157,36 @@ async def run_provenance_review(session: AsyncSession, paper_id: str) -> Review:
     # ------------------------------------------------------------------
     # Coverage ratio check
     # ------------------------------------------------------------------
+    # PR #54 redefined coverage_ratio as (verified + failed) / total —
+    # i.e. Verifier process completeness, NOT verification pass rate.
+    # The intent (per CLAUDE.md): quality issues surface via the
+    # `verification_failures` and `tier_violations` checks above;
+    # coverage just measures whether the Verifier reached every claim.
+    #
+    # Production paper apep_82532feb (autonomous-loop run 25289671965)
+    # exposed an inconsistency: L2 still fired CRITICAL `coverage_incomplete`
+    # at coverage < 0.8 even though the LLM cherry-picks claims (documented
+    # behavior — see "MUST output exactly N entries" in CLAUDE.md). With
+    # ~30-50% verdict rate per Verifier batch, no single workflow run can
+    # reach 80% coverage; only repeated cron re-verify (PR #56) drives it
+    # up over hours. Failing the L2 check on coverage essentially
+    # guaranteed every paper would fail L2 on its first review pass.
+    #
+    # PR #73: downgrade `coverage_incomplete` to warning at all coverage
+    # levels. The redundant `verification_pending` warning above already
+    # surfaces the pending count for operator awareness. Real quality
+    # issues remain CRITICAL (verification_failures, tier_violations).
     coverage = claim_report.get("coverage_ratio", 0.0)
     if coverage < 1.0 and claim_report["total_claims"] > 0:
         issues.append(
             {
                 "check": "coverage_incomplete",
-                "severity": "warning" if coverage >= 0.8 else "critical",
+                "severity": "warning",
                 "message": (
-                    f"Claim verification coverage is {coverage:.1%} "
-                    f"({claim_report['verified']}/{claim_report['total_claims']}). "
-                    f"Full coverage required."
+                    f"Verifier coverage is {coverage:.1%} "
+                    f"({claim_report['verified'] + claim_report['failed']}/"
+                    f"{claim_report['total_claims']}). "
+                    f"Cron re-verify will fill in pending claims over time."
                 ),
             }
         )
