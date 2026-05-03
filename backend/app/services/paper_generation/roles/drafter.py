@@ -50,6 +50,8 @@ HARD BOUNDARIES:
 DRAFT_USER_PROMPT = """\
 Compose a complete LaTeX manuscript for paper {paper_id}.
 
+{framing_directive}
+
 Locked research design:
 {lock_yaml}
 
@@ -120,6 +122,79 @@ apep_3ddffa34 failed L2 with 14 tier_violations of this exact form):
   empirical paper is suspicious. Background facts, framework
   descriptions, and event reporting should typically be descriptive
   or historical.
+
+CRITICAL — claim_type vs source_type pairing (production paper
+apep_5bd06118 was killed by the Verifier with 11 of 25 claims
+failing because empirical claims were anchored to data sources
+that don't actually contain the empirical finding):
+- ``claim_type="empirical"`` claims state STATISTICAL FINDINGS that
+  emerge from data analysis (e.g. "treatment increased disclosure
+  by 23%", "pre-treatment trends are parallel", "the coefficient is
+  significant at p<0.05"). These MUST use ``source_type="result_object"``
+  and a ``source_ref`` from REGISTERED RESULT OBJECTS — not from
+  REGISTERED SOURCE CARDS. The data source contains raw filings; the
+  Analyst's result_objects contain the statistical findings derived
+  from those filings.
+- If your paper's protocol is empirical_causal but no result objects
+  are registered (the Analyst stage produced no quantitative output),
+  REWRITE empirical claims as descriptive ("The AIID database
+  contains X incidents") or doctrinal ("The EU AI Act mandates Y").
+  Do not assert findings the paper hasn't actually computed.
+- ``claim_type="descriptive"`` / ``"doctrinal"`` claims state FACTS
+  that exist in the source itself (e.g. "the EU AI Act mandates
+  incident reporting", "the AIID database documents 1,200+ incidents").
+  These use ``source_type="source_span"`` with a ``source_ref`` from
+  REGISTERED SOURCE CARDS — the source's own text supports the claim
+  directly.
+- ``claim_type="theoretical"`` claims describe frameworks or
+  predictions that don't require source verification. They can use
+  ``source_type="source_span"`` if anchoring to a citing work.
+- Bad pairings to avoid (the Verifier will fail every one):
+    - "Pre-treatment trends are parallel" + source_type="source_span"
+      + source_ref="edgar"   ← the EDGAR filings don't say this; an
+      Analyst statistical test does
+    - "The coefficient on incident exposure is 0.34" +
+      source_type="source_span" + source_ref="aiid"   ← AIID is the
+      raw incident database; the coefficient comes from regression
+    - "AI systems mediate consequential decisions" +
+      source_type="source_span" + source_ref="aiid"   ← AIID is
+      specific incidents, not a general claim about AI's prevalence
+      (this should be descriptive + cited from openalex literature
+      review)
+
+CRITICAL — claim_text must be source-defensible (production paper
+apep_9afaf116 had 11 of 16 verified-or-failed claims FAIL because
+claim_text overstated what the source actually contains):
+- claim_text is what the Verifier checks against the source excerpt.
+  It MUST be a statement that a reader can confirm by reading the
+  source itself. Not a paper-prose interpretation. Not a scope-
+  broadening generalization. Not the argument the paper is building.
+- The argument lives in the manuscript prose. The CLAIM is the
+  evidence underneath it. Keep the two separated.
+- VERIFIED examples from apep_9afaf116 (these passed the Verifier):
+    * "The Federal Register is the official daily publication for
+      rules, proposed rules, and notices of federal agencies" +
+      source="federal_register"   ← describes what the source IS
+    * "USAspending.gov is the official source for federal spending
+      data mandated by FFATA" + source="usaspending"   ← literal
+      source description
+    * "The NIST AI RMF organizes risk management around four
+      functions: Govern, Map, Measure, Manage" + source="nist_ai_rmf"
+      ← directly stated in the framework document
+- FAILED examples from apep_9afaf116 (these failed the Verifier):
+    * "Federal agencies deploy AI systems for consequential public
+      functions including benefits adjudication" + source="usaspending"
+      ← USAspending has spending records, not narrative claims about
+      AI deployment patterns. This is a paper-argument, not source
+      evidence.
+    * "Algorithmic systems introduce novel accountability deficits
+      including opacity and systematic bias" + source="openalex"
+      ← OpenAlex is a bibliographic database; it doesn't make the
+      substantive claim. This should cite SPECIFIC papers.
+- The fix: write claim_text that describes either (a) the source's
+  own content/structure or (b) a SPECIFIC cited work within the
+  source. Do NOT write claim_text that asserts a world-fact "via" a
+  database that merely contains records.
 
 Return JSON:
 {{
@@ -230,7 +305,11 @@ async def compose_manuscript(
 
         def _format_tier(letter: str) -> str:
             entries = sources_by_tier.get(letter, [])
-            return "\n".join(entries) if entries else f"  (no Tier {letter} sources registered)"
+            return (
+                "\n".join(entries)
+                if entries
+                else f"  (no Tier {letter} sources registered)"
+            )
 
         registered_source_ids_str = (
             "TIER A — primary, audited; SUITABLE for empirical/doctrinal:\n"
@@ -263,8 +342,25 @@ async def compose_manuscript(
         else "  (no result objects registered yet)"
     )
 
+    # Production paper apep_9afaf116 (autonomous-loop run 25217093244):
+    # the Analyst failed (unterminated string literal in the generated
+    # code), so result_objects was empty. PR #66's claim-level rule
+    # rewrote individual empirical claims as descriptive — but the
+    # ABSTRACT and CONCLUSION still framed the paper as completed
+    # empirical work ("we employ a difference-in-differences design to
+    # estimate the causal effect"). The Verifier (PR #65) caught the
+    # claim-level mismatch but the paper-level falsehood remained.
+    #
+    # The framing_directive switches based on whether the Analyst
+    # produced anything. When result_objects is empty, the directive
+    # forbids "we find / we estimate / we show" framing entirely and
+    # requires the paper to be reframed as a research design or
+    # measurement protocol.
+    framing_directive = _build_framing_directive(ro_names, protocol_type)
+
     prompt = DRAFT_USER_PROMPT.format(
         paper_id=paper_id,
+        framing_directive=framing_directive,
         lock_yaml=lock_yaml,
         protocol_type=protocol_type,
         inference_level=inference_level,
@@ -335,9 +431,25 @@ async def compose_manuscript(
         sc_result = await s.execute(select(SourceCard.id).where(SourceCard.active.is_(True)))
         registered_source_ids = {row[0] for row in sc_result.all()}
 
+        # Track miscategorised claims for the warning log. Production
+        # paper apep_5bd06118 had 11 of 25 claims fail Verifier because
+        # ``empirical`` claims were anchored to data sources rather
+        # than result_objects (the source's text didn't contain the
+        # statistical finding the claim asserted).
+        empirical_with_source_span = 0
         for claim_data in claims_raw:
             source_type = claim_data.get("source_type", "")
             source_ref = claim_data.get("source_ref", "")
+            claim_type = claim_data.get("claim_type", "descriptive")
+
+            # Diagnostic: empirical/doctrinal claims with source_span
+            # source_type are suspect — they assert statistical
+            # findings that the raw source can't verify. Don't reject;
+            # just count and log the rate. The Verifier will still
+            # downstream-fail these, but this log gives the operator
+            # an early signal that the Drafter is mis-anchoring.
+            if claim_type.lower() == "empirical" and source_type == "source_span":
+                empirical_with_source_span += 1
 
             valid_source_card_id: str | None = None
             soft_source_span_ref: str | None = None
@@ -354,7 +466,7 @@ async def compose_manuscript(
             claim_map = ClaimMap(
                 paper_id=paper_id,
                 claim_text=claim_data.get("claim_text", ""),
-                claim_type=claim_data.get("claim_type", "descriptive"),
+                claim_type=claim_type,
                 source_card_id=valid_source_card_id,
                 source_span_ref=soft_source_span_ref,
                 result_object_ref=(
@@ -398,6 +510,36 @@ async def compose_manuscript(
         len(claim_map_entries),
         len(bibliography),
     )
+    # Diagnostic warning: production paper apep_5bd06118 had 11/25
+    # claims fail Verifier because ``empirical`` claims were anchored
+    # to data sources (source_span). Surface this rate so operators
+    # can see when the Drafter's prompt-following is weak.
+    if empirical_with_source_span > 0:
+        logger.warning(
+            "Drafter: paper %s has %d/%d empirical claims anchored to "
+            "source_span instead of result_object — these will likely "
+            "fail Verifier (the raw source doesn't contain the "
+            "statistical finding the claim asserts).",
+            paper_id,
+            empirical_with_source_span,
+            len(claim_map_entries),
+        )
+
+    # Diagnostic: when no result_objects were available, the prompt
+    # forbids "we find / we estimate" empirical framing. Production
+    # paper apep_9afaf116 ignored this in the abstract despite an
+    # honest Results section that admitted the Analyst failed. Scan
+    # the manuscript for forbidden phrases so operators see drift.
+    if not ro_names and manuscript_latex:
+        forbidden_framing_hits = _count_empirical_framing_violations(manuscript_latex)
+        if forbidden_framing_hits > 0:
+            logger.warning(
+                "Drafter: paper %s has no result_objects but uses %d empirical "
+                "framing phrases ('we find', 'we estimate', etc.) — the "
+                "paper claims findings the Analyst never produced.",
+                paper_id,
+                forbidden_framing_hits,
+            )
 
     return {
         "manuscript_latex": manuscript_latex,
@@ -438,6 +580,114 @@ async def _load_family(session: AsyncSession, family_id: str) -> PaperFamily | N
     stmt = select(PaperFamily).where(PaperFamily.id == family_id)
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
+
+
+def _build_framing_directive(ro_names: list[str], protocol_type: str) -> str:
+    """Return the FRAMING DIRECTIVE block for the Drafter prompt.
+
+    When the Analyst stage produced no result objects, an empirical
+    paper is impossible — the abstract and conclusion must NOT claim
+    "we find" or "we estimate" anything. Production paper apep_9afaf116
+    (autonomous-loop run 25217093244) had an honest Results section
+    that admitted the Analyst failed, but the abstract still said "we
+    employ a difference-in-differences design to estimate the causal
+    effect" — a paper-level falsehood the Verifier could not catch
+    because the abstract has no claim_id.
+
+    The directive is a pre-emptive prompt-level guard. It tells the
+    LLM, before any other rules, that paper framing must match what
+    was actually computed.
+    """
+    if ro_names:
+        return (
+            "FRAMING DIRECTIVE — analyst results available\n"
+            f"The Analyst registered {len(ro_names)} result object(s). The "
+            "paper may be framed as completed empirical research. The "
+            "abstract, results, and conclusion may report findings that "
+            "reference these result_objects. Empirical claims MUST be "
+            "anchored via source_type=result_object as detailed below."
+        )
+    # No result objects. Force a non-empirical framing.
+    return (
+        "FRAMING DIRECTIVE — NO ANALYST RESULTS, REFRAMING REQUIRED\n"
+        "The Analyst stage produced no result objects (the result_manifest\n"
+        "below shows '(no results yet)' or has no result_objects entries).\n"
+        "This paper CANNOT be framed as completed empirical research.\n\n"
+        "FORBIDDEN phrases anywhere in the manuscript (abstract, results,\n"
+        "conclusion, anywhere):\n"
+        "  - 'We find that ...'\n"
+        "  - 'We estimate that ...' / 'we estimate the causal effect'\n"
+        "  - 'Our results show ...' / 'Our results indicate'\n"
+        "  - 'The coefficient on X is ...' (no coefficients exist)\n"
+        "  - 'The treatment effect is ...' (no analysis was run)\n"
+        "  - Any verb tense or phrasing that asserts a quantitative\n"
+        "    finding from THIS study.\n\n"
+        "REQUIRED reframing — choose ONE based on the locked protocol:\n"
+        "  - Research design / measurement protocol paper:\n"
+        "    'This paper develops a research design for examining ...'\n"
+        "    'We propose a measurement framework to assess ...'\n"
+        "    'We construct a coding protocol that future work can apply ...'\n"
+        "  - Doctrinal / interpretive analysis:\n"
+        "    'This paper offers a doctrinal analysis of ...'\n"
+        "    'We synthesize the existing legal framework governing ...'\n"
+        "  - Conceptual / framework-building:\n"
+        "    'This paper develops a typology of ...'\n"
+        "    'We propose a framework for understanding ...'\n\n"
+        f"The locked protocol_type is '{protocol_type}'. If the locked\n"
+        "protocol is empirical_causal but no results exist, REFRAME THE\n"
+        "CONTRIBUTION as the design itself, not findings from it. An\n"
+        "honest research-design paper is a legitimate contribution; a\n"
+        "fabricated empirical paper is not.\n\n"
+        "Production paper apep_9afaf116 violated this rule: its Results\n"
+        "section honestly admitted the Analyst failed, but the abstract\n"
+        "still claimed 'we employ a difference-in-differences design to\n"
+        "estimate the causal effect.' The paper was killed at Verifier."
+    )
+
+
+# Phrase patterns that indicate completed-empirical framing. Used by
+# _count_empirical_framing_violations to scan a manuscript when no
+# result_objects exist. Patterns are matched case-insensitively against
+# the manuscript LaTeX text.
+_FORBIDDEN_EMPIRICAL_PHRASES = (
+    "we find that",
+    "we find ",
+    "we estimate ",
+    "our results show",
+    "our results indicate",
+    "our findings show",
+    "our findings indicate",
+    "our analysis shows",
+    "our analysis reveals",
+    "our analysis indicates",
+    "the coefficient on",
+    "the treatment effect is",
+    "the effect is statistically significant",
+    # apep_9afaf116-style "we employ X to estimate Y" abstract framing.
+    # "we estimate" alone misses these because the verb is gated behind
+    # "design to" or "approach to". Catch the result-claim instead.
+    "estimate the causal effect",
+    "estimate the effect of",
+    "to estimate the impact",
+    "design to estimate",
+)
+
+
+def _count_empirical_framing_violations(manuscript_latex: str) -> int:
+    """Count occurrences of empirical-framing phrases in a manuscript.
+
+    Used as a Phase 3 diagnostic when no result_objects were registered:
+    if the count is non-zero, the Drafter ignored the FRAMING DIRECTIVE
+    and wrote findings the paper never computed.
+
+    Match is case-insensitive substring; not a parser. False positives
+    are acceptable for a diagnostic warning — the operator inspects the
+    paper if the count is non-zero.
+    """
+    if not manuscript_latex:
+        return 0
+    haystack = manuscript_latex.lower()
+    return sum(haystack.count(phrase) for phrase in _FORBIDDEN_EMPIRICAL_PHRASES)
 
 
 def _determine_inference_level(protocol_type: str) -> str:

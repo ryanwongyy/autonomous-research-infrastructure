@@ -192,7 +192,9 @@ async def run_full_pipeline(
         report["stages"]["data_steward"] = stage_report
         if stage_report["status"] == "failed":
             report["final_status"] = "killed_at_data_steward"
-            await _set_killed_at_stage(paper_id, "data_steward", stage_report.get("error"))
+            await _set_killed_at_stage(
+                paper_id, "data_steward", stage_report.get("error")
+            )
             return _finalise_report(report, pipeline_start)
 
         source_manifest = stage_report.get("source_manifest", {})
@@ -267,7 +269,41 @@ async def run_full_pipeline(
         report["stages"]["verifier"] = stage_report
 
         verification_report = stage_report.get("verification", {})
-        recommendation = verification_report.get("summary", {}).get("recommendation", "revise")
+        verifier_summary = verification_report.get("summary", {})
+        recommendation = verifier_summary.get("recommendation", "revise")
+
+        # PR #72: Defer kill when Verifier coverage is too low to trust.
+        # Production paper apep_4d0e15af (autonomous-loop run 25288590150)
+        # had 1 verified + 5 failed + 19 pending (24% coverage). The LLM
+        # recommended "reject" based on a 17% in-sample pass rate, but
+        # the 19 unsampled claims went unevaluated. The cron re-verify
+        # step (PR #56) runs AFTER the orchestrator finishes, so it has
+        # no chance to lift the verdict before kill flips Paper.status.
+        #
+        # Rule: if coverage = (verified + failed) / total < 0.5, downgrade
+        # reject → revise so the paper survives to Packager + L1/L2
+        # review. The cron's re-verify will fill in more coverage; the
+        # batch_re_verify endpoint runs every cron tick and re-checks
+        # papers with high pending counts, so under-sampled papers get
+        # a second look before any human sees them.
+        verified_count = verifier_summary.get("passed", 0)
+        failed_count = verifier_summary.get("failed", 0)
+        total_claims = verifier_summary.get("total_claims", 0)
+        checked = verified_count + failed_count
+        coverage = (checked / total_claims) if total_claims > 0 else 0.0
+
+        if recommendation == "reject" and coverage < 0.5:
+            logger.warning(
+                "Verifier recommended reject for paper %s but coverage is "
+                "only %.0f%% (%d verified + %d failed of %d). Downgrading "
+                "to revise — cron re-verify will fill in more verdicts.",
+                paper_id,
+                coverage * 100,
+                verified_count,
+                failed_count,
+                total_claims,
+            )
+            recommendation = "revise"
 
         # If verifier recommends rejection, kill the paper
         if recommendation == "reject":
@@ -370,7 +406,9 @@ async def _run_stage_with_session(
         async with asyncio.timeout(timeout_sec):
             async with async_session() as s:
                 paper = await _reload_paper(s, paper_id)
-                result = await _run_stage(stage_name, stage_fn, s, paper, **stage_kwargs)
+                result = await _run_stage(
+                    stage_name, stage_fn, s, paper, **stage_kwargs
+                )
                 # Commit even on stage failure so partial progress (paper
                 # record updates, kill_reason, etc.) persists. Each stage's
                 # exception handling is inside _run_stage; nothing here raises.
@@ -723,14 +761,18 @@ async def _stage_data_steward(
     # so the pipeline can still produce real data rather than dying here.
     if not valid_sources:
         fallback_ids = [
-            sid for sid in ("federal_register", "regulations_gov") if sid in registered_ids
+            sid
+            for sid in ("federal_register", "regulations_gov")
+            if sid in registered_ids
         ]
         if fallback_ids:
             logger.warning(
                 "Data Steward got zero valid sources from LLM; falling back to %s",
                 fallback_ids,
             )
-            valid_sources = [{"source_card_id": sid, "fetch_params": {}} for sid in fallback_ids]
+            valid_sources = [
+                {"source_card_id": sid, "fetch_params": {}} for sid in fallback_ids
+            ]
 
     snapshots_created = 0
     fetch_errors: list[str] = []
@@ -762,7 +804,9 @@ async def _stage_data_steward(
 
     # Build a useful reason string so error_message isn't "(no error message)"
     if fetch_errors:
-        reason = f"All {len(fetch_errors)} source fetches failed: " + "; ".join(fetch_errors[:3])
+        reason = f"All {len(fetch_errors)} source fetches failed: " + "; ".join(
+            fetch_errors[:3]
+        )
     elif dropped_ids:
         reason = (
             f"LLM picked {len(dropped_ids)} unregistered source IDs and the "
@@ -818,7 +862,9 @@ async def _stage_analyst(
     )
 
     return {
-        "status": "completed" if exec_result.get("success") else "completed_with_errors",
+        "status": "completed"
+        if exec_result.get("success")
+        else "completed_with_errors",
         "code_hash": code_result.get("code_hash", ""),
         "code_content": code_content,
         "result_manifest": exec_result,
@@ -889,7 +935,9 @@ async def _stage_collegial_review(
     lock_yaml = lock.lock_yaml if lock else ""
 
     # Load claims
-    claims_result = await session.execute(select(ClaimMap).where(ClaimMap.paper_id == paper.id))
+    claims_result = await session.execute(
+        select(ClaimMap).where(ClaimMap.paper_id == paper.id)
+    )
     claims = [
         {"claim_text": c.claim_text, "claim_type": c.claim_type}
         for c in claims_result.scalars().all()
@@ -1078,7 +1126,9 @@ async def _run_stage(
         raise  # Let boundary violations propagate
     except Exception as e:
         tb = traceback.format_exc()
-        logger.error("[%s] Stage '%s' failed: %s", paper.id, stage_name, e, exc_info=True)
+        logger.error(
+            "[%s] Stage '%s' failed: %s", paper.id, stage_name, e, exc_info=True
+        )
         # Compose a rich error string so even bare exceptions surface
         # something useful. ``error_class`` and ``error_traceback`` are
         # captured separately for structured access.
@@ -1194,7 +1244,9 @@ async def _set_error(paper_id: str, error: str) -> None:
         logger.error("Failed to set error on paper %s: %s", paper_id, e)
 
 
-async def _set_killed_at_stage(paper_id: str, stage_name: str, error: str | None) -> None:
+async def _set_killed_at_stage(
+    paper_id: str, stage_name: str, error: str | None
+) -> None:
     """Flip a paper to terminal status='killed' after a stage failed.
 
     Without this, the stage-failure path inside ``run_full_pipeline``

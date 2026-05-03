@@ -175,6 +175,117 @@ Verifier on `pending`-only claims. Repeated invocations approach
 100% coverage. Useful from a cron sweep over papers with high
 pending counts.
 
+### Verifier source excerpts (PR #65)
+
+Production paper apep_b4680e6e was a doctrinal law paper with 25
+Tier-A claims sourced from CourtListener (federal court decisions)
+and Federal Register. L1 PASSED. But the Verifier left 23 of 25
+claims at `pending` because its prompt only included source IDs
+and tier metadata — no actual case text. The LLM correctly refused
+to assess "Court X held Y" without reading the underlying decision.
+
+PR #65 fixes this: `_load_source_excerpts` reads the most recent
+SourceSnapshot for each cited source_card_id, truncates to a sane
+size (~2K chars per source), and includes the content in the
+Verifier prompt. Best-effort: missing files are noted but don't
+abort. The prompt explicitly tells the LLM "do not refuse on
+grounds of haven't read the source — the excerpt is provided."
+
+This was the unlock for non-zero verified counts. apep_9afaf116
+became the first paper post-#65 with `verified > 0` (5 of 25).
+
+### Drafter empirical→result_object pairing (PR #66)
+
+apep_5bd06118 was killed by Verifier reject (11/25 claims failed)
+because empirical claims like "Pre-treatment trends are parallel"
+were anchored via `source_type=source_span` to data sources like
+`edgar`. EDGAR has filings, not statistical findings. Verifier
+correctly flagged the mismatch.
+
+PR #66 adds an explicit rule to the Drafter prompt:
+- `claim_type=empirical` → `source_type=result_object` (Analyst output)
+- `claim_type=descriptive`/`doctrinal` → `source_type=source_span`
+  (text in the source itself)
+
+Plus a Phase-3 diagnostic that counts `empirical+source_span`
+violations and logs WARNING. Drafter does NOT raise — Verifier
+catches downstream.
+
+### Drafter framing directive when Analyst fails (PR #67)
+
+apep_9afaf116 had its Analyst stage fail (`unterminated string
+literal`), so result_objects was empty. PR #66's claim-level rule
+correctly re-typed individual claims, but the abstract still
+framed the paper as completed empirical work: "we employ a
+difference-in-differences design to estimate the causal effect."
+The Verifier (PR #65) caught the claim-level mismatch but cannot
+catch a paper-level falsehood — the abstract has no claim_id.
+
+PR #67 adds a `FRAMING DIRECTIVE` block at the top of the Drafter
+prompt that switches based on whether result_objects exist:
+
+- Results present: permissive ("you may report findings").
+- No results: forbids "we find / we estimate / we show / the
+  coefficient on / the treatment effect is" framing entirely;
+  provides three concrete reframings (research design, doctrinal
+  analysis, framework-building).
+
+Phase-3 diagnostic scans the manuscript for forbidden phrases
+when no result_objects exist; logs WARNING with violation count.
+Validated locally against apep_9afaf116's manuscript: detects 4
+violations (2 abstract + 1 conclusion + 1 elsewhere).
+
+### Drafter claim_text source-defensibility (PR #68)
+
+In apep_9afaf116's 5 verified vs 11 failed claims, the dividing
+line was NOT claim_type or source_type — those rules from PRs
+#55/66 were followed in many failed claims. The dividing line
+was claim_text *content*: VERIFIED claims described what the
+source IS ("The Federal Register is the official daily
+publication ..."), FAILED claims described the world via the
+source ("Federal agencies deploy AI systems for consequential
+public functions" with `source=usaspending` — USAspending has
+spending records, not narrative claims).
+
+PR #68 adds a CRITICAL section to the Drafter prompt with the
+verified/failed examples named verbatim and the remediation
+rule: claim_text must describe either (a) the source's own
+content/structure or (b) a specific cited work within the
+source. Do NOT assert world-facts via a database that merely
+contains records.
+
+### Analyst syntax-validate + retry (PR #69)
+
+apep_9afaf116 wasted ~30s on a subprocess that failed with
+`SyntaxError: unterminated string literal`. The LLM produced 16K
+characters of Python with one missing closing quote — exactly
+the kind of one-character mistake an LLM can correct from a
+clear error.
+
+PR #69 adds:
+- `_validate_python_syntax(code)` — `compile()`-based check that
+  runs in microseconds before the subprocess.
+- `SYNTAX_RETRY_PROMPT` — sends the broken code + SyntaxError
+  back to the LLM and asks for a fix scoped to syntax only.
+- One retry. If the retry also fails, the broken code falls
+  through to the existing ANALYSIS_ERROR path so PR #67's
+  framing directive can still reframe the paper as research-
+  design. No escalation to hard stage failure.
+
+### Source registry expansion (PR #70)
+
+Added 5 Tier A sources to close gaps observed in production:
+`federal_ai_use_cases` (EO 13960 agency inventories — the
+canonical answer to "what AI does the federal government use"),
+`gao_reports`, `whitehouse_ostp`, `uspto_patents`, `arxiv`.
+
+After PR #51's closed-set design, registry membership IS the
+constraint. Expanding the registry directly reduces fabrication
+without prompt growth — a different lever from prompt tuning,
+useful when prompt accretion plateaus.
+
+Tier A: 9 → 14. Total registry: 18 → 23.
+
 ---
 
 ## Database conventions
@@ -325,7 +436,7 @@ backend/
 
 ---
 
-## Recent PR history (#42 → #56)
+## Recent PR history (#42 → #70)
 
 The `git log --oneline main` is the source of truth, but as a quick
 overview of design intent:
@@ -338,8 +449,28 @@ overview of design intent:
   + tier awareness, L1/L2 honest measurement
 - **#56**: Operational composition — re-verify endpoint as the missing
   step for incremental Verifier coverage
+- **#57–61**: Architecture docs (CLAUDE.md), manuscript durability
+  (manuscript_latex column survives Render redeploy), reaper for
+  orphaned papers, kill_reason exposure on Paper API
+- **#62**: Batch re-verify endpoint + cron integration (autonomous
+  loop sweeps papers with high pending count)
+- **#63**: Analyst environment fix (`sys.executable`, numpy/pandas/scipy)
+- **#64**: LLM retry — list+`extend()` pattern, retry_if_exception
+  (lambda) so providers can mutate the retry set at module load
+- **#65**: Verifier sees source excerpts so doctrinal claims verify
+- **#66**: Drafter empirical→result_object pairing
+- **#67**: Drafter framing directive forbids "we find" with no results
+- **#68**: Drafter claim_text must describe source, not world via source
+- **#69**: Analyst compile()-validate + retry on SyntaxError
+- **#70**: Source registry +5 Tier A AI-governance sources
 
-Reflection on this push: `.claude/autodevelop-reflection-2026-05-01.md`.
+Reflection on PRs #43–55: `.claude/autodevelop-reflection-2026-05-01.md`.
+
+The cumulative effect of #65–70: a layered defense against the
+specific failure modes seen in apep_9afaf116. PR #65/#69 try to
+recover; PR #66/#67/#68 ensure the paper is honest if recovery
+fails; PR #70 widens the source set so the LLM doesn't have to
+fabricate.
 
 ---
 

@@ -104,6 +104,38 @@ Return JSON:
 No markdown, no commentary outside the JSON."""
 
 
+# Used after the first LLM call when the generated code fails to
+# compile. We send the broken code back with the SyntaxError so the
+# LLM can fix it. Production paper apep_9afaf116 (autonomous-loop run
+# 25217093244) failed with "unterminated string literal" — exactly the
+# kind of one-character mistake an LLM can correct from a clear error.
+SYNTAX_RETRY_PROMPT = """\
+The Python code you just generated has a syntax error and will not
+compile. Here is the error:
+
+{syntax_error}
+
+Here is the broken code (verbatim):
+```python
+{prior_code}
+```
+
+Provide CORRECTED code that fixes ONLY the syntax error. Keep the
+same analysis logic — do not redesign the analysis. Common causes:
+unterminated string literal (missing closing quote), unmatched
+parenthesis or bracket, indentation that drifts from spaces to tabs,
+or an f-string with a brace that needs escaping.
+
+Return the same JSON shape as before:
+{{
+  "code": "<the corrected Python script>",
+  "requirements": "<unchanged requirements.txt>",
+  "expected_outputs": [...]
+}}
+
+No markdown wrapper, no commentary outside the JSON."""
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -195,6 +227,65 @@ async def generate_analysis_code(
             f"Response length: {len(response)}. "
             f"Head: {head!r}. Tail: {tail!r}"
         )
+
+    # Validate Python syntax before passing to subprocess. If the LLM
+    # produced syntactically-broken code (production paper
+    # apep_9afaf116 had "unterminated string literal"), do ONE retry
+    # with the error message so the LLM can fix it. compile() is
+    # essentially free; a wasted subprocess is ~30s.
+    syntax_error = _validate_python_syntax(code_content)
+    if syntax_error is not None:
+        logger.warning(
+            "Analyst paper %s: generated code has syntax error (%s). Retrying with error context.",
+            paper_id,
+            syntax_error,
+        )
+        retry_prompt = SYNTAX_RETRY_PROMPT.format(
+            syntax_error=syntax_error,
+            prior_code=code_content,
+        )
+        try:
+            retry_response = await provider.complete(
+                messages=[{"role": "user", "content": retry_prompt}],
+                model=model,
+                temperature=0.3,
+                max_tokens=16384,
+            )
+            retry_parsed = _parse_json_object(retry_response)
+            retry_code = retry_parsed.get("code", "")
+            retry_syntax_error = _validate_python_syntax(retry_code)
+            if retry_syntax_error is None:
+                logger.info(
+                    "Analyst paper %s: syntax-error retry succeeded.",
+                    paper_id,
+                )
+                code_content = retry_code
+                # Adopt retry's requirements/expected_outputs only if
+                # the retry actually returned them; otherwise keep
+                # the originals (the analysis design didn't change).
+                if retry_parsed.get("requirements"):
+                    parsed["requirements"] = retry_parsed["requirements"]
+                if retry_parsed.get("expected_outputs"):
+                    parsed["expected_outputs"] = retry_parsed["expected_outputs"]
+            else:
+                logger.warning(
+                    "Analyst paper %s: syntax-error retry also failed (%s). "
+                    "Falling through with original code; subprocess will fail "
+                    "with ANALYSIS_ERROR and the Drafter (PR #67) will reframe "
+                    "the paper as research-design.",
+                    paper_id,
+                    retry_syntax_error,
+                )
+        except Exception as retry_exc:
+            # Don't let a retry-attempt exception kill the stage —
+            # the original code might still produce useful diagnostic
+            # output via the subprocess's ANALYSIS_ERROR path.
+            logger.warning(
+                "Analyst paper %s: syntax-error retry raised %s. "
+                "Falling through with original (broken) code.",
+                paper_id,
+                type(retry_exc).__name__,
+            )
 
     requirements = parsed.get(
         "requirements",
@@ -348,6 +439,33 @@ async def _build_source_schemas(session: AsyncSession, paper_id: str) -> str:
             f"Params: {params}"
         )
     return "\n".join(lines)
+
+
+def _validate_python_syntax(code: str) -> str | None:
+    """Return a short error message if ``code`` has a syntax error,
+    else None. Empty input returns a sentinel error so the caller can
+    handle it the same way as a syntax error.
+
+    Used by ``generate_analysis_code`` to detect LLM-generated Python
+    that cannot run, before wasting a subprocess slot on it.
+    Production paper apep_9afaf116 (autonomous-loop run 25217093244)
+    failed with ``unterminated string literal (detected at line N)``
+    — the LLM produced 16K chars of valid Python with one missing
+    closing quote. Detecting this with ``compile()`` is essentially
+    free (microseconds) compared to a 30-60s subprocess.
+    """
+    if not code or not code.strip():
+        return "no code (empty string)"
+    try:
+        compile(code, "<analyst_code>", "exec")
+        return None
+    except SyntaxError as e:
+        # Keep the message short — it goes back to the LLM in the
+        # retry prompt, where verbose tracebacks would just consume
+        # the response budget.
+        line = e.lineno if e.lineno is not None else "?"
+        offending = (e.text or "").rstrip()
+        return f"SyntaxError on line {line}: {e.msg}. Offending text: {offending!r}"
 
 
 def _parse_json_object(response: str) -> dict:
