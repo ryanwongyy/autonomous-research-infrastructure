@@ -205,7 +205,11 @@ async def run_adversarial_review(session: AsyncSession, paper_id: str) -> Review
     any_reject = False
 
     check_names = ["alternative_explanation", "source_fragility", "causal_language"]
-    check_models = [ADVERSARIAL_CLAUDE_MODEL, ADVERSARIAL_GPT_MODEL, ADVERSARIAL_CLAUDE_MODEL]
+    check_models = [
+        ADVERSARIAL_CLAUDE_MODEL,
+        ADVERSARIAL_GPT_MODEL,
+        ADVERSARIAL_CLAUDE_MODEL,
+    ]
 
     for i, (name, model_name) in enumerate(zip(check_names, check_models)):
         result = results[i]
@@ -536,6 +540,14 @@ async def _load_paper(session: AsyncSession, paper_id: str) -> Paper | None:
 
 
 async def _load_manuscript(paper: Paper) -> str | None:
+    """Load manuscript text. Prefers the durable ``manuscript_latex``
+    column (PR #58) over the disk file at ``paper_tex_path`` because
+    Render's ephemeral filesystem wipes the file on every redeploy.
+    See l3_method._load_manuscript for the same fix and rationale.
+    """
+    if paper.manuscript_latex:
+        return paper.manuscript_latex
+
     tex_path = paper.paper_tex_path
     if tex_path:
         try:

@@ -396,7 +396,11 @@ async def run_method_review(session: AsyncSession, paper_id: str) -> Review:
             verdict="fail",
             severity="critical",
             issues=[
-                {"check": "llm_error", "severity": "critical", "message": f"LLM call failed: {exc}"}
+                {
+                    "check": "llm_error",
+                    "severity": "critical",
+                    "message": f"LLM call failed: {exc}",
+                }
             ],
             content=f"Method review aborted: LLM error ({exc})",
             model_used=METHOD_MODEL,
@@ -540,7 +544,24 @@ async def _load_family(session: AsyncSession, family_id: str | None) -> PaperFam
 
 
 async def _load_manuscript(paper: Paper) -> str | None:
-    """Load manuscript text from TeX file, metadata, or abstract."""
+    """Load manuscript text, preferring durable storage.
+
+    Resolution order:
+      1. ``Paper.manuscript_latex`` column — durable copy (PR #58).
+         Survives Render's ephemeral filesystem wipes on redeploy.
+      2. ``Paper.paper_tex_path`` file on disk — fallback for pre-PR-58
+         papers and a corroborating source when both exist.
+      3. ``metadata_json["manuscript_text"]`` — older serialization path.
+      4. ``Paper.abstract`` — last-resort minimal content.
+
+    Production paper apep_4334aa2e (autonomous-loop run 25289671965)
+    survived L2 thanks to PR #73 but L3 fired ``manuscript_missing``
+    because the disk file at paper_tex_path had been wiped while the
+    ``manuscript_latex`` column held the full text intact.
+    """
+    if paper.manuscript_latex:
+        return paper.manuscript_latex
+
     tex_path = paper.paper_tex_path
     if tex_path:
         try:
