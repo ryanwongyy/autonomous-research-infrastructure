@@ -269,9 +269,41 @@ async def run_full_pipeline(
         report["stages"]["verifier"] = stage_report
 
         verification_report = stage_report.get("verification", {})
-        recommendation = verification_report.get("summary", {}).get(
-            "recommendation", "revise"
-        )
+        verifier_summary = verification_report.get("summary", {})
+        recommendation = verifier_summary.get("recommendation", "revise")
+
+        # PR #72: Defer kill when Verifier coverage is too low to trust.
+        # Production paper apep_4d0e15af (autonomous-loop run 25288590150)
+        # had 1 verified + 5 failed + 19 pending (24% coverage). The LLM
+        # recommended "reject" based on a 17% in-sample pass rate, but
+        # the 19 unsampled claims went unevaluated. The cron re-verify
+        # step (PR #56) runs AFTER the orchestrator finishes, so it has
+        # no chance to lift the verdict before kill flips Paper.status.
+        #
+        # Rule: if coverage = (verified + failed) / total < 0.5, downgrade
+        # reject → revise so the paper survives to Packager + L1/L2
+        # review. The cron's re-verify will fill in more coverage; the
+        # batch_re_verify endpoint runs every cron tick and re-checks
+        # papers with high pending counts, so under-sampled papers get
+        # a second look before any human sees them.
+        verified_count = verifier_summary.get("passed", 0)
+        failed_count = verifier_summary.get("failed", 0)
+        total_claims = verifier_summary.get("total_claims", 0)
+        checked = verified_count + failed_count
+        coverage = (checked / total_claims) if total_claims > 0 else 0.0
+
+        if recommendation == "reject" and coverage < 0.5:
+            logger.warning(
+                "Verifier recommended reject for paper %s but coverage is "
+                "only %.0f%% (%d verified + %d failed of %d). Downgrading "
+                "to revise — cron re-verify will fill in more verdicts.",
+                paper_id,
+                coverage * 100,
+                verified_count,
+                failed_count,
+                total_claims,
+            )
+            recommendation = "revise"
 
         # If verifier recommends rejection, kill the paper
         if recommendation == "reject":
@@ -478,13 +510,10 @@ async def _run_stage_no_outer_session(
             # Session closed; connection returned to the pool.
 
             # Stage runs WITHOUT an outer session. It manages its own DB.
-            return await _run_stage(
-                stage_name, stage_fn, None, paper, **stage_kwargs
-            )
+            return await _run_stage(stage_name, stage_fn, None, paper, **stage_kwargs)
     except TimeoutError:
         logger.error(
-            "Stage '%s' (no-outer-session) exceeded timeout %ds — aborting "
-            "(paper=%s)",
+            "Stage '%s' (no-outer-session) exceeded timeout %ds — aborting (paper=%s)",
             stage_name,
             timeout_sec,
             paper_id,
@@ -499,8 +528,7 @@ async def _run_stage_no_outer_session(
         }
     except Exception as wrapper_err:
         logger.error(
-            "Stage '%s' (no-outer-session) wrapper hit fatal exception "
-            "(paper=%s): %s",
+            "Stage '%s' (no-outer-session) wrapper hit fatal exception (paper=%s): %s",
             stage_name,
             paper_id,
             wrapper_err,
